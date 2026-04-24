@@ -1,0 +1,596 @@
+/**
+ * Purchase Quotation DB Service - ODBC/Direct SQL for GET operations
+ * Reads data directly from SAP B1 SQL Server database
+ */
+const db = require('./dbService');
+
+const safe = async (promise) => {
+  try {
+    const r = await promise;
+    return r.recordset || [];
+  } catch (e) {
+    return [];
+  }
+};
+
+// ── REFERENCE DATA QUERIES ────────────────────────────────────────────────────
+
+const getVendors = () => safe(db.query(`
+  SELECT CardCode, CardName, CardType, Currency,
+         VatGroup, GroupNum AS PayTermsGrpCode
+  FROM   OCRD
+  WHERE  CardType = 'S'
+    AND  frozenFor <> 'Y'
+  ORDER  BY CardName
+`));
+
+const getItems = () => safe(db.query(`
+  SELECT ItemCode, ItemName,
+         BuyUnitMsr  AS PurchaseUnit,
+         InvntryUom  AS InventoryUOM,
+         PUoMEntry   AS UoMGroupEntry,
+         DfltWH      AS DefaultWarehouse,
+         SWW         AS HSNCode
+  FROM   OITM
+  WHERE  PrchseItem = 'Y'
+    AND  validFor  <> 'N'
+  ORDER  BY ItemCode
+`));
+
+const getWarehouses = () => safe(db.query(`
+  SELECT WhsCode, WhsName, Street, Block,
+         City, County, State, ZipCode, Country, BPLId AS BranchID
+  FROM   OWHS
+  WHERE  Inactive <> 'Y'
+  ORDER  BY WhsCode
+`));
+
+const getPaymentTerms = () => safe(db.query(`
+  SELECT GroupNum, PymntGroup
+  FROM   OCTG
+  ORDER  BY PymntGroup
+`));
+
+const getShippingTypes = () => safe(db.query(`
+  SELECT TrnspCode, TrnspName
+  FROM   OSHP
+  ORDER  BY TrnspName
+`));
+
+const getBranches = () => safe(db.query(`
+  SELECT BPLId, BPLName, State
+  FROM   OBPL where Disabled='N'
+  ORDER  BY BPLName
+`));
+
+const getStates = () => safe(db.query(`
+  SELECT Code, Name
+  FROM   OCST
+  WHERE  Country = 'IN'
+  ORDER  BY Name
+`));
+
+const getTaxCodes = () => safe(db.query(`
+  SELECT 
+    T0.Code,
+    T0.Name,
+    SUM(T1.EfctivRate) AS Rate,
+    CASE 
+        WHEN 
+            MAX(CASE WHEN T1.STACode LIKE '%IGST%' THEN 1 ELSE 0 END) = 1 
+            THEN 'INTERSTATE'
+        WHEN 
+            COUNT(DISTINCT CASE 
+                WHEN T1.STACode LIKE '%CGST%' THEN 'CGST'
+                WHEN T1.STACode LIKE '%SGST%' THEN 'SGST'
+            END) = 2 
+            THEN 'INTRASTATE'
+        ELSE 'OTHER'
+    END AS GSTType
+FROM OSTC T0
+INNER JOIN STC1 T1 ON T0.Code = T1.STCCode
+WHERE 
+    T0.Lock = 'N'
+GROUP BY 
+    T0.Code, T0.Name
+ORDER BY 
+    T0.Code;
+`));
+
+const getUomGroups = () => safe(db.query(`
+  SELECT g.UgpEntry AS AbsEntry,
+         g.UgpCode  AS Name,
+         u.UomCode
+  FROM   OUGP g
+  LEFT JOIN UGP1 d ON d.UgpEntry = g.UgpEntry
+  LEFT JOIN OUOM u ON u.UomEntry = d.UomEntry
+  WHERE  g.Locked <> 'Y'
+  ORDER  BY g.UgpEntry, d.LineNum
+`));
+
+const getDecimalSettings = () => safe(db.query(`
+  SELECT TOP 1
+    DecSep, ThousSep, DateSep, DateFormat,
+    PriceDP AS PriceDec,
+    QuantityDP AS QtyDec,
+    RateDP AS RateDec,
+    PercentDP AS PercentDec,
+    MeasurDP AS MeasurDec,
+    SumDP AS SumDec
+  FROM OADM
+`));
+
+const getCompanyInfo = () => safe(db.query(`
+  SELECT TOP 1
+    CompnyName,
+    CompnyAddr AS Address,
+    State
+  FROM OADM
+`));
+
+// ── VENDOR DETAILS ────────────────────────────────────────────────────────────
+
+const getContactsByVendor = async (cardCode) => {
+  const result = await safe(db.query(`
+    SELECT 
+      T0.CardCode,
+      T0.CntctCode,
+      T0.Name,
+      T0.FirstName,
+      T0.LastName,
+      T0.E_MailL AS E_Mail,
+      T0.Cellolar AS MobilePhone,
+      T0.Tel1 AS Phone1
+    FROM OCPR T0
+    WHERE T0.CardCode = @cardCode
+    ORDER BY T0.Name
+  `, { cardCode }));
+
+  return result;
+};
+
+const getAddressesByVendor = async (cardCode) => {
+  const result = await safe(db.query(`
+    SELECT 
+      T0.CardCode,
+      T0.Address,
+      T0.AdresType,
+      T0.Street,
+      T0.StreetNo,
+      T0.Block,
+      T0.Building,
+      T0.Address2,
+      T0.Address3,
+      T0.City,
+      T0.County,
+      T0.State,
+      T0.ZipCode,
+      T0.Country,
+      T0.GSTRegnNo AS GSTIN
+    FROM CRD1 T0
+    WHERE T0.CardCode = @cardCode
+    ORDER BY T0.Address
+  `, { cardCode }));
+
+  return result;
+};
+
+// ── PURCHASE ORDER LIST ───────────────────────────────────────────────────────
+
+const getPurchaseQuotationList = async () => {
+  const result = await safe(db.query(`
+    SELECT TOP 100
+      T0.DocEntry AS doc_entry,
+      T0.DocNum AS doc_num,
+      T0.CardCode AS vendor_code,
+      T0.CardName AS vendor_name,
+      T0.DocDate AS posting_date,
+      T0.DocDueDate AS delivery_date,
+      T0.DocTotal AS total_amount,
+      CASE T0.DocStatus
+        WHEN 'O' THEN 'Open'
+        WHEN 'C' THEN 'Closed'
+        ELSE T0.DocStatus
+      END AS status
+    FROM OPQT T0
+    ORDER BY T0.DocEntry DESC
+  `));
+
+  return { quotations: result };
+};
+
+// ── GET SINGLE PURCHASE ORDER ─────────────────────────────────────────────────
+
+const getPurchaseQuotation = async (docEntry) => {
+  // Get header
+  const headerRows = await safe(db.query(`
+    SELECT 
+      T0.DocEntry,
+      T0.DocNum,
+      T0.Series,
+      T0.CardCode,
+      T0.CardName,
+      T0.CntctCode AS ContactPersonCode,
+      T0.NumAtCard AS VendorRefNo,
+      T0.DocDate AS PostingDate,
+      T0.DocDueDate AS DeliveryDate,
+      T0.TaxDate AS DocumentDate,
+      T0.BPLId AS Branch,
+      T0.DocCur AS Currency,
+      T0.GroupNum AS PaymentTerms,
+      T0.Comments AS Remarks,
+      T0.JrnlMemo AS JournalRemark,
+      T0.DiscPrcnt AS DiscountPercent,
+      T0.TotalExpns AS Freight,
+      T0.VatSum AS Tax,
+      T0.DocTotal AS TotalPaymentDue,
+      T0.Confirmed,
+      CASE T0.DocStatus
+        WHEN 'O' THEN 'Open'
+        WHEN 'C' THEN 'Closed'
+        ELSE T0.DocStatus
+      END AS DocumentStatus
+    FROM OPQT T0
+    WHERE T0.DocEntry = @docEntry
+  `, { docEntry }));
+
+  if (!headerRows.length) {
+    throw new Error(`Purchase Quotation ${docEntry} not found`);
+  }
+
+  const header = headerRows[0];
+
+  // Get lines
+  const lineRows = await safe(db.query(`
+    SELECT 
+      T0.LineNum,
+      T0.ItemCode,
+      T0.Dscription AS ItemDescription,
+      T0.Quantity,
+      T0.Price AS UnitPrice,
+      T0.DiscPrcnt AS DiscountPercent,
+      T0.TaxCode,
+      T0.LineTotal,
+      T0.WhsCode AS Warehouse,
+      T0.unitMsr AS UoMCode
+    FROM PQT1 T0
+    WHERE T0.DocEntry = @docEntry
+    ORDER BY T0.LineNum
+  `, { docEntry }));
+
+  // Get HSN codes for items
+  const itemCodes = lineRows.map(l => l.ItemCode).filter(Boolean);
+  let itemHsnMap = {};
+  
+  if (itemCodes.length > 0) {
+    try {
+      const hsnRows = await safe(db.query(`
+        SELECT ItemCode, SWW AS HSNCode
+        FROM OITM
+        WHERE ItemCode IN (${itemCodes.map((_, i) => `@item${i}`).join(',')})
+      `, itemCodes.reduce((acc, code, i) => ({ ...acc, [`item${i}`]: code }), {})));
+      
+      itemHsnMap = hsnRows.reduce((acc, row) => {
+        acc[row.ItemCode] = row.HSNCode || '';
+        return acc;
+      }, {});
+    } catch (err) {
+      // Could not fetch HSN codes
+    }
+  }
+
+  const result = {
+    purchase_quotation: {
+      doc_entry: header.DocEntry,
+      doc_num: header.DocNum,
+      header: {
+        vendor: header.CardCode,
+        name: header.CardName,
+        contactPerson: header.ContactPersonCode ? String(header.ContactPersonCode) : '',
+        salesContractNo: header.VendorRefNo || '',
+        branch: header.Branch ? String(header.Branch) : '',
+        docNo: header.DocNum ? String(header.DocNum) : '',
+        status: header.DocumentStatus || 'Open',
+        series: header.Series ? String(header.Series) : '',
+        postingDate: header.PostingDate ? header.PostingDate.toISOString().split('T')[0] : '',
+        deliveryDate: header.DeliveryDate ? header.DeliveryDate.toISOString().split('T')[0] : '',
+        documentDate: header.DocumentDate ? header.DocumentDate.toISOString().split('T')[0] : '',
+        confirmed: header.Confirmed === 'Y',
+        journalRemark: header.JournalRemark || '',
+        paymentTerms: header.PaymentTerms ? String(header.PaymentTerms) : '',
+        otherInstruction: header.Remarks || '',
+        discount: header.DiscountPercent != null ? String(header.DiscountPercent) : '',
+        freight: header.Freight != null ? String(header.Freight) : '',
+        tax: header.Tax != null ? String(header.Tax) : '',
+        totalPaymentDue: header.TotalPaymentDue != null ? String(header.TotalPaymentDue) : '',
+      },
+      lines: lineRows.map(l => ({
+        itemNo: l.ItemCode || '',
+        itemDescription: l.ItemDescription || '',
+        hsnCode: itemHsnMap[l.ItemCode] || '',
+        quantity: l.Quantity != null ? String(l.Quantity) : '',
+        unitPrice: l.UnitPrice != null ? String(l.UnitPrice) : '',
+        stdDiscount: l.DiscountPercent != null ? String(l.DiscountPercent) : '',
+        taxCode: l.TaxCode || '',
+        total: l.LineTotal != null ? String(l.LineTotal) : '',
+        whse: l.Warehouse || '',
+        uomCode: l.UoMCode || '',
+        udf: {},
+      })),
+      header_udfs: {},
+    }
+  };
+
+  return result;
+};
+
+const getOpenPurchaseQuotations = async (vendorCode = null) => {
+  const result = await safe(db.query(`
+    SELECT TOP 200
+      T0.DocEntry,
+      T0.DocNum,
+      T0.DocDate,
+      T0.DocDueDate,
+      T0.CardCode,
+      T0.CardName,
+      T0.Comments,
+      T0.DocTotal
+    FROM OPQT T0
+    WHERE T0.DocStatus = 'O'
+      AND T0.CANCELED <> 'Y'
+      AND (@vendorCode IS NULL OR T0.CardCode = @vendorCode)
+    ORDER BY T0.DocDate DESC, T0.DocNum DESC
+  `, { vendorCode }));
+
+  return result;
+};
+
+const getPurchaseQuotationForCopy = async (docEntry) => {
+  const headerRows = await safe(db.query(`
+    SELECT
+      T0.DocEntry,
+      T0.DocNum,
+      T0.DocDate,
+      T0.DocDueDate,
+      T0.TaxDate,
+      T0.CardCode,
+      T0.CardName,
+      T0.CntctCode,
+      T0.NumAtCard,
+      T0.Comments,
+      T0.BPLId AS BPLId,
+      T0.BPLId AS BPL_IDAssignedToInvoice,
+      T0.GroupNum,
+      T0.DiscPrcnt,
+      T0.TotalExpns AS Freight
+    FROM OPQT T0
+    WHERE T0.DocEntry = @docEntry
+  `, { docEntry }));
+
+  if (!headerRows.length) {
+    throw new Error(`Purchase Quotation ${docEntry} not found`);
+  }
+
+  const lineRows = await safe(db.query(`
+    SELECT
+      T0.LineNum,
+      T0.ItemCode,
+      T0.Dscription AS ItemDescription,
+      T0.OpenQty AS Quantity,
+      T0.Price AS UnitPrice,
+      T0.DiscPrcnt AS DiscountPercent,
+      T0.WhsCode AS WarehouseCode,
+      T0.TaxCode,
+      T0.unitMsr AS UomCode,
+      CHP.ChapterID AS HSNCode,
+      T0.DocEntry AS BaseEntry,
+      T0.LineNum AS BaseLine,
+      540000006 AS BaseType
+    FROM PQT1 T0
+    LEFT JOIN OITM ITM ON T0.ItemCode = ITM.ItemCode
+    LEFT JOIN OCHP CHP ON ITM.ChapterID = CHP.AbsEntry
+    WHERE T0.DocEntry = @docEntry
+      AND T0.LineStatus = 'O'
+      AND T0.OpenQty > 0
+    ORDER BY T0.LineNum
+  `, { docEntry }));
+
+  return { ...headerRows[0], DocumentLines: lineRows };
+};
+
+// ── DOCUMENT SERIES ───────────────────────────────────────────────────────────
+
+const getDocumentSeries = async () => {
+  const result = await safe(db.query(`
+    SELECT 
+      T0.Series,
+      T0.SeriesName,
+      T0.Indicator,
+      T0.NextNumber
+    FROM NNM1 T0
+    WHERE T0.ObjectCode = '540000006'
+      AND T0.Locked = 'N'
+    ORDER BY T0.SeriesName
+  `));
+
+  return { series: result };
+};
+
+const getNextNumber = async (series) => {
+  const result = await safe(db.query(`
+    SELECT NextNumber
+    FROM NNM1
+    WHERE Series = @series
+      AND ObjectCode = '540000006'
+  `, { series }));
+
+  if (result.length > 0) {
+    return { nextNumber: result[0].NextNumber };
+  }
+
+  return { nextNumber: null };
+};
+
+// ── STATE FROM ADDRESS ────────────────────────────────────────────────────────
+
+const getStateFromAddress = async (vendorCode, addressCode) => {
+  const result = await safe(db.query(`
+    SELECT State
+    FROM CRD1
+    WHERE CardCode = @vendorCode
+      AND Address = @addressCode
+  `, { vendorCode, addressCode }));
+
+  if (result.length > 0) {
+    return { state: result[0].State || '' };
+  }
+
+  return { state: '' };
+};
+
+const getStateFromWarehouse = async (whsCode) => {
+  const result = await safe(db.query(`
+    SELECT State
+    FROM OWHS
+    WHERE WhsCode = @whsCode
+  `, { whsCode }));
+
+  if (result.length > 0) {
+    return { state: result[0].State || '' };
+  }
+
+  return { state: '' };
+};
+
+// ── MAIN REFERENCE DATA FUNCTION ──────────────────────────────────────────────
+
+const getReferenceData = async () => {
+  const [
+    vendors,
+    items,
+    warehouses,
+    paymentTerms,
+    shippingTypes,
+    branches,
+    states,
+    taxCodes,
+    uomGroupsRaw,
+    decimalRows,
+    companyRows,
+  ] = await Promise.all([
+    getVendors(),
+    getItems(),
+    getWarehouses(),
+    getPaymentTerms(),
+    getShippingTypes(),
+    getBranches(),
+    getStates(),
+    getTaxCodes(),
+    getUomGroups(),
+    getDecimalSettings(),
+    getCompanyInfo(),
+  ]);
+
+  // Process UOM groups
+  const uomGroupMap = {};
+  uomGroupsRaw.forEach(row => {
+    if (!uomGroupMap[row.AbsEntry]) {
+      uomGroupMap[row.AbsEntry] = {
+        AbsEntry: row.AbsEntry,
+        Name: row.Name,
+        uomCodes: []
+      };
+    }
+    if (row.UomCode) {
+      uomGroupMap[row.AbsEntry].uomCodes.push(row.UomCode);
+    }
+  });
+  const uom_groups = Object.values(uomGroupMap);
+
+  // Decimal settings
+  const decimalSettings = decimalRows.length > 0 ? {
+    QtyDec: decimalRows[0].QtyDec || 2,
+    PriceDec: decimalRows[0].PriceDec || 2,
+    SumDec: decimalRows[0].SumDec || 2,
+    RateDec: decimalRows[0].RateDec || 2,
+    PercentDec: decimalRows[0].PercentDec || 2,
+  } : {
+    QtyDec: 2,
+    PriceDec: 2,
+    SumDec: 2,
+    RateDec: 2,
+    PercentDec: 2,
+  };
+
+  // Company info
+  const companyInfo = companyRows.length > 0 ? {
+    name: companyRows[0].CompnyName || 'SAP B1',
+    address: companyRows[0].Address || '',
+    state: companyRows[0].State || '',
+  } : {
+    name: 'SAP B1',
+    address: '',
+    state: '',
+  };
+
+  return {
+    company: companyInfo.name,
+    company_state: companyInfo.state,
+    vendors,
+    contacts: [],
+    pay_to_addresses: [],
+    items,
+    warehouses,
+    warehouse_addresses: warehouses,
+    company_address: { State: companyInfo.state },
+    tax_codes: taxCodes,
+    payment_terms: paymentTerms,
+    shipping_types: shippingTypes,
+    branches,
+    states,
+    uom_groups,
+    decimal_settings: decimalSettings,
+    warnings: [],
+  };
+};
+
+// ── VENDOR DETAILS ────────────────────────────────────────────────────────────
+
+const getVendorDetails = async (vendorCode) => {
+  if (!vendorCode) {
+    return {
+      contacts: [],
+      pay_to_addresses: [],
+    };
+  }
+
+  const [contacts, addresses] = await Promise.all([
+    getContactsByVendor(vendorCode),
+    getAddressesByVendor(vendorCode),
+  ]);
+
+  // Filter pay-to addresses (Bill To)
+  const payToAddresses = addresses.filter(a => 
+    a.AdresType === 'B' || a.AdresType === 'bo_BillTo'
+  );
+
+  return {
+    contacts,
+    pay_to_addresses: payToAddresses,
+  };
+};
+
+// ── EXPORTS ───────────────────────────────────────────────────────────────────
+
+module.exports = {
+  getReferenceData,
+  getVendorDetails,
+  getPurchaseQuotationList,
+  getPurchaseQuotation,
+  getOpenPurchaseQuotations,
+  getPurchaseQuotationForCopy,
+  getDocumentSeries,
+  getNextNumber,
+  getStateFromAddress,
+  getStateFromWarehouse,
+};

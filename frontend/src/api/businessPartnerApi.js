@@ -1,0 +1,17 @@
+import apiClient from "./client";
+
+const BASE = "/business-partners";
+
+export const createBP  = (data)           => apiClient.post(`${BASE}/create`, data).then((r) => r.data);
+export const getBP     = (cardCode)       => apiClient.get(`${BASE}/${encodeURIComponent(cardCode)}`).then((r) => r.data);
+export const updateBP  = (cardCode, data) => apiClient.patch(`${BASE}/${encodeURIComponent(cardCode)}`, data).then((r) => r.data);
+export const searchBP  = (query = "", type = "", top = 50, skip = 0) =>
+  apiClient.get(`${BASE}/search`, { params: { query, type, top, skip } }).then((r) => r.data);
+
+export const fetchBPGroups      = (query = "") => apiClient.get(`${BASE}/lookup/groups`,        { params: { query } }).then((r) => r.data);
+export const fetchPaymentTerms  = (query = "") => apiClient.get(`${BASE}/lookup/payment-terms`, { params: { query } }).then((r) => r.data);
+export const fetchSalesPersons  = (query = "") => apiClient.get(`${BASE}/lookup/sales-persons`, { params: { query } }).then((r) => r.data);
+export const fetchBPPriceLists  = (query = "") => apiClient.get(`${BASE}/lookup/price-lists`,   { params: { query } }).then((r) => r.data);
+export const fetchCurrencies    = (query = "") => apiClient.get(`${BASE}/lookup/currencies`,    { params: { query } }).then((r) => r.data);
+export const fetchNumberingSeries = (bpType = "") => apiClient.get(`${BASE}/lookup/series`, { params: { bpType } }).then((r) => r.data);
+export const getNextSeriesNumber = (series) => apiClient.get(`${BASE}/lookup/series/${series}/next`).then((r) => r.data);

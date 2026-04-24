@@ -1,0 +1,58 @@
+import apiClient from './client';
+
+const fetchSalesQuotationReferenceData = (companyId) =>
+  apiClient.get('/sales-quotation/reference-data', {
+    params: { company_id: companyId },
+  });
+
+const fetchSalesQuotationCustomerDetails = (customerCode) =>
+  apiClient.get(`/sales-quotation/customers/${encodeURIComponent(customerCode)}`);
+
+const fetchSalesQuotations = () =>
+  apiClient.get('/sales-quotation/list');
+
+const fetchSalesQuotationByDocEntry = (docEntry) =>
+  apiClient.get(`/sales-quotation/${encodeURIComponent(docEntry)}`);
+
+const submitSalesQuotation = (payload) =>
+  apiClient.post('/sales-quotation', payload);
+
+const updateSalesQuotation = (docEntry, payload) =>
+  apiClient.patch(`/sales-quotation/${encodeURIComponent(docEntry)}`, payload);
+
+const fetchDocumentSeries = () =>
+  apiClient.get('/sales-quotation/series');
+
+const fetchNextNumber = (series) =>
+  apiClient.get(`/sales-quotation/series/next?series=${series}`);
+
+const fetchStateFromAddress = (cardCode, addressCode) =>
+  apiClient.get(`/sales-quotation/state-from-address?cardCode=${encodeURIComponent(cardCode)}&addressCode=${encodeURIComponent(addressCode)}`);
+
+const fetchItemsForModal = () =>
+  apiClient.get('/sales-quotation/items-modal');
+
+const fetchFreightCharges = (docEntry) =>
+  apiClient.get('/sales-quotation/freight-charges', { params: { docEntry } });
+
+const fetchOpenSalesQuotations = () =>
+  apiClient.get('/sales-quotation/open');
+
+const fetchSalesQuotationForCopy = (docEntry) =>
+  apiClient.get(`/sales-quotation/${encodeURIComponent(docEntry)}/copy`);
+
+export {
+  fetchSalesQuotationReferenceData,
+  fetchSalesQuotationCustomerDetails,
+  fetchSalesQuotations,
+  fetchSalesQuotationByDocEntry,
+  submitSalesQuotation,
+  updateSalesQuotation,
+  fetchDocumentSeries,
+  fetchNextNumber,
+  fetchStateFromAddress,
+  fetchItemsForModal,
+  fetchFreightCharges,
+  fetchOpenSalesQuotations,
+  fetchSalesQuotationForCopy,
+};
