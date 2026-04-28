@@ -89,6 +89,41 @@ const getHSNCode = async (code) => {
   };
 };
 
+const resolveHSNCodeToAbsEntry = async (value) => {
+  if (value == null) {
+    return null;
+  }
+
+  const raw = String(value).trim();
+  if (!raw || raw === '-1') {
+    return null;
+  }
+
+  let result = await safe(db.query(`
+    SELECT TOP 1 AbsEntry
+    FROM OCHP
+    WHERE ChapterID = @code
+  `, { code: raw }));
+
+  if (result.length > 0 && result[0].AbsEntry != null) {
+    return Number(result[0].AbsEntry);
+  }
+
+  if (/^\d+$/.test(raw)) {
+    result = await safe(db.query(`
+      SELECT TOP 1 AbsEntry
+      FROM OCHP
+      WHERE AbsEntry = @absEntry
+    `, { absEntry: Number(raw) }));
+
+    if (result.length > 0 && result[0].AbsEntry != null) {
+      return Number(result[0].AbsEntry);
+    }
+  }
+
+  return null;
+};
+
 /**
  * Get HSN Code from Item Master (OITM table) with OCHP join
  * Returns ChapterID from OCHP table based on Item's ChapterID reference
@@ -132,4 +167,5 @@ module.exports = {
   getHSNCodes,
   getHSNCode,
   getHSNCodeFromItem,
+  resolveHSNCodeToAbsEntry,
 };

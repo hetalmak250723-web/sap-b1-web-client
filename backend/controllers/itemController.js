@@ -1,11 +1,40 @@
 const itemService = require("../services/itemService");
+const hsnCodeDbService = require("../services/hsnCodeDbService");
 const path = require("path");
 const fs   = require("fs");
 
 // ── CRUD ──────────────────────────────────────────────────────────────────────
 
+const normalizeGSTChapterID = async (data) => {
+  if (!Object.prototype.hasOwnProperty.call(data, "ChapterID")) {
+    return { ok: true };
+  }
+
+  const rawChapterID = String(data.ChapterID ?? "").trim();
+  if (!rawChapterID || rawChapterID === "-1") {
+    data.ChapterID = "";
+    return { ok: true };
+  }
+
+  const absEntry = await hsnCodeDbService.resolveHSNCodeToAbsEntry(rawChapterID);
+  if (absEntry == null) {
+    return {
+      ok: false,
+      message: "Invalid HSN/SAC Code. Select a valid code from the list.",
+    };
+  }
+
+  data.ChapterID = absEntry;
+  return { ok: true };
+};
+
 const createItem = async (req, res) => {
   const data = req.body;
+
+  const hsnNormalization = await normalizeGSTChapterID(data);
+  if (!hsnNormalization.ok) {
+    return res.status(400).json({ message: hsnNormalization.message });
+  }
   
   // === Basic Required Fields ===
   if (!data.ItemCode || !data.ItemCode.trim()) {
@@ -47,9 +76,6 @@ const createItem = async (req, res) => {
   if (data.InventoryItem === 'tYES') {
     if (!data.DefaultWarehouse || data.DefaultWarehouse === "") {
       return res.status(400).json({ message: "Default Warehouse is required for inventory items." });
-    }
-    if (!data.CostAccountingMethod) {
-      data.CostAccountingMethod = "bis_MovingAverage"; // Default
     }
   }
   
@@ -222,6 +248,11 @@ const getItem = async (req, res) => {
 const updateItem = async (req, res) => {
   const { itemCode } = req.params;
   const data = req.body;
+
+  const hsnNormalization = await normalizeGSTChapterID(data);
+  if (!hsnNormalization.ok) {
+    return res.status(400).json({ message: hsnNormalization.message });
+  }
   
   // === Basic Required Fields ===
   if (!data.ItemName || !data.ItemName.trim()) {

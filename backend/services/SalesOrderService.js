@@ -287,6 +287,10 @@ const buildDocumentLinePayload = async (line = {}, context = {}) => {
     TaxCode: toRequiredString(line.taxCode, 'IGST5'),
   };
 
+  if (context.includeLineNum && line.lineNum != null && line.lineNum !== '') {
+    documentLine.LineNum = Number(line.lineNum);
+  }
+
   const resolvedUomEntry = await salesOrderDb.resolveSalesOrderLineUomEntry(
     documentLine.ItemCode,
     line.uomEntry ?? line.UoMEntry ?? line.uomCode,
@@ -337,10 +341,12 @@ const buildDocumentLinePayload = async (line = {}, context = {}) => {
   return documentLine;
 };
 
-const buildDocumentLinesPayload = async (lines = []) => {
+const buildDocumentLinesPayload = async (lines = [], includeLineNum = false) => {
   const rdr1FieldMetadata = await salesOrderDb.getSalesOrderLineFieldMetadata();
 
-  return Promise.all((lines || []).map((line) => buildDocumentLinePayload(line, { rdr1FieldMetadata })));
+  return Promise.all(
+    (lines || []).map((line) => buildDocumentLinePayload(line, { rdr1FieldMetadata, includeLineNum }))
+  );
 };
 
 // ───────── REFERENCE DATA (USING ODBC) ─────────
@@ -645,7 +651,7 @@ const updateSalesOrder = async (docEntry, payload) => {
     const Remarks = payload.header.otherInstruction || payload.header.remarks || '';
     const Freight = Number(payload.header.freight) || 0;
     const documentAdditionalExpenses = buildDocumentAdditionalExpenses(payload.freightCharges);
-    const documentLines = await buildDocumentLinesPayload(payload.lines);
+    const documentLines = await buildDocumentLinesPayload(payload.lines, true);
 
     console.log("═══════════════════════════════════════════════════");
     console.log("🔥 FINAL CONVERTED VALUES:");

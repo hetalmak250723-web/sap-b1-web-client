@@ -1,6 +1,43 @@
 const sapService = require("../services/sapService");
 const masterDataDbService = require("../services/masterDataDbService");
 
+const enrichBP = async (bp) => {
+  if (!bp || !bp.CardCode) return bp;
+
+  const [
+    paymentTerms,
+    priceList,
+    creditCard,
+    bank,
+    country,
+  ] = await Promise.all([
+    bp.PayTermsGrpCode != null && bp.PayTermsGrpCode !== "" && Number(bp.PayTermsGrpCode) >= 0
+      ? masterDataDbService.getPaymentTerms(bp.PayTermsGrpCode).catch(() => null)
+      : Promise.resolve(null),
+    bp.PriceListNum != null && bp.PriceListNum !== "" && Number(bp.PriceListNum) >= 0
+      ? masterDataDbService.getPriceList(bp.PriceListNum).catch(() => null)
+      : Promise.resolve(null),
+    bp.CreditCardCode != null && bp.CreditCardCode !== "" && Number(bp.CreditCardCode) >= 0
+      ? masterDataDbService.getCreditCardByCode(bp.CreditCardCode).catch(() => null)
+      : Promise.resolve(null),
+    bp.BPBankAccounts?.[0]?.BankCode
+      ? masterDataDbService.getBankByCode(bp.BPBankAccounts[0].BankCode, bp.BPBankAccounts[0].Country).catch(() => null)
+      : Promise.resolve(null),
+    bp.BPBankAccounts?.[0]?.Country
+      ? masterDataDbService.getCountryByCode(bp.BPBankAccounts[0].Country).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    ...bp,
+    PayTermsName: paymentTerms?.PaymentTermsGroupName || bp.PayTermsName || "",
+    PriceListName: priceList?.PriceListName || bp.PriceListName || "",
+    CreditCardName: creditCard?.name || bp.CreditCardName || "",
+    PaymentBankName: bank?.name || bp.PaymentBankName || "",
+    PaymentBankCountryName: country?.name || bank?.countryName || bp.PaymentBankCountryName || "",
+  };
+};
+
 const createBP = async (req, res) => {
   const data = req.body;
   if (!data.CardName) return res.status(400).json({ message: "CardName is required." });
@@ -21,6 +58,10 @@ const createBP = async (req, res) => {
       data.CardCode = next.formattedCode;
     }
 
+    if (isManual) {
+      delete data.Series;
+    }
+
     const result = await sapService.createItem_generic("/BusinessPartners", data);
     res.status(201).json(result);
   } catch (err) {
@@ -35,11 +76,14 @@ const createBP = async (req, res) => {
 
 const getBP = async (req, res) => {
   try {
-    const row = await masterDataDbService.getBP(req.params.cardCode);
-    if (!row) return res.status(404).json({ message: "Business Partner not found." });
-    res.json(row);
+    const response = await sapService.request({
+      method: "GET",
+      url: `/BusinessPartners('${encodeURIComponent(req.params.cardCode)}')`,
+    });
+    res.json(await enrichBP(response.data));
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    const msg = err.response?.data?.error?.message?.value || err.message;
+    res.status(err.response?.status || 500).json({ message: msg });
   }
 };
 
@@ -51,8 +95,11 @@ const updateBP = async (req, res) => {
       url: `/BusinessPartners('${encodeURIComponent(cardCode)}')`,
       data: req.body,
     });
-    const row = await masterDataDbService.getBP(cardCode);
-    res.json(row || { CardCode: cardCode });
+    const response = await sapService.request({
+      method: "GET",
+      url: `/BusinessPartners('${encodeURIComponent(cardCode)}')`,
+    });
+    res.json(await enrichBP(response.data));
   } catch (err) {
     const msg = err.response?.data?.error?.message?.value || err.message;
     console.error("[SAP updateBP error]", msg, JSON.stringify(err.response?.data));
@@ -109,6 +156,74 @@ const lookupPriceLists = async (req, res) => {
 const lookupCurrencies = async (req, res) => {
   try {
     const rows = await masterDataDbService.lookupCurrencies(req.query.query || "");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const lookupCountries = async (req, res) => {
+  try {
+    const rows = await masterDataDbService.lookupCountries(req.query.query || "");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const lookupCreditCards = async (req, res) => {
+  try {
+    const rows = await masterDataDbService.lookupCreditCards(req.query.query || "");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const createCreditCard = async (req, res) => {
+  try {
+    const CreditCardName = String(req.body.CreditCardName || "").trim();
+    if (!CreditCardName) {
+      return res.status(400).json({ message: "Credit Card Name is required." });
+    }
+
+    const nextCode = req.body.CreditCardCode != null && req.body.CreditCardCode !== ""
+      ? Number(req.body.CreditCardCode)
+      : await masterDataDbService.getNextCreditCardCode();
+
+    const payload = {
+      CreditCardCode: nextCode,
+      CreditCardName,
+    };
+
+    if (req.body.GLAccount) payload.GLAccount = String(req.body.GLAccount).trim();
+    if (req.body.Telephone) payload.Telephone = String(req.body.Telephone).trim();
+    if (req.body.CompanyID) payload.CompanyID = String(req.body.CompanyID).trim();
+    if (req.body.CountryCode) payload.CountryCode = String(req.body.CountryCode).trim();
+
+    const response = await sapService.request({
+      method: "POST",
+      url: "/CreditCards",
+      data: payload,
+    });
+
+    res.status(201).json({
+      code: String(response.data?.CreditCardCode ?? nextCode),
+      name: response.data?.CreditCardName || CreditCardName,
+      glAccount: response.data?.GLAccount || payload.GLAccount || "",
+      telephone: response.data?.Telephone || payload.Telephone || "",
+      companyId: response.data?.CompanyID || payload.CompanyID || "",
+      country: response.data?.CountryCode || payload.CountryCode || "",
+    });
+  } catch (err) {
+    const msg = err.response?.data?.error?.message?.value || err.message;
+    res.status(err.response?.status || 500).json({ message: msg });
+  }
+};
+
+const lookupBanks = async (req, res) => {
+  try {
+    const rows = await masterDataDbService.lookupBanks(req.query.query || "", req.query.country || "");
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -184,6 +299,10 @@ module.exports = {
   lookupSalesPersons,
   lookupPriceLists,
   lookupCurrencies,
+  lookupCountries,
+  lookupCreditCards,
+  createCreditCard,
+  lookupBanks,
   lookupNumberingSeries,
   getNextNumber,
 };

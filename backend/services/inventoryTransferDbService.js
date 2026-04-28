@@ -76,6 +76,7 @@ const getWarehouses = async () =>
       SELECT
         WhsCode,
         WhsName,
+        City,
         BPLId AS BranchId
       FROM OWHS
       WHERE ISNULL(Inactive, 'N') <> 'Y'
@@ -85,6 +86,7 @@ const getWarehouses = async () =>
     rows.map((row) => ({
       whsCode: row.WhsCode,
       whsName: row.WhsName,
+      city: row.City || '',
       branchId: row.BranchId != null ? String(row.BranchId) : '',
     }))
   );

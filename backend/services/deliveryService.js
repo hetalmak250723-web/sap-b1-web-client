@@ -104,7 +104,7 @@ const setValidatedDeliveryField = (target, fieldMetadata, fieldName, value) => {
   }
 };
 
-const buildDocumentLinePayload = (line = {}, fieldMetadata = {}, includeLineNum = false) => {
+const buildDocumentLinePayload = async (line = {}, fieldMetadata = {}, includeLineNum = false) => {
   const documentLine = {
     Quantity: toRequiredNumber(line.quantity, 0),
     WarehouseCode: toRequiredString(line.whse, ''),
@@ -122,10 +122,16 @@ const buildDocumentLinePayload = (line = {}, fieldMetadata = {}, includeLineNum 
   } else {
     documentLine.ItemCode = toRequiredString(line.itemNo, '');
     documentLine.Price = toRequiredNumber(line.unitPrice, 0);
+  }
 
-    if (hasValue(line.uomCode)) {
-      documentLine.UoMCode = String(line.uomCode).trim();
-    }
+  const resolvedUomEntry = await deliveryDb.resolveDeliveryLineUomEntry(
+    line.itemNo,
+    line.uomEntry ?? line.UoMEntry ?? line.uomCode,
+  );
+  if (resolvedUomEntry !== null && resolvedUomEntry !== undefined) {
+    documentLine.UoMEntry = resolvedUomEntry;
+  } else if (hasValue(line.uomCode)) {
+    documentLine.UoMCode = String(line.uomCode).trim();
   }
 
   if (hasValue(line.taxCode)) {
@@ -164,9 +170,10 @@ const buildDocumentLinePayload = (line = {}, fieldMetadata = {}, includeLineNum 
 const buildDocumentLinesPayload = async (lines = [], includeLineNum = false) => {
   const dln1FieldMetadata = await deliveryDb.getDeliveryLineFieldMetadata();
 
-  return (lines || [])
-    .filter((line) => hasValue(line.itemNo))
-    .map((line) => buildDocumentLinePayload(line, dln1FieldMetadata, includeLineNum));
+  const sourceLines = (lines || []).filter((line) => hasValue(line.itemNo));
+  return Promise.all(
+    sourceLines.map((line) => buildDocumentLinePayload(line, dln1FieldMetadata, includeLineNum))
+  );
 };
 
 // ───────── REFERENCE DATA (USING ODBC) ─────────

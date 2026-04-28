@@ -824,7 +824,34 @@ const getSalesOrderList = async () => {
 
 // ── single sales order ────────────────────────────────────────────────────────
 
+const resolveSalesOrderDocEntry = async (identifier) => {
+  const normalizedIdentifier = Number(identifier);
+  if (!Number.isFinite(normalizedIdentifier)) {
+    throw new Error(`Invalid Sales Order identifier: ${identifier}`);
+  }
+
+  const rows = await safe(db.query(`
+    SELECT TOP 1 DocEntry, DocNum
+    FROM ORDR
+    WHERE DocEntry = @DocEntry
+       OR DocNum = @DocNum
+    ORDER BY CASE WHEN DocEntry = @DocEntry THEN 0 ELSE 1 END, DocEntry
+  `, {
+    DocEntry: normalizedIdentifier,
+    DocNum: normalizedIdentifier,
+  }));
+
+  return rows[0] || null;
+};
+
 const getSalesOrder = async (docEntry) => {
+  const resolvedDocument = await resolveSalesOrderDocEntry(docEntry);
+  if (!resolvedDocument) {
+    throw new Error(`Sales Order ${docEntry} not found`);
+  }
+
+  const resolvedDocEntry = resolvedDocument.DocEntry;
+
   // ✅ Get complete header and line data with Place of Supply and HSN Code
   let rows = await safe(db.query(`
    SELECT 
@@ -880,16 +907,43 @@ const getSalesOrder = async (docEntry) => {
     T1.Quantity,
     T1.Price,
     T1.DiscPrcnt AS LineDiscPrcnt,
-    T1.VatGroup AS TaxCode,
+    T1.TaxCode AS TaxCode,
     T1.WhsCode,
     T1.unitMsr AS UomCode,
     T1.OcrCode AS DistributionRule,
-    T1.FreeTxt AS FreeText,
+    T1.FreeTxt AS [FreeText],
     T1.CountryOrg AS CountryOfOrigin,
     T1.OpenQty AS OpenQuantity,
     CAST((ISNULL(T1.Quantity, 0) - ISNULL(T1.OpenQty, 0)) AS DECIMAL(19, 6)) AS DeliveredQuantity,
     ISNULL(T1.VatSum, 0) AS LineTaxAmount,
     T1.LineTotal,
+    T1.U_SPLRBT AS SpecialRebate,
+    T1.U_COMPRC AS Commission,
+    T1.U_S_BrokPerQty AS SellerBrokeragePerQty,
+    T1.U_Unit_Price AS UnitPriceUdf,
+    T1.U_Brok_Seller AS SellerBrokerage,
+    T1.U_Brok_Buyer AS BuyerBrokerage,
+    T1.U_Buyer_Delivery AS BuyerDelivery,
+    T1.U_Seller_Delivery AS SellerDelivery,
+    T1.U_Buyer_Payment_Terms AS BuyerPaymentTerms,
+    T1.U_Buyer_Quality AS BuyerQuality,
+    T1.U_Seller_Quality AS SellerQuality,
+    T1.U_Buyer_Price AS BuyerPrice,
+    T1.U_Seller_Price AS SellerPrice,
+    T1.U_Buyer_SPINS AS BuyerSpecialInstruction,
+    T1.U_Seller_SPINS AS SellerSpecialInstruction,
+    T1.U_Sel_Brok_AP AS SellerBrokerageAmtPer,
+    T1.U_Seller_Brok_Per AS SellerBrokeragePercent,
+    T1.U_Buyer_Bill_Disc AS BuyerBillDiscount,
+    T1.U_Seller_Bill_Disc AS SellerBillDiscount,
+    T1.U_SELLTCODE AS STCODE,
+    T1.U_S_Item AS SellerItem,
+    T1.U_S_Qty AS SellerQty,
+    T1.U_Freight_pur AS FreightPurchase,
+    T1.U_Freight_sales AS FreightSales,
+    T1.U_Fr_trans AS FreightProvider,
+    T1.U_Fr_trans_name AS FreightProviderName,
+    T1.U_BDNum AS BrokerageNumber,
 
     -- 🔹 HSN
     CHP.ChapterID AS HSNCode
@@ -925,9 +979,9 @@ LEFT JOIN OCHP CHP ON CHP.AbsEntry = ITM.ChapterID
 WHERE T0.DocEntry = @DocEntry
 
 ORDER BY T1.LineNum
-  `, { docEntry }));
+  `, { DocEntry: resolvedDocEntry }));
 
-  console.log('🔍 [Backend] Query returned', rows.length, 'rows for DocEntry', docEntry);
+  console.log('🔍 [Backend] Query returned', rows.length, 'rows for requested identifier', docEntry, 'resolved DocEntry', resolvedDocEntry);
 
   if (!rows.length) {
     throw new Error(`Sales Order ${docEntry} not found`);
@@ -942,8 +996,8 @@ ORDER BY T1.LineNum
     const udfRows = await db.query(`
       SELECT U_LoadPortRemark, U_InspectionReq, U_SupplierRefDate, U_PaymentAdvice
       FROM   ORDR
-      WHERE  DocEntry = @docEntry
-    `, { docEntry });
+      WHERE  DocEntry = @DocEntry
+    `, { DocEntry: resolvedDocEntry });
     if (udfRows.recordset && udfRows.recordset.length > 0) {
       const udf = udfRows.recordset[0];
       headerUdfs = {
@@ -998,8 +1052,8 @@ ORDER BY T1.LineNum
         U_Fr_trans_name,
         U_BDNum
       FROM   RDR1
-      WHERE  DocEntry = @docEntry
-    `, { docEntry });
+      WHERE  DocEntry = @DocEntry
+    `, { DocEntry: resolvedDocEntry });
     if (udfLineRows.recordset) {
       udfLineRows.recordset.forEach(row => {
         lineUdfs[row.LineNum] = {
@@ -1045,10 +1099,10 @@ ORDER BY T1.LineNum
   const batchRows = await safe(db.query(`
     SELECT BaseLineNum, BatchNum, Quantity
     FROM   IBT1
-    WHERE  BaseEntry = @docEntry
+    WHERE  BaseEntry = @DocEntry
       AND  BaseType = 17
     ORDER  BY BaseLineNum, BatchNum
-  `, { docEntry }));
+  `, { DocEntry: resolvedDocEntry }));
 
   // Group batches by line number
   const batchesByLine = {};
@@ -1107,38 +1161,39 @@ ORDER BY T1.LineNum
         console.log('🔍 [Backend] Processing line:', line.LineNum, 'Item:', line.ItemCode, 'HSN:', hsnCode);
         
         return {
+          lineNum: line.LineNum != null ? Number(line.LineNum) : undefined,
           itemNo: line.ItemCode,
           itemDescription: line.Dscription || '',
           hsnCode: hsnCode,
           quantity: String(line.Quantity || 0),
           unitPrice: String(line.Price || 0),
-          unitPriceUdf: lineUdf.U_Unit_Price != null && lineUdf.U_Unit_Price !== '' ? String(lineUdf.U_Unit_Price) : String(line.Price || 0),
-          sellerQuality: lineUdf.U_Seller_Quality || '',
-          buyerQuality: lineUdf.U_Buyer_Quality || '',
-          sellerPrice: lineUdf.U_Seller_Price || '',
-          buyerPrice: lineUdf.U_Buyer_Price || '',
-          sellerDelivery: lineUdf.U_Seller_Delivery || '',
-          buyerDelivery: lineUdf.U_Buyer_Delivery || '',
-          sellerBrokerageAmtPer: lineUdf.U_Sel_Brok_AP || '',
-          sellerBrokeragePercent: lineUdf.U_Seller_Brok_Per != null ? String(lineUdf.U_Seller_Brok_Per) : '',
-          sellerBrokerage: lineUdf.U_Brok_Seller != null ? String(lineUdf.U_Brok_Seller) : '',
-          buyerBrokerage: lineUdf.U_Brok_Buyer != null ? String(lineUdf.U_Brok_Buyer) : '',
-          stcode: lineUdf.U_SELLTCODE || '',
-          specialRebate: lineUdf.U_SPLRBT != null ? String(lineUdf.U_SPLRBT) : '',
-          commission: lineUdf.U_COMPRC != null ? String(lineUdf.U_COMPRC) : '',
-          sellerBrokeragePerQty: lineUdf.U_S_BrokPerQty != null ? String(lineUdf.U_S_BrokPerQty) : '',
-          buyerPaymentTerms: lineUdf.U_Buyer_Payment_Terms || '',
-          buyerSpecialInstruction: lineUdf.U_Buyer_SPINS || '',
-          sellerSpecialInstruction: lineUdf.U_Seller_SPINS || '',
-          buyerBillDiscount: lineUdf.U_Buyer_Bill_Disc != null ? String(lineUdf.U_Buyer_Bill_Disc) : '',
-          sellerBillDiscount: lineUdf.U_Seller_Bill_Disc != null ? String(lineUdf.U_Seller_Bill_Disc) : '',
-          sellerItem: lineUdf.U_S_Item || '',
-          sellerQty: lineUdf.U_S_Qty != null ? String(lineUdf.U_S_Qty) : '',
-          freightPurchase: lineUdf.U_Freight_pur != null ? String(lineUdf.U_Freight_pur) : '',
-          freightSales: lineUdf.U_Freight_sales != null ? String(lineUdf.U_Freight_sales) : '',
-          freightProvider: lineUdf.U_Fr_trans || '',
-          freightProviderName: lineUdf.U_Fr_trans_name || '',
-          brokerageNumber: lineUdf.U_BDNum || '',
+          unitPriceUdf: lineUdf.U_Unit_Price != null && lineUdf.U_Unit_Price !== '' ? String(lineUdf.U_Unit_Price) : (line.UnitPriceUdf != null && line.UnitPriceUdf !== '' ? String(line.UnitPriceUdf) : String(line.Price || 0)),
+          sellerQuality: lineUdf.U_Seller_Quality || line.SellerQuality || '',
+          buyerQuality: lineUdf.U_Buyer_Quality || line.BuyerQuality || '',
+          sellerPrice: lineUdf.U_Seller_Price || line.SellerPrice || '',
+          buyerPrice: lineUdf.U_Buyer_Price || line.BuyerPrice || '',
+          sellerDelivery: lineUdf.U_Seller_Delivery || line.SellerDelivery || '',
+          buyerDelivery: lineUdf.U_Buyer_Delivery || line.BuyerDelivery || '',
+          sellerBrokerageAmtPer: lineUdf.U_Sel_Brok_AP || line.SellerBrokerageAmtPer || '',
+          sellerBrokeragePercent: lineUdf.U_Seller_Brok_Per != null ? String(lineUdf.U_Seller_Brok_Per) : (line.SellerBrokeragePercent != null ? String(line.SellerBrokeragePercent) : ''),
+          sellerBrokerage: lineUdf.U_Brok_Seller != null ? String(lineUdf.U_Brok_Seller) : (line.SellerBrokerage != null ? String(line.SellerBrokerage) : ''),
+          buyerBrokerage: lineUdf.U_Brok_Buyer != null ? String(lineUdf.U_Brok_Buyer) : (line.BuyerBrokerage != null ? String(line.BuyerBrokerage) : ''),
+          stcode: lineUdf.U_SELLTCODE || line.TaxCode || '',
+          specialRebate: lineUdf.U_SPLRBT != null ? String(lineUdf.U_SPLRBT) : (line.SpecialRebate != null ? String(line.SpecialRebate) : ''),
+          commission: lineUdf.U_COMPRC != null ? String(lineUdf.U_COMPRC) : (line.Commission != null ? String(line.Commission) : ''),
+          sellerBrokeragePerQty: lineUdf.U_S_BrokPerQty != null ? String(lineUdf.U_S_BrokPerQty) : (line.SellerBrokeragePerQty != null ? String(line.SellerBrokeragePerQty) : ''),
+          buyerPaymentTerms: lineUdf.U_Buyer_Payment_Terms || line.BuyerPaymentTerms || '',
+          buyerSpecialInstruction: lineUdf.U_Buyer_SPINS || line.BuyerSpecialInstruction || '',
+          sellerSpecialInstruction: lineUdf.U_Seller_SPINS || line.SellerSpecialInstruction || '',
+          buyerBillDiscount: lineUdf.U_Buyer_Bill_Disc != null ? String(lineUdf.U_Buyer_Bill_Disc) : (line.BuyerBillDiscount != null ? String(line.BuyerBillDiscount) : ''),
+          sellerBillDiscount: lineUdf.U_Seller_Bill_Disc != null ? String(lineUdf.U_Seller_Bill_Disc) : (line.SellerBillDiscount != null ? String(line.SellerBillDiscount) : ''),
+          sellerItem: lineUdf.U_S_Item || line.SellerItem || '',
+          sellerQty: lineUdf.U_S_Qty != null ? String(lineUdf.U_S_Qty) : (line.SellerQty != null ? String(line.SellerQty) : ''),
+          freightPurchase: lineUdf.U_Freight_pur != null ? String(lineUdf.U_Freight_pur) : (line.FreightPurchase != null ? String(line.FreightPurchase) : ''),
+          freightSales: lineUdf.U_Freight_sales != null ? String(lineUdf.U_Freight_sales) : (line.FreightSales != null ? String(line.FreightSales) : ''),
+          freightProvider: lineUdf.U_Fr_trans || line.FreightProvider || '',
+          freightProviderName: lineUdf.U_Fr_trans_name || line.FreightProviderName || '',
+          brokerageNumber: lineUdf.U_BDNum || line.BrokerageNumber || '',
           uomCode: line.UomCode || '',
           stdDiscount: String(line.LineDiscPrcnt || ''),
           taxCode: line.TaxCode || '',

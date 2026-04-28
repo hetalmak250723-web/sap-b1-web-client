@@ -124,6 +124,9 @@ const getUomGroups = () => safe(db.query(`
   ORDER  BY g.UgpEntry, d.LineNum
 `));
 
+const resolveDeliveryLineUomEntry = async (itemCode, uomValue) =>
+  salesOrderDb.resolveSalesOrderLineUomEntry(itemCode, uomValue);
+
 let dln1FieldMetadataPromise = null;
 
 const getDeliveryLineFieldMetadata = async () => {
@@ -689,7 +692,33 @@ const getDeliveryList = async () => {
 
 // ── GET SINGLE DELIVERY ───────────────────────────────────────────────────────
 
+const resolveDeliveryDocEntry = async (identifier) => {
+  const normalizedIdentifier = Number(identifier);
+  if (!Number.isFinite(normalizedIdentifier)) {
+    throw new Error(`Invalid Delivery identifier: ${identifier}`);
+  }
+
+  const rows = await safe(db.query(`
+    SELECT TOP 1 DocEntry, DocNum
+    FROM ODLN
+    WHERE DocEntry = @DocEntry
+       OR DocNum = @DocNum
+    ORDER BY CASE WHEN DocEntry = @DocEntry THEN 0 ELSE 1 END, DocEntry
+  `, {
+    DocEntry: normalizedIdentifier,
+    DocNum: normalizedIdentifier,
+  }));
+
+  return rows[0] || null;
+};
+
 const getDelivery = async (docEntry) => {
+  const resolvedDocument = await resolveDeliveryDocEntry(docEntry);
+  if (!resolvedDocument) {
+    throw new Error(`Delivery ${docEntry} not found`);
+  }
+
+  const resolvedDocEntry = resolvedDocument.DocEntry;
   const headerRows = await safe(db.query(`
     SELECT 
       T0.DocEntry,
@@ -718,7 +747,7 @@ const getDelivery = async (docEntry) => {
       END AS DocumentStatus
     FROM ODLN T0
     WHERE T0.DocEntry = @docEntry
-  `, { docEntry }));
+  `, { docEntry: resolvedDocEntry }));
 
   if (!headerRows.length) {
     throw new Error(`Delivery ${docEntry} not found`);
@@ -726,42 +755,94 @@ const getDelivery = async (docEntry) => {
 
   const header = headerRows[0];
 
-  const lineRows = await safe(db.query(`
-    SELECT 
-      T0.LineNum,
-      T0.ItemCode,
-      T0.Dscription AS ItemDescription,
-      T0.Quantity,
-      T0.OpenQty AS OpenQuantity,
-      T0.Price AS UnitPrice,
-      T0.DiscPrcnt AS DiscountPercent,
-      T0.TaxCode,
-      ISNULL(T0.VatSum, 0) AS LineTaxAmount,
-      T0.LineTotal,
-      T0.WhsCode AS Warehouse,
-      T0.unitMsr AS UoMCode,
-      T0.OcrCode AS DistributionRule,
-      T0.FreeTxt AS FreeText,
-      T0.CountryOrg AS CountryOfOrigin,
-      CHP.ChapterID AS HSNCode,
-      ITM.ManBtchNum AS BatchManaged,
-      T0.BaseEntry,
-      T0.BaseType,
-      T0.BaseLine,
-      '' AS Branch,
-      '' AS Loc
-    FROM DLN1 T0
-    LEFT JOIN OITM ITM ON ITM.ItemCode = T0.ItemCode
-    LEFT JOIN OCHP CHP ON CHP.AbsEntry = ITM.ChapterID
-    WHERE T0.DocEntry = @docEntry
-    ORDER BY T0.LineNum
-  `, { docEntry }));
+  const dln1FieldMetadata = await getDeliveryLineFieldMetadata();
+  const hasDln1Column = (columnName) => Boolean(dln1FieldMetadata[String(columnName || '').trim()]);
 
-  console.log(`[DB] getDelivery - DocEntry: ${docEntry}, Line rows found: ${lineRows.length}`);
+  const optionalLineSelects = [
+    hasDln1Column('OpenQty') ? 'T0.OpenQty AS OpenQuantity' : 'CAST(NULL AS DECIMAL(19, 6)) AS OpenQuantity',
+    hasDln1Column('TaxCode') ? 'T0.TaxCode' : "'' AS TaxCode",
+    hasDln1Column('VatSum') ? 'ISNULL(T0.VatSum, 0) AS LineTaxAmount' : 'CAST(0 AS DECIMAL(19, 6)) AS LineTaxAmount',
+    hasDln1Column('NumPerMsr') ? 'T0.NumPerMsr AS UomFactor' : 'CAST(1 AS DECIMAL(19, 6)) AS UomFactor',
+    hasDln1Column('UomEntry') ? 'T0.UomEntry AS UoMEntry' : 'NULL AS UoMEntry',
+    hasDln1Column('unitMsr') ? "COALESCE(UOM.UomCode, NULLIF(LTRIM(RTRIM(T0.unitMsr)), ''), '') AS UoMCode" : "COALESCE(UOM.UomCode, '') AS UoMCode",
+    hasDln1Column('OcrCode') ? 'T0.OcrCode AS DistributionRule' : "'' AS DistributionRule",
+    hasDln1Column('FreeTxt') ? 'T0.FreeTxt AS [FreeText]' : "'' AS [FreeText]",
+    hasDln1Column('CountryOrg') ? 'T0.CountryOrg AS CountryOfOrigin' : "'' AS CountryOfOrigin",
+    hasDln1Column('BaseEntry') ? 'T0.BaseEntry' : 'NULL AS BaseEntry',
+    hasDln1Column('BaseType') ? 'T0.BaseType' : 'NULL AS BaseType',
+    hasDln1Column('BaseLine') ? 'T0.BaseLine' : 'NULL AS BaseLine',
+  ];
+
+  let lineRows = [];
+  try {
+    const lineQuery = `
+      SELECT
+        T0.LineNum,
+        T0.ItemCode,
+        T0.Dscription AS ItemDescription,
+        T0.Quantity,
+        T0.Price AS UnitPrice,
+        T0.DiscPrcnt AS DiscountPercent,
+        T0.LineTotal,
+        T0.WhsCode AS Warehouse,
+        ${optionalLineSelects.join(',\n        ')},
+        CHP.ChapterID AS HSNCode,
+        ITM.ManBtchNum AS BatchManaged,
+        '' AS Branch,
+        '' AS Loc
+      FROM DLN1 T0
+      LEFT JOIN OITM ITM ON ITM.ItemCode = T0.ItemCode
+      LEFT JOIN OCHP CHP ON CHP.AbsEntry = ITM.ChapterID
+      LEFT JOIN OUOM UOM ON UOM.UomEntry = T0.UomEntry
+      WHERE T0.DocEntry = @docEntry
+      ORDER BY T0.LineNum
+    `;
+
+    const result = await db.query(lineQuery, { docEntry: resolvedDocEntry });
+    lineRows = result.recordset || [];
+  } catch (err) {
+    console.error(`[DB] getDelivery line query failed for requested identifier ${docEntry} resolved DocEntry ${resolvedDocEntry}:`, err?.message || err);
+
+    lineRows = await safe(db.query(`
+      SELECT
+        T0.LineNum,
+        T0.ItemCode,
+        T0.Dscription AS ItemDescription,
+        T0.Quantity,
+        T0.OpenQty AS OpenQuantity,
+        T0.Price AS UnitPrice,
+        T0.DiscPrcnt AS DiscountPercent,
+        T0.LineTotal,
+        T0.WhsCode AS Warehouse,
+        T0.NumPerMsr AS UomFactor,
+        T0.UomEntry AS UoMEntry,
+        COALESCE(UOM.UomCode, NULLIF(LTRIM(RTRIM(T0.unitMsr)), ''), '') AS UoMCode,
+        '' AS TaxCode,
+        CAST(0 AS DECIMAL(19, 6)) AS LineTaxAmount,
+        '' AS DistributionRule,
+        '' AS [FreeText],
+        '' AS CountryOfOrigin,
+        CHP.ChapterID AS HSNCode,
+        ITM.ManBtchNum AS BatchManaged,
+        NULL AS BaseEntry,
+        NULL AS BaseType,
+        NULL AS BaseLine,
+        '' AS Branch,
+        '' AS Loc
+      FROM DLN1 T0
+      LEFT JOIN OITM ITM ON ITM.ItemCode = T0.ItemCode
+      LEFT JOIN OCHP CHP ON CHP.AbsEntry = ITM.ChapterID
+      LEFT JOIN OUOM UOM ON UOM.UomEntry = T0.UomEntry
+      WHERE T0.DocEntry = @docEntry
+      ORDER BY T0.LineNum
+    `, { docEntry: resolvedDocEntry }));
+  }
+
+  console.log(`[DB] getDelivery - requested identifier: ${docEntry}, resolved DocEntry: ${resolvedDocEntry}, Line rows found: ${lineRows.length}`);
   if (lineRows.length > 0) {
     console.log('[DB] getDelivery - First line:', lineRows[0]);
   } else {
-    console.warn(`[DB] getDelivery - No lines found for DocEntry ${docEntry}`);
+    console.warn(`[DB] getDelivery - No lines found for requested identifier ${docEntry} resolved DocEntry ${resolvedDocEntry}`);
   }
 
   const itemCodes = lineRows.map(l => l.ItemCode).filter(Boolean);
@@ -822,7 +903,7 @@ const getDelivery = async (docEntry) => {
         U_BDNum
       FROM DLN1
       WHERE DocEntry = @docEntry
-    `, { docEntry });
+    `, { docEntry: resolvedDocEntry });
 
     if (udfLineRows.recordset) {
       udfLineRows.recordset.forEach((row) => {
@@ -835,12 +916,12 @@ const getDelivery = async (docEntry) => {
 
   // Fetch batch allocations for this delivery
   const batchRows = await safe(db.query(`
-    SELECT BaseLineNum, BatchNum, Quantity
+    SELECT BaseLinNum AS BaseLineNum, BatchNum, Quantity
     FROM   IBT1
     WHERE  BaseEntry = @docEntry
       AND  BaseType = 15
     ORDER  BY BaseLineNum, BatchNum
-  `, { docEntry }));
+  `, { docEntry: resolvedDocEntry }));
 
   const batchesByLine = {};
   batchRows.forEach(b => {
@@ -899,14 +980,14 @@ const getDelivery = async (docEntry) => {
           unitPriceUdf: lineUdf.U_Unit_Price != null && lineUdf.U_Unit_Price !== '' ? String(lineUdf.U_Unit_Price) : String(l.UnitPrice || 0),
           sellerQuality: lineUdf.U_Seller_Quality || '',
           buyerQuality: lineUdf.U_Buyer_Quality || '',
-          sellerPrice: lineUdf.U_Seller_Price || '',
-          buyerPrice: lineUdf.U_Buyer_Price || '',
-          sellerDelivery: lineUdf.U_Seller_Delivery || '',
-          buyerDelivery: lineUdf.U_Buyer_Delivery || '',
-          sellerBrokerageAmtPer: lineUdf.U_Sel_Brok_AP || '',
-          sellerBrokeragePercent: lineUdf.U_Seller_Brok_Per != null ? String(lineUdf.U_Seller_Brok_Per) : '',
-          sellerBrokerage: lineUdf.U_Brok_Seller != null ? String(lineUdf.U_Brok_Seller) : '',
-          buyerBrokerage: lineUdf.U_Brok_Buyer != null ? String(lineUdf.U_Brok_Buyer) : '',
+          sellerPrice: lineUdf.U_Seller_Price || l.SellerPrice || '',
+          buyerPrice: lineUdf.U_Buyer_Price || l.BuyerPrice || '',
+          sellerDelivery: lineUdf.U_Seller_Delivery || l.SellerDelivery || '',
+          buyerDelivery: lineUdf.U_Buyer_Delivery || l.BuyerDelivery || '',
+          sellerBrokerageAmtPer: lineUdf.U_Sel_Brok_AP || l.SellerBrokerageAmtPer || '',
+          sellerBrokeragePercent: lineUdf.U_Seller_Brok_Per != null ? String(lineUdf.U_Seller_Brok_Per) : (l.SellerBrokeragePercent != null ? String(l.SellerBrokeragePercent) : ''),
+          sellerBrokerage: lineUdf.U_Brok_Seller != null ? String(lineUdf.U_Brok_Seller) : (l.SellerBrokerage != null ? String(l.SellerBrokerage) : ''),
+          buyerBrokerage: lineUdf.U_Brok_Buyer != null ? String(lineUdf.U_Brok_Buyer) : (l.BuyerBrokerage != null ? String(l.BuyerBrokerage) : ''),
           stcode: lineUdf.U_SELLTCODE || l.TaxCode || '',
           specialRebate: lineUdf.U_SPLRBT != null ? String(lineUdf.U_SPLRBT) : '',
           commission: lineUdf.U_COMPRC != null ? String(lineUdf.U_COMPRC) : '',
@@ -917,7 +998,7 @@ const getDelivery = async (docEntry) => {
           buyerBillDiscount: lineUdf.U_Buyer_Bill_Disc != null ? String(lineUdf.U_Buyer_Bill_Disc) : '',
           sellerBillDiscount: lineUdf.U_Seller_Bill_Disc != null ? String(lineUdf.U_Seller_Bill_Disc) : '',
           sellerItem: lineUdf.U_S_Item || '',
-          sellerQty: lineUdf.U_S_Qty != null ? String(lineUdf.U_S_Qty) : '',
+          sellerQty: lineUdf.U_S_Qty != null ? String(lineUdf.U_S_Qty) : (l.SellerQty != null ? String(l.SellerQty) : ''),
           freightPurchase: lineUdf.U_Freight_pur != null ? String(lineUdf.U_Freight_pur) : '',
           freightSales: lineUdf.U_Freight_sales != null ? String(lineUdf.U_Freight_sales) : '',
           freightProvider: lineUdf.U_Fr_trans || '',
@@ -929,6 +1010,8 @@ const getDelivery = async (docEntry) => {
           total: l.LineTotal != null ? String(l.LineTotal) : '',
           whse: l.Warehouse || '',
           uomCode: l.UoMCode || '',
+          uomEntry: l.UoMEntry != null ? Number(l.UoMEntry) : null,
+          uomFactor: l.UomFactor != null && l.UomFactor !== '' ? Number(l.UomFactor) : 1,
           distRule: l.DistributionRule || '',
           freeText: l.FreeText || '',
           countryOfOrigin: l.CountryOfOrigin || '',
@@ -990,12 +1073,12 @@ const getSavedDeliveryQuantities = async (docEntry) => {
 
   const batchRows = await safe(db.query(`
     SELECT
-      T0.BaseLineNum AS LineNum,
+      T0.BaseLinNum AS LineNum,
       SUM(T0.Quantity) AS BatchQuantity
     FROM IBT1 T0
     WHERE T0.BaseEntry = @docEntry
       AND T0.BaseType = 15
-    GROUP BY T0.BaseLineNum
+    GROUP BY T0.BaseLinNum
   `, { docEntry }));
 
   const batchQtyByLine = batchRows.reduce((acc, row) => {
@@ -1667,6 +1750,7 @@ module.exports = {
   getFreightCharges,
   getItemsForModal,
   getUomConversionFactor,
+  resolveDeliveryLineUomEntry,
   // Validation functions
   validateBatchSelection,
   validateTaxCodes,

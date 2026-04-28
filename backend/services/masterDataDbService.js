@@ -15,6 +15,22 @@ const toCardType = (value) => {
 };
 
 const toCompanyPrivate = (value) => (String(value || "").toUpperCase() === "P" ? "cPrivate" : "cCompany");
+const toBPGstType = (value) => {
+  if (value == null || value === "") return "";
+  if (typeof value === "string" && value.startsWith("gst")) return value;
+
+  const map = {
+    0: "invalid",
+    1: "gstRegularTDSISD",
+    2: "gstCasualTaxablePerson",
+    3: "gstCompositionLevy",
+    4: "gstGoverDepartPSU",
+    5: "gstNonResidentTaxablePerson",
+    6: "gstUNAgencyEmbassy",
+  };
+
+  return map[Number(value)] || "";
+};
 
 const toAccountType = (groupMask) => {
   const map = {
@@ -295,6 +311,8 @@ const mapAccount = (row, fatherName = "", taxName = "") => ({
 const mapBPAddress = (row) => ({
   AddressType: String(row.AdresType || row.AddrType || "").toUpperCase().startsWith("B") ? "bo_BillTo" : "bo_ShipTo",
   AddressName: row.Address || "",
+  AddressName2: row.Address2 || "",
+  AddressName3: row.Address3 || "",
   Street: row.Street || "",
   StreetNo: row.StreetNo || "",
   Block: row.Block || "",
@@ -304,6 +322,12 @@ const mapBPAddress = (row) => ({
   County: row.County || "",
   Country: row.Country || "",
   State: row.State || "",
+  TaxOffice: row.TaxOffice || "",
+  GlobalLocationNumber: row.GlblLocNum || "",
+  GSTIN: row.GSTRegnNo || "",
+  GstType: toBPGstType(row.GSTType),
+  U_GSTIN_No: row.U_GSTIN_No || "",
+  RowNum: row.LineNum ?? null,
 });
 
 const mapBPContact = (row) => ({
@@ -356,6 +380,10 @@ const mapBP = (row, addresses = [], contacts = []) => {
     DebitorAccount: row.DebPayAcct || row.DflAccount || "",
     DownPaymentClearAct: row.DpmClear || "",
     DownPaymentInterimAccount: row.DpmIntAct || "",
+    ECommerceMerchantID: row.MerchantID || "",
+    UseBillToAddrToDetermineTax: String(row.LocMth || "").toUpperCase() === "N" ? "tYES" : "tNO",
+    BilltoDefault: row.BillToDef || "",
+    ShipToDefault: row.ShipToDef || "",
     VatGroup: row.VatGroup || "",
     FreeText: row.Free_Text || "",
     Notes: row.Notes || "",
@@ -493,6 +521,20 @@ const lookupCountries = async (query = "") => {
   `, { query: trimmed, like: `%${trimmed}%` });
 
   return rows.map((row) => ({ code: row.Code, name: row.Name }));
+};
+
+const getCountryByCode = async (code) => {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return null;
+
+  const row = await queryOne(`
+    SELECT TOP 1 Code, Name
+    FROM OCRY
+    WHERE Code = @code
+    ORDER BY Code
+  `, { code: trimmed });
+
+  return row ? { code: row.Code, name: row.Name || "" } : null;
 };
 
 const lookupStates = async (country = "") => {
@@ -949,6 +991,109 @@ const lookupPaymentTerms = async (query = "") => {
   return rows.map((row) => ({ code: String(row.GroupNum), name: row.PymntGroup }));
 };
 
+const getCreditCardByCode = async (code) => {
+  const numericCode = toInt(code, null);
+  if (numericCode == null || numericCode < 0) return null;
+
+  const row = await queryOne(`
+    SELECT CreditCard, CardName, AcctCode, Phone, CompanyId, Country
+    FROM OCRC
+    WHERE CreditCard = @code
+  `, { code: numericCode });
+
+  if (!row) return null;
+
+  return {
+    code: String(row.CreditCard),
+    name: row.CardName || "",
+    glAccount: row.AcctCode || "",
+    telephone: row.Phone || "",
+    companyId: row.CompanyId || "",
+    country: row.Country || "",
+  };
+};
+
+const lookupCreditCards = async (query = "") => {
+  const trimmed = String(query || "").trim();
+  const rows = await queryRows(`
+    SELECT TOP 200 CreditCard, CardName, AcctCode, Phone, CompanyId, Country
+    FROM OCRC
+    WHERE @query = ''
+      OR CAST(CreditCard AS NVARCHAR(50)) LIKE @like
+      OR ISNULL(CardName, '') LIKE @like
+    ORDER BY CreditCard
+  `, { query: trimmed, like: `%${trimmed}%` });
+
+  return rows.map((row) => ({
+    code: String(row.CreditCard),
+    name: row.CardName || "",
+    glAccount: row.AcctCode || "",
+    telephone: row.Phone || "",
+    companyId: row.CompanyId || "",
+    country: row.Country || "",
+  }));
+};
+
+const getNextCreditCardCode = async () => {
+  const row = await queryOne(`
+    SELECT ISNULL(MAX(CreditCard), 0) + 1 AS NextCode
+    FROM OCRC
+  `);
+
+  return row?.NextCode ?? 1;
+};
+
+const getBankByCode = async (bankCode, country = "") => {
+  const trimmedCode = String(bankCode || "").trim();
+  if (!trimmedCode) return null;
+
+  const row = await queryOne(`
+    SELECT TOP 1 B.BankCode, B.BankName, B.CountryCod, B.SwiftNum, B.IBAN, B.DfltBranch, C.Name AS CountryName
+    FROM ODSC B
+    LEFT JOIN OCRY C ON C.Code = B.CountryCod
+    WHERE B.BankCode = @bankCode
+      AND (@country = '' OR B.CountryCod = @country)
+    ORDER BY B.BankCode
+  `, { bankCode: trimmedCode, country: String(country || "").trim() });
+
+  if (!row) return null;
+
+  return {
+    code: row.BankCode || "",
+    name: row.BankName || "",
+    country: row.CountryCod || "",
+    countryName: row.CountryName || row.CountryCod || "",
+    swift: row.SwiftNum || "",
+    iban: row.IBAN || "",
+    branch: row.DfltBranch || "",
+  };
+};
+
+const lookupBanks = async (query = "", country = "") => {
+  const trimmed = String(query || "").trim();
+  const countryCode = String(country || "").trim();
+  const rows = await queryRows(`
+    SELECT TOP 200 B.BankCode, B.BankName, B.CountryCod, B.SwiftNum, B.IBAN, B.DfltBranch, C.Name AS CountryName
+    FROM ODSC B
+    LEFT JOIN OCRY C ON C.Code = B.CountryCod
+    WHERE (@query = ''
+      OR B.BankCode LIKE @like
+      OR ISNULL(B.BankName, '') LIKE @like)
+      AND (@country = '' OR B.CountryCod = @country)
+    ORDER BY B.CountryCod, B.BankCode
+  `, { query: trimmed, like: `%${trimmed}%`, country: countryCode });
+
+  return rows.map((row) => ({
+    code: row.BankCode || "",
+    name: row.BankName || "",
+    country: row.CountryCod || "",
+    countryName: row.CountryName || row.CountryCod || "",
+    swift: row.SwiftNum || "",
+    iban: row.IBAN || "",
+    branch: row.DfltBranch || "",
+  }));
+};
+
 const lookupSalesPersons = async (query = "") => {
   const trimmed = String(query || "").trim();
   const rows = await queryRows(`
@@ -1136,6 +1281,7 @@ module.exports = {
   getWarehouse,
   searchWarehouses,
   lookupCountries,
+  getCountryByCode,
   lookupStates,
   lookupWarehouseLocations,
   lookupBusinessPlaces,
@@ -1161,6 +1307,11 @@ module.exports = {
   searchBP,
   lookupBPGroups,
   lookupPaymentTerms,
+  getCreditCardByCode,
+  lookupCreditCards,
+  getNextCreditCardCode,
+  getBankByCode,
+  lookupBanks,
   lookupSalesPersons,
   lookupBPSeries,
   getBPSeriesNextNumber,
