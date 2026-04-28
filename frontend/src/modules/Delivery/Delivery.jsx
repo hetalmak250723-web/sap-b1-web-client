@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import './styles/Delivery.css';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FormSettingsPanel from '../../components/purchase-order/FormSettingsPanel';
@@ -208,6 +208,8 @@ const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
 function Delivery() {
   const location = useLocation();
   const navigate = useNavigate();
+  const formRef = useRef(null);
+  const isHydratingDocumentRef = useRef(false);
 
   const [currentDocEntry, setCurrentDocEntry] = useState(null);
   const [header, setHeader] = useState(INIT_HEADER);
@@ -281,10 +283,25 @@ function Delivery() {
     tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
   };
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+  const hasBuyerCode = Boolean(String(header.vendor || '').trim());
+  const isUpdateMode = Boolean(currentDocEntry);
+  const primaryActionLabel = pageState.posting
+    ? 'Saving...'
+    : isUpdateMode
+      ? 'Update (Alt+U)'
+      : 'Add (Alt+A)';
   const hydrateLoadedLine = useCallback((line) => {
-    const itemCode = String(line?.itemNo || '').trim();
+    const itemCode = String(line?.itemNo || line?.ItemCode || line?.itemCode || '').trim();
     const item = refData.items.find(i => String(i.ItemCode || '').trim() === itemCode);
-    const rawUomCode = String(line?.uomCode || item?.SalesUnit || item?.InventoryUOM || '').trim();
+    const rawUomCode = String(
+      line?.uomCode ||
+      line?.UoMCode ||
+      line?.UomCode ||
+      line?.unitMsr ||
+      item?.SalesUnit ||
+      item?.InventoryUOM ||
+      ''
+    ).trim();
     const numericFactor = parseFloat(rawUomCode);
     const explicitFactor = Number(line?.uomFactor);
     const uomFactor = Number.isFinite(explicitFactor) && explicitFactor > 0
@@ -292,7 +309,7 @@ function Delivery() {
       : Number.isFinite(numericFactor) && numericFactor > 0
         ? numericFactor
         : 1;
-    const inventoryUOM = String(line?.inventoryUOM || item?.InventoryUOM || '').trim();
+    const inventoryUOM = String(line?.inventoryUOM || line?.InventoryUOM || item?.InventoryUOM || '').trim();
     const batches = Array.isArray(line?.batches)
       ? line.batches
           .filter(batch => String(batch?.batchNumber || '').trim())
@@ -308,9 +325,53 @@ function Delivery() {
       ...createLine(),
       ...line,
       itemNo: itemCode,
-      itemDescription: line?.itemDescription || item?.ItemName || '',
-      hsnCode: line?.hsnCode || item?.HSNCode || item?.SWW || item?.U_HSNCode || '',
+      itemDescription: line?.itemDescription || line?.ItemDescription || line?.Dscription || item?.ItemName || '',
+      hsnCode: line?.hsnCode || line?.HSNCode || item?.HSNCode || item?.SWW || item?.U_HSNCode || '',
+      quantity: String(line?.quantity ?? line?.Quantity ?? ''),
+      openQty: String(line?.openQty ?? line?.OpenQuantity ?? line?.OpenQty ?? ''),
+      unitPrice: String(line?.unitPrice ?? line?.UnitPrice ?? line?.Price ?? ''),
+      sellerPrice: String(line?.sellerPrice ?? line?.SellerPrice ?? ''),
+      buyerPrice: String(line?.buyerPrice ?? line?.BuyerPrice ?? ''),
+      sellerDelivery: line?.sellerDelivery || line?.SellerDelivery || '',
+      buyerDelivery: line?.buyerDelivery || line?.BuyerDelivery || '',
+      sellerBrokerageAmtPer: line?.sellerBrokerageAmtPer || line?.SellerBrokerageAmtPer || '',
+      sellerBrokeragePercent: String(line?.sellerBrokeragePercent ?? line?.SellerBrokeragePercent ?? ''),
+      sellerBrokerage: String(line?.sellerBrokerage ?? line?.SellerBrokerage ?? ''),
+      buyerBrokerage: String(line?.buyerBrokerage ?? line?.BuyerBrokerage ?? ''),
+      specialRebate: String(line?.specialRebate ?? line?.SpecialRebate ?? ''),
+      commission: String(line?.commission ?? line?.Commission ?? ''),
+      sellerBrokeragePerQty: String(line?.sellerBrokeragePerQty ?? line?.SellerBrokeragePerQty ?? ''),
+      unitPriceUdf: String(line?.unitPriceUdf ?? line?.UnitPriceUdf ?? ''),
+      buyerPaymentTerms: line?.buyerPaymentTerms || line?.BuyerPaymentTerms || '',
+      buyerSpecialInstruction: line?.buyerSpecialInstruction || line?.BuyerSpecialInstruction || '',
+      sellerSpecialInstruction: line?.sellerSpecialInstruction || line?.SellerSpecialInstruction || '',
+      buyerBillDiscount: String(line?.buyerBillDiscount ?? line?.BuyerBillDiscount ?? ''),
+      sellerBillDiscount: String(line?.sellerBillDiscount ?? line?.SellerBillDiscount ?? ''),
+      sellerItem: line?.sellerItem || line?.SellerItem || '',
+      sellerQty: String(line?.sellerQty ?? line?.SellerQty ?? ''),
+      freightPurchase: String(line?.freightPurchase ?? line?.FreightPurchase ?? ''),
+      freightSales: String(line?.freightSales ?? line?.FreightSales ?? ''),
+      freightProvider: line?.freightProvider || line?.FreightProvider || '',
+      freightProviderName: line?.freightProviderName || line?.FreightProviderName || '',
+      brokerageNumber: line?.brokerageNumber || line?.BrokerageNumber || '',
       uomCode: rawUomCode,
+      stdDiscount: String(line?.stdDiscount ?? line?.DiscountPercent ?? line?.DiscPrcnt ?? ''),
+      stcode: line?.stcode || line?.STCode || line?.TaxCode || '',
+      taxCode: line?.taxCode || line?.TaxCode || '',
+      total: String(line?.total ?? line?.LineTotal ?? ''),
+      taxAmount: String(line?.taxAmount ?? line?.LineTaxAmount ?? line?.VatSum ?? ''),
+      whse: line?.whse || line?.Warehouse || line?.WarehouseCode || line?.WhsCode || '',
+      distRule: line?.distRule || line?.DistributionRule || line?.OcrCode || '',
+      freeText: line?.freeText || line?.FreeText || '',
+      countryOfOrigin: line?.countryOfOrigin || line?.CountryOfOrigin || '',
+      sacCode: line?.sacCode || line?.SACCode || '',
+      deliveredQty: String(line?.deliveredQty ?? line?.DeliveredQty ?? ''),
+      loc: String(line?.loc ?? line?.Loc ?? ''),
+      branch: String(line?.branch ?? line?.Branch ?? ''),
+      lineNum: line?.lineNum ?? line?.LineNum,
+      baseEntry: line?.baseEntry ?? line?.BaseEntry ?? null,
+      baseType: line?.baseType ?? line?.BaseType ?? null,
+      baseLine: line?.baseLine ?? line?.BaseLine ?? null,
       inventoryUOM,
       uomFactor,
       batchManaged,
@@ -377,14 +438,35 @@ function Delivery() {
 
   // ── load existing order ───────────────────────────────────────────────────
   useEffect(() => {
-    const docEntry = location.state?.deliveryDocEntry || location.state?.salesOrderDocEntry;
+    const docEntry =
+      location.state?.deliveryDocEntry ||
+      location.state?.docEntry ||
+      location.state?.document?.docEntry ||
+      location.state?.document?.DocEntry ||
+      location.state?.salesOrderDocEntry;
     if (!docEntry) return;
     let ignore = false;
+    let hydrationTimer = null;
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
+        isHydratingDocumentRef.current = true;
         const r = await fetchDeliveryByDocEntry(docEntry);
         const so = r.data.delivery;
+        const loadedLines = Array.isArray(so?.lines) && so.lines.length
+          ? so.lines
+          : Array.isArray(so?.DocumentLines) && so.DocumentLines.length
+            ? so.DocumentLines
+            : [];
+        const firstLineWarehouse = loadedLines.length > 0
+          ? String(
+              loadedLines[0]?.whse ||
+              loadedLines[0]?.Warehouse ||
+              loadedLines[0]?.WarehouseCode ||
+              loadedLines[0]?.WhsCode ||
+              ''
+            )
+          : '';
         console.log('📦 [Delivery] Loaded delivery data:', so);
         console.log('📦 [Delivery] Header:', so.header);
         console.log('📦 [Delivery] Lines:', so.lines);
@@ -402,14 +484,14 @@ function Delivery() {
           paymentTerms: so.header?.paymentTermsCode || so.header?.paymentTerms || '',
           placeOfSupply: so.header?.placeOfSupply || '',
           branch: so.header?.branch || '',
-          warehouse: so.header?.warehouse || '', // Load warehouse from delivery
+          warehouse: firstLineWarehouse || so.header?.warehouse || '',
           series: so.header?.series || '',
           nextNumber: so.header?.docNo || '',
         }));
         
         setLines(
-          Array.isArray(so.lines) && so.lines.length
-            ? so.lines.map(l => hydrateLoadedLine(l))
+          loadedLines.length
+            ? loadedLines.map(l => hydrateLoadedLine(l))
             : [createLine()]
         );
         
@@ -429,6 +511,9 @@ function Delivery() {
       } catch (e) {
         if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load delivery.') }));
       } finally {
+        hydrationTimer = setTimeout(() => {
+          isHydratingDocumentRef.current = false;
+        }, 0);
         if (!ignore) {
           setPageState(p => ({ ...p, loading: false }));
           navigate(location.pathname, { replace: true, state: null });
@@ -436,7 +521,11 @@ function Delivery() {
       }
     };
     load();
-    return () => { ignore = true; };
+    return () => {
+      ignore = true;
+      isHydratingDocumentRef.current = false;
+      if (hydrationTimer) clearTimeout(hydrationTimer);
+    };
   }, [hydrateLoadedLine, location.pathname, location.state, navigate]);
 
   useEffect(() => {
@@ -1734,6 +1823,7 @@ function Delivery() {
   // ── Sync warehouse and branch from header to lines ────────────────────────
   // Sync branch to all lines when header branch changes
   useEffect(() => {
+    if (isHydratingDocumentRef.current) return;
     console.log('🔄 [Delivery] Branch sync useEffect triggered');
     console.log('🔄 [Delivery] header.branch value:', header.branch);
     console.log('🔄 [Delivery] header.branch type:', typeof header.branch);
@@ -1758,6 +1848,7 @@ function Delivery() {
   
   // Initial sync: Set branch on existing lines when branch is first loaded
   useEffect(() => {
+    if (isHydratingDocumentRef.current) return;
     if (header.branch && lines.length > 0) {
       const needsSync = lines.some(l => !l.branch || l.branch !== String(header.branch));
       if (needsSync) {
@@ -1782,6 +1873,7 @@ function Delivery() {
   }, [header.branch]);
 
   useEffect(() => {
+    if (isHydratingDocumentRef.current) return;
     if (!header.branch || !refData.warehouses.length) return;
 
     const allowedWarehouseCodes = new Set(
@@ -1797,6 +1889,7 @@ function Delivery() {
 
   // Sync warehouse to all lines when header warehouse changes and refresh batch availability
   useEffect(() => {
+    if (isHydratingDocumentRef.current) return;
     if (!header.warehouse) {
       setLines(prev => prev.map(l => ({ ...l, whse: '', hasBatchesAvailable: false, batches: [] })));
       return;
@@ -1825,6 +1918,7 @@ function Delivery() {
 
   // ── Recalculate Tax Codes on State/Address Changes ────────────────────────
   useEffect(() => {
+    if (currentDocEntry) return;
     if (!header.vendor || !header.placeOfSupply) return;
 
     const companyState = refData.company_address?.State || selectedBranch?.State || '';
@@ -1852,7 +1946,7 @@ function Delivery() {
         effectiveTaxCodes
       );
     });
-  }, [header.placeOfSupply, header.vendor, refData.company_address, selectedBranch, refData.items, effectiveTaxCodes]);
+  }, [currentDocEntry, header.placeOfSupply, header.vendor, refData.company_address, selectedBranch, refData.items, effectiveTaxCodes]);
 
   // Continue in next part...
 
@@ -2268,15 +2362,41 @@ function Delivery() {
 
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
 
+  useEffect(() => {
+    const handleShortcut = (event) => {
+      if (!event.altKey || event.ctrlKey || event.shiftKey || event.metaKey) return;
+      if (pageState.posting || !isDocumentEditable) return;
+
+      const key = String(event.key || '').toLowerCase();
+      const shouldSubmit = (!isUpdateMode && key === 'a') || (isUpdateMode && key === 'u');
+      if (!shouldSubmit) return;
+
+      event.preventDefault();
+      formRef.current?.requestSubmit();
+    };
+
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [isDocumentEditable, isUpdateMode, pageState.posting]);
+
   // Continue in next part with render...
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="del-page" onSubmit={handleSubmit}>
+    <form ref={formRef} className="del-page" onSubmit={handleSubmit}>
 
       {/* toolbar */}
       <div className="del-toolbar">
         <span className="del-toolbar__title">Delivery{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable} title={primaryActionLabel}>
+          {primaryActionLabel}
+        </button>
+        <button type="button" className="del-btn" disabled={pageState.posting || !isDocumentEditable}>
+          Add Draft & New
+        </button>
+        <button type="button" className="del-btn" onClick={resetForm}>
+          Cancel
+        </button>
       
         <button
           type="button"
@@ -2299,6 +2419,84 @@ function Delivery() {
         <button type="button" className="del-btn" onClick={() => setFormSettingsOpen(p => !p)}>
           Form Settings
         </button>
+        <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+          <button
+            type="button"
+            className="del-btn"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setValErrors({ header: {}, lines: {}, form: '' });
+              setPageState(p => ({ ...p, error: '', success: '' }));
+              const dropdown = e.currentTarget.parentElement;
+              const isActive = dropdown.classList.contains('active');
+              document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+              if (!isActive) dropdown.classList.add('active');
+            }}
+          >
+            Copy From ▼
+          </button>
+          <div className="del-dropdown-menu">
+            {[
+              { key: 'salesQuotation', label: 'Sales Quotations' },
+              { key: 'salesOrder',     label: 'Sales Orders' },
+              { key: 'returns',        label: 'Returns' },
+              { key: 'blanket',        label: 'Blanket Agreement' },
+            ].map(opt => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openCopyFromModal(opt.key);
+                  document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+          <button
+            type="button"
+            className="del-btn"
+            disabled={!currentDocEntry}
+            style={{ opacity: !currentDocEntry ? 0.5 : 1 }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!currentDocEntry) return;
+              const dropdown = e.currentTarget.parentElement;
+              const isActive = dropdown.classList.contains('active');
+              document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+              if (!isActive) dropdown.classList.add('active');
+            }}
+          >
+            Copy To ▼
+          </button>
+          <div className="del-dropdown-menu">
+            {[
+              { key: 'return',         label: 'Return Request' },
+              { key: 'ar-invoice',     label: 'A/R Invoice' },
+              { key: 'ar-credit-memo', label: 'A/R Credit Memo' },
+            ].map(opt => (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleCopyTo(opt.key);
+                  document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button type="button" className="del-btn" onClick={() => navigate('/delivery/find')}>Find</button>
         <button type="button" className="del-btn" onClick={resetForm}>New</button>
       </div>
@@ -2318,16 +2516,18 @@ function Delivery() {
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       <div style={{ padding: '0 12px', overflow: 'visible', minWidth: 0 }}>
-        {sidebarOpen && sidebarOrientation === 'horizontal' && (
-          <HeaderUdfSidebar
-            isOpen={sidebarOpen}
-            fields={visHdrUdfs}
-            formSettings={formSettings}
-            values={headerUdfs}
-            onFieldChange={handleHeaderUdfChange}
-            orientation="horizontal"
-          />
-        )}
+        <fieldset disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+          {sidebarOpen && sidebarOrientation === 'horizontal' && (
+            <HeaderUdfSidebar
+              isOpen={sidebarOpen}
+              fields={visHdrUdfs}
+              formSettings={formSettings}
+              values={headerUdfs}
+              onFieldChange={handleHeaderUdfChange}
+              orientation="horizontal"
+            />
+          )}
+        </fieldset>
         <div style={{ display: 'flex', gap: '12px', overflow: 'visible', minWidth: 0 }}>
           <div style={{ 
             flex: sidebarOpen && sidebarOrientation === 'vertical' ? '0 0 calc(75% - 6px)' : '1',
@@ -2380,6 +2580,7 @@ function Delivery() {
                       <input name="name" className="del-field__input" value={header.name} readOnly />
                     </div>
 
+                    <fieldset disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                     {/* Contact Person */}
                     <div className="del-field">
                       <label className="del-field__label">Contact Person</label>
@@ -2468,12 +2669,14 @@ function Delivery() {
                         ))}
                       </select>
                     </div>
+                    </fieldset>
 
                   </div>
                 </div>
 
                 {/* RIGHT COLUMN */}
                 <div className="col-md-6">
+                  <fieldset disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
                   <div className="del-field-grid" style={{ gridTemplateColumns: '1fr' }}>
 
                     {/* Series */}
@@ -2539,11 +2742,13 @@ function Delivery() {
                     </div>
 
                   </div>
+                  </fieldset>
                 </div>
               </div>
             </div>
 
             {/* ══ TABS ══════════════════════════════════════════════════════ */}
+            <fieldset disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
             <div className="del-tabs">
               {TAB_NAMES.map(t => (
                 <button 
@@ -2716,6 +2921,7 @@ function Delivery() {
             </div>
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+            {false && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting}>
@@ -2728,9 +2934,9 @@ function Delivery() {
                   Cancel
                 </button>
               </div>
-              <div style={{ display: 'flex', gap: '8px', position: 'relative' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                 {/* Copy From Dropdown - SAP B1 style, same as Sales Order */}
-                <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                <div className="del-dropdown">
                   <button
                     type="button"
                     className="del-btn"
@@ -2770,7 +2976,7 @@ function Delivery() {
                   </div>
                 </div>
                 {/* Copy To Dropdown - SAP B1 style */}
-                <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+                <div className="del-dropdown">
                   <button
                     type="button"
                     className="del-btn"
@@ -2811,19 +3017,23 @@ function Delivery() {
                 </div>
               </div>
             </div>
+            )}
+            </fieldset>
 
           </div>{/* end main col */}
 
-          {sidebarOpen && sidebarOrientation === 'vertical' && (
-            <HeaderUdfSidebar
-              isOpen={sidebarOpen}
-              fields={visHdrUdfs}
-              formSettings={formSettings}
-              values={headerUdfs}
-              onFieldChange={handleHeaderUdfChange}
-              orientation="vertical"
-            />
-          )}
+          <fieldset disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+            {sidebarOpen && sidebarOrientation === 'vertical' && (
+              <HeaderUdfSidebar
+                isOpen={sidebarOpen}
+                fields={visHdrUdfs}
+                formSettings={formSettings}
+                values={headerUdfs}
+                onFieldChange={handleHeaderUdfChange}
+                orientation="vertical"
+              />
+            )}
+          </fieldset>
         </div>
       </div>
 

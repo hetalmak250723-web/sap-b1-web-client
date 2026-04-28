@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import "../../modules/item-master/styles/itemMaster.css";
 import "./bom.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import BOMLines from "./components/BOMLines";
 import BOMAttachments from "./components/BOMAttachments";
 import ItemSearchModal from "./components/ItemSearchModal";
@@ -65,7 +66,14 @@ export default function BOMModule() {
   const [mode, setMode] = useState(MODES.ADD);
   const [tab, setTab] = useState(0);
   const [header, setHeader] = useState(EMPTY_HEADER);
-  const [lines, setLines] = useState([EMPTY_LINE()]);
+  const [lines, setLines] = useState(() => {
+    const firstLine = EMPTY_LINE();
+    return [firstLine];
+  });
+  const [selectedLineId, setSelectedLineId] = useState(() => {
+    const firstLine = EMPTY_LINE();
+    return firstLine._id;
+  });
   const [attachments, setAttachments] = useState([]);
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -76,6 +84,8 @@ export default function BOMModule() {
   const [projects, setProjects] = useState([]);
 
   const [itemModal, setItemModal] = useState({ open: false, target: null });
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const alertTimer = useRef(null);
 
@@ -104,11 +114,15 @@ export default function BOMModule() {
   );
 
   const resetForm = useCallback(() => {
+    const firstLine = EMPTY_LINE();
     setHeader(EMPTY_HEADER);
-    setLines([EMPTY_LINE()]);
+    setLines([firstLine]);
+    setSelectedLineId(firstLine._id);
     setAttachments([]);
     setTab(0);
     setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
   }, []);
 
   const handleHeaderChange = useCallback((e) => {
@@ -203,11 +217,36 @@ export default function BOMModule() {
   }, []);
 
   const addLine = useCallback(() => {
-    setLines((prev) => [...prev, EMPTY_LINE()]);
-  }, []);
+    const newLine = EMPTY_LINE();
+    setLines((prev) => {
+      const selectedIndex = prev.findIndex((line) => line._id === selectedLineId);
+      if (selectedIndex === -1) {
+        return [...prev, newLine];
+      }
+
+      const next = [...prev];
+      next.splice(selectedIndex + 1, 0, newLine);
+      return next;
+    });
+    setSelectedLineId(newLine._id);
+  }, [selectedLineId]);
 
   const deleteLine = useCallback((id) => {
-    setLines((prev) => prev.filter((line) => line._id !== id));
+    setLines((prev) => {
+      if (prev.length <= 1) {
+        const replacement = EMPTY_LINE();
+        setSelectedLineId(replacement._id);
+        return [replacement];
+      }
+
+      const index = prev.findIndex((line) => line._id === id);
+      if (index === -1) return prev;
+
+      const next = prev.filter((line) => line._id !== id);
+      const fallbackIndex = Math.min(index, next.length - 1);
+      setSelectedLineId(next[fallbackIndex]?._id ?? null);
+      return next;
+    });
   }, []);
 
   const totalStdCost = lines.reduce((sum, line) => sum + (Number(line.TotalStdCost) || 0), 0);
@@ -310,24 +349,55 @@ export default function BOMModule() {
   const handleFind = useCallback(
     async (treeCode = null) => {
       const code = treeCode || header.TreeCode.trim();
-      if (!code) {
-        showAlert("error", "Enter a Product No. to search.");
+      const query = code || header.ProductDescription.trim();
+      if (!query) {
+        showAlert("error", "Enter a Product No. or Product Description to search.");
         return;
       }
 
       setLoading(true);
       try {
-        const data = await getBOM(code);
-        loadBOM(data);
-        setMode(MODES.UPDATE);
-        showAlert("success", `BOM "${data.TreeCode}" loaded.`);
+        if (code) {
+          const data = await getBOM(code);
+          loadBOM(data);
+          setMode(MODES.UPDATE);
+          showAlert("success", `BOM "${data.TreeCode}" loaded.`);
+          return;
+        }
+
+        const results = await fetchBOMList(query);
+        if (results.length === 0) {
+          showAlert("error", "No matching BOMs found.");
+        } else if (results.length === 1) {
+          const data = await loadExistingBOM(results[0].TreeCode);
+          showAlert("success", `BOM "${data.TreeCode}" loaded.`);
+        } else {
+          setFindResults(results);
+          setShowFindResults(true);
+        }
       } catch (err) {
-        showAlert("error", err.response?.data?.message || "BOM not found.");
+        showAlert("error", err.response?.data?.message || err.message || "BOM search failed.");
       } finally {
         setLoading(false);
       }
     },
-    [header.TreeCode, showAlert]
+    [header.TreeCode, header.ProductDescription, loadExistingBOM, showAlert]
+  );
+
+  const handleFindResultSelect = useCallback(
+    async (row) => {
+      setShowFindResults(false);
+      setLoading(true);
+      try {
+        const data = await loadExistingBOM(row.TreeCode);
+        showAlert("success", `BOM "${data.TreeCode}" loaded.`);
+      } catch (err) {
+        showAlert("error", err.response?.data?.message || err.message || "Failed to load BOM.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loadExistingBOM, showAlert]
   );
 
   const loadBOM = useCallback((data) => {
@@ -372,7 +442,15 @@ export default function BOMModule() {
         };
       })
     );
+    setSelectedLineId(null);
   }, []);
+
+  useEffect(() => {
+    if (!lines.length) return;
+    if (!selectedLineId || !lines.some((line) => line._id === selectedLineId)) {
+      setSelectedLineId(lines[0]._id);
+    }
+  }, [lines, selectedLineId]);
 
   return (
     <div className="im-page bom-page">
@@ -571,6 +649,7 @@ export default function BOMModule() {
         {tab === 0 && (
           <BOMLines
             lines={lines}
+            selectedLineId={selectedLineId}
             warehouses={warehouses}
             priceLists={priceLists}
             distRules={distRules}
@@ -580,6 +659,7 @@ export default function BOMModule() {
             onChange={handleLineChange}
             onAdd={addLine}
             onDelete={deleteLine}
+            onSelectLine={setSelectedLineId}
             onItemSearch={(lineId) => setItemModal({ open: true, target: lineId })}
           />
         )}
@@ -619,6 +699,20 @@ export default function BOMModule() {
           ]}
         />
       )}
+
+      <FindResultsModal
+        open={showFindResults}
+        title="BOM Search Results"
+        columns={[
+          { key: "TreeCode", label: "Product No." },
+          { key: "ProductDescription", label: "Description" },
+          { key: "TreeType", label: "Type" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.TreeCode}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

@@ -492,20 +492,33 @@
 }
 
 /* ── Copy From Dropdown ── */
-.del-dropdown { position: relative; display: inline-block; }
-.del-dropdown.active .del-dropdown-menu { display: block !important; }
+.del-dropdown { 
+  position: relative; 
+  display: inline-flex;
+  overflow: visible;
+  z-index: 20;
+}
+.del-dropdown.active { 
+  z-index: 9998;
+}
 .del-dropdown-menu {
   display: none;
   position: absolute;
-  bottom: 100%;
+  top: calc(100% + 4px);
+  bottom: auto;
   left: 0;
-  margin-bottom: 2px;
-  background: #fff;
+  margin-top: 0;
+  background: #ffffff !important;
   border: 1px solid #c8d0da;
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   border-radius: 3px;
   min-width: 180px;
-  z-index: 1000;
+  z-index: 9999;
+  white-space: nowrap;
+  opacity: 1 !important;
+}
+.del-dropdown.active .del-dropdown-menu { 
+  display: block !important;
 }
 .del-dropdown-menu button {
   display: block;
@@ -514,11 +527,15 @@
   font-size: 11px;
   text-align: left;
   border: none;
-  background: none;
+  background: transparent;
   cursor: pointer;
   color: #24292f;
+  white-space: nowrap;
 }
-.del-dropdown-menu button:hover { background: #e8edf2; }
+.del-dropdown-menu button:hover { 
+  background: #e8edf2 !important;
+  color: #24292f;
+}
 
 /* ── Force horizontal scroll for Contents tab ── */
 .del-grid-wrap--contents {

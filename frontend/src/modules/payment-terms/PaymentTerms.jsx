@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import GeneralTab      from "./components/GeneralTab";
 import InstallmentsTab from "./components/InstallmentsTab";
 import {
-  createPaymentTerms, getPaymentTerms, updatePaymentTerms,
+  createPaymentTerms, getPaymentTerms, updatePaymentTerms, searchPaymentTerms,
 } from "../../api/paymentTermsApi";
 
 const TABS  = ["General", "Installments"];
@@ -99,6 +100,8 @@ export default function PaymentTermsModule() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -110,7 +113,20 @@ export default function PaymentTermsModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setTab(0); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setTab(0);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadPaymentTerms = async (groupNumber) => {
+    const data = await getPaymentTerms(groupNumber);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.PaymentTermsGroupName}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.PaymentTermsGroupName.trim()) {
@@ -130,16 +146,41 @@ export default function PaymentTermsModule() {
 
   const handleFind = async () => {
     const key = form.GroupNumber?.toString().trim();
-    if (!key) { showAlert("error", "Enter a Group Number to search."); return; }
+    const query = key || form.PaymentTermsGroupName.trim() || form.PaymentTermsGroupCode.trim();
+    if (!query) { showAlert("error", "Enter a Group Number, Code, or Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getPaymentTerms(key);
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.PaymentTermsGroupName}" loaded.`);
+      if (key) {
+        try {
+          await loadPaymentTerms(key);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchPaymentTerms(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching payment terms found.");
+      } else if (results.length === 1) {
+        await loadPaymentTerms(results[0].GroupNumber);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Payment Terms not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Payment Terms search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadPaymentTerms(row.GroupNumber);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load payment terms.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -169,7 +210,7 @@ export default function PaymentTermsModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -261,6 +302,20 @@ export default function PaymentTermsModule() {
         {tab === 0 && <GeneralTab    form={form} onChange={handleChange} />}
         {tab === 1 && <InstallmentsTab form={form} setForm={setForm} />}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Payment Terms Search Results"
+        columns={[
+          { key: "GroupNumber", label: "No." },
+          { key: "PaymentTermsGroupCode", label: "Code" },
+          { key: "PaymentTermsGroupName", label: "Name" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.GroupNumber}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

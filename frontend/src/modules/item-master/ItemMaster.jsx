@@ -7,7 +7,6 @@ import InventoryTab      from "./components/InventoryTab";
 import PlanningTab       from "./components/PlanningTab";
 import ProductionDataTab from "./components/ProductionDataTab";
 import PropertiesTab     from "./components/PropertiesTab";
-import AccountingTab     from "./components/AccountingTab";
 import RemarksTab        from "./components/RemarksTab";
 import AttachmentsTab    from "./components/AttachmentsTab";
 import LookupField       from "./components/LookupField";
@@ -16,22 +15,22 @@ import ManufacturerSetup  from "./components/ManufacturerSetup";
 import {
   createItem, getItem, updateItem, checkItemCodeExists,
   fetchItemGroups, fetchVendors, fetchPriceLists, fetchUoMGroups, fetchItemCodePrefixes,
-  fetchGLAccounts, fetchWarehouses, searchItems, generateItemCode,
+  fetchWarehouses, searchItems, generateItemCode,
 } from "../../api/itemApi";
 
 const TABS = [
   "General", "Purchasing Data", "Sales Data", "Inventory Data",
-  "Planning Data", "Production Data", "Properties", "Accounting", "Remarks", "Attachments",
+  "Planning Data", "Production Data", "Properties", "Remarks", "Attachments",
 ];
 
-const REQUIRED_TABS = new Set(["General", "Accounting"]);
+const REQUIRED_TABS = new Set(["General"]);
 const LS_KEY = "itemMaster_visibleTabs";
 
 const loadVisibleTabs = () => {
   try {
     const saved = localStorage.getItem(LS_KEY);
     if (saved) {
-      const parsed = JSON.parse(saved);
+      const parsed = JSON.parse(saved).filter((tab) => TABS.includes(tab));
       REQUIRED_TABS.forEach((t) => { if (!parsed.includes(t)) parsed.push(t); });
       return new Set(parsed);
     }
@@ -115,7 +114,7 @@ const EMPTY_FORM = {
   DefaultSalesUoMEntry: "", QRCodeSource: "",
   // Inventory
   InventoryUOM: "", InventoryUoMEntry: "",
-  CostAccountingMethod: "bis_MovingAverage", GLMethod: "glm_WH", TaxType: "tt_Yes",
+  CostAccountingMethod: "", GLMethod: "glm_WH", TaxType: "tt_Yes",
   ManageStockByWarehouse: "tNO", DefaultWarehouse: "",
   MinInventory: "", MaxInventory: "", DesiredInventory: "",
   ProdStdCost: "", InCostRollup: "tYES",
@@ -303,27 +302,36 @@ export default function ItemMaster() {
 
   // Handle Find logic
   const handleFind = useCallback(async () => {
-    const searchTerm = String(form.ItemCode || "").trim() || String(form.ItemCodeNumber || "").trim();
+    const itemCode = String(form.ItemCode || "").trim();
+    const itemCodeNumber = String(form.ItemCodeNumber || "").trim();
+    const searchTerm = itemCode
+      || itemCodeNumber
+      || String(form.ItemName || "").trim()
+      || String(form.ForeignName || "").trim()
+      || String(form.BarCode || "").trim();
     if (!searchTerm) { 
-      showAlert("error", "Enter an Item Code to search."); 
+      showAlert("error", "Enter an Item Code, Name, Foreign Name, or Barcode to search."); 
       return; 
     }
     setLoading(true);
     try {
-      try {
-        await loadItem(searchTerm);
-        showAlert("success", `Item "${searchTerm}" loaded.`);
-      } catch (exactErr) {
-        const results = await searchItems(searchTerm, 100);
-        if (results.length === 0) {
-          showAlert("error", "No matching items found.");
-        } else if (results.length === 1) {
-          await loadItem(results[0].ItemCode);
-          showAlert("success", `Item "${results[0].ItemCode}" loaded.`);
-        } else {
-          setCflResults(results);
-          setShowCFL(true);
-        }
+      if (itemCode || itemCodeNumber) {
+        try {
+          await loadItem(itemCode || itemCodeNumber);
+          showAlert("success", `Item "${itemCode || itemCodeNumber}" loaded.`);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchItems(searchTerm, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching items found.");
+      } else if (results.length === 1) {
+        await loadItem(results[0].ItemCode);
+        showAlert("success", `Item "${results[0].ItemCode}" loaded.`);
+      } else {
+        setCflResults(results);
+        setShowCFL(true);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || "Search failed.";
@@ -331,7 +339,7 @@ export default function ItemMaster() {
     } finally { 
       setLoading(false); 
     }
-  }, [form.ItemCode, form.ItemCodeNumber, loadItem, showAlert]);
+  }, [form.ItemCode, form.ItemCodeNumber, form.ItemName, form.ForeignName, form.BarCode, loadItem, showAlert]);
 
   // Smart default value logic based on item properties
   const applySmartDefaults = useCallback((fieldName, value) => {
@@ -352,9 +360,6 @@ export default function ItemMaster() {
     // Set defaults based on inventory item flag
     if (fieldName === 'InventoryItem') {
       if (value === 'tYES') {
-        if (!newForm.CostAccountingMethod) {
-          newForm.CostAccountingMethod = 'bis_MovingAverage';
-        }
         if (!newForm.GLMethod) {
           newForm.GLMethod = 'glm_WH';
         }
@@ -761,54 +766,24 @@ export default function ItemMaster() {
     <div className="im-page">
       <div className="im-toolbar">
         <span className="im-toolbar__title">Item Master Data</span>
-        <span className={`im-mode-badge im-mode-badge--${mode}`}>
-          {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
-        </span>
-        <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
-        </button>
-        <button className="im-btn" onClick={handleNew} title="Ctrl+N">New</button>
-        <button 
-          className={`im-btn${mode === MODES.FIND ? " im-btn--find-active" : ""}`} 
-          onClick={activateFindMode} 
-          title="Ctrl+F"
-        >
-          Find
-        </button>
-        {mode === MODES.UPDATE && (
-          <button className="im-btn im-btn--danger" onClick={resetForm}>Cancel</button>
-        )}
         {isDirty && <span className="im-dirty-indicator" title="Unsaved changes">●</span>}
-        <div className="im-tab-settings-wrap" ref={tabSettingsRef}>
-          <button
-            className={`im-btn im-tab-settings-btn${showTabSettings ? " im-tab-settings-btn--active" : ""}`}
-            onClick={() => setShowTabSettings((v) => !v)}
-          >
-            ⚙ Tabs ({visibleTabs.size}/{TABS.length})
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px', alignItems: 'center' }}>
+          <span className={`im-mode-badge im-mode-badge--${mode}`}>
+            {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
+          </span>
+          <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
+            {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
           </button>
-          {showTabSettings && (
-            <div className="im-tab-settings-panel">
-              <div className="im-tab-settings-panel__header">
-                <span>Visible Tabs</span>
-                <div style={{ display: "flex", gap: 4 }}>
-                  <button className="im-btn" style={{ padding: "2px 8px", fontSize: 11 }} onClick={showAllTabs}>All</button>
-                  <button className="im-btn" style={{ padding: "2px 8px", fontSize: 11 }} onClick={hideOptionalTabs}>Min</button>
-                </div>
-              </div>
-              <div className="im-tab-settings-panel__list">
-                {TABS.map((t) => {
-                  const required = REQUIRED_TABS.has(t);
-                  const checked  = visibleTabs.has(t);
-                  return (
-                    <label key={t} className={`im-tab-settings-panel__item${required ? " im-tab-settings-panel__item--required" : ""}`}>
-                      <input type="checkbox" checked={checked} disabled={required} onChange={() => toggleTab(t)} />
-                      <span>{t}</span>
-                      {required && <span className="im-tab-settings-panel__req">required</span>}
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
+          <button className="im-btn" onClick={handleNew} title="Ctrl+N">New</button>
+          <button 
+            className={`im-btn${mode === MODES.FIND ? " im-btn--find-active" : ""}`} 
+            onClick={activateFindMode} 
+            title="Ctrl+F"
+          >
+            Find
+          </button>
+          {mode === MODES.UPDATE && (
+            <button className="im-btn im-btn--danger" onClick={resetForm}>Cancel</button>
           )}
         </div>
       </div>
@@ -949,7 +924,6 @@ export default function ItemMaster() {
         {activeTabName === "Planning Data"   && <PlanningTab      form={form} onChange={handleChange} />}
         {activeTabName === "Production Data" && <ProductionDataTab form={form} onChange={handleChange} />}
         {activeTabName === "Properties"      && <PropertiesTab    form={form} onChange={handleChange} />}
-        {activeTabName === "Accounting"      && <AccountingTab    form={form} onChange={handleChange} fetchGLAccounts={fetchGLAccounts} />}
         {activeTabName === "Remarks"         && <RemarksTab       form={form} onChange={handleChange} />}
         {activeTabName === "Attachments"     && (
           <AttachmentsTab
@@ -1073,7 +1047,9 @@ function buildPayload(form, prices = [], barcodes = [], uoms = [], prefVendors =
   if (opt(form.Excisable))    p.Excisable    = form.Excisable;
   if (opt(form.GSTRelevnt))   p.GSTRelevnt   = form.GSTRelevnt;
   // GSTMaterialType is UI-only field, not sent to SAP (no corresponding field exists)
-  if (opt(form.ChapterID) && form.ChapterID !== "" && form.ChapterID !== "-1") p.ChapterID = Number(form.ChapterID);
+  if (opt(form.ChapterID) && form.ChapterID !== "" && form.ChapterID !== "-1") {
+    p.ChapterID = String(form.ChapterID).trim();
+  }
   
   // Normalize GSTTaxCategory - convert display names to SAP enum values
   if (opt(form.GSTTaxCategory)) {

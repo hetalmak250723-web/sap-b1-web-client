@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import GeneralTab  from "./components/GeneralTab";
 import DetailsTab  from "./components/DetailsTab";
 import LookupField from "../item-master/components/LookupField";
 import {
-  createPriceList, getPriceList, updatePriceList,
+  createPriceList, getPriceList, updatePriceList, searchPriceLists,
   fetchBasePriceLists, fetchPLCurrencies,
 } from "../../api/priceListApi";
 
@@ -71,6 +72,8 @@ export default function PriceListModule() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -82,7 +85,20 @@ export default function PriceListModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setTab(0); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setTab(0);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadPriceList = async (priceListNo) => {
+    const data = await getPriceList(priceListNo);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.PriceListName}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.PriceListName.trim()) { showAlert("error", "Price List Name is required."); return; }
@@ -100,16 +116,41 @@ export default function PriceListModule() {
 
   const handleFind = async () => {
     const no = form.PriceListNo?.toString().trim();
-    if (!no) { showAlert("error", "Enter a Price List No. to search."); return; }
+    const query = no || form.PriceListName.trim();
+    if (!query) { showAlert("error", "Enter a Price List No. or Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getPriceList(no);
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.PriceListName}" loaded.`);
+      if (no) {
+        try {
+          await loadPriceList(no);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchPriceLists(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching price lists found.");
+      } else if (results.length === 1) {
+        await loadPriceList(results[0].PriceListNo);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Price List not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Price List search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadPriceList(row.PriceListNo);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load price list.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -139,7 +180,7 @@ export default function PriceListModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -240,6 +281,21 @@ export default function PriceListModule() {
         )}
         {tab === 1 && <DetailsTab form={form} onChange={handleChange} />}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Price List Search Results"
+        columns={[
+          { key: "PriceListNo", label: "No." },
+          { key: "PriceListName", label: "Price List Name" },
+          { key: "BasePriceList", label: "Base" },
+          { key: "Factor", label: "Factor" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.PriceListNo}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

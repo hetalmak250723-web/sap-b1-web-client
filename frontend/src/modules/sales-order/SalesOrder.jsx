@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import './styles/salesOrder.css';
 import '../../modules/item-master/styles/itemMaster.css';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -131,8 +131,8 @@ const createLine = () => ({
     brokerageNumber: '',
     uomCode: '', stdDiscount: '', stcode: '', taxCode: '', total: '', whse: '',
     distRule: '', freeText: '', countryOfOrigin: '', sacCode: '',
-    openQty: '', deliveredQty: '', taxAmount: '',
-    loc: '', branch: '', baseEntry: null, baseType: null, baseLine: null,
+    openQty: '', taxAmount: '',
+    loc: '', branch: '', lineNum: undefined, baseEntry: null, baseType: null, baseLine: null,
     udf: createUdfState(ROW_UDF_DEFINITIONS),
 });
 
@@ -157,6 +157,7 @@ const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
 function SalesOrder() {
     const location = useLocation();
     const navigate = useNavigate();
+    const formRef = useRef(null);
     const [isCopyFromClick, setIsCopyFromClick] = useState(false);
     const [currentDocEntry, setCurrentDocEntry] = useState(null);
     const [header, setHeader] = useState(INIT_HEADER);
@@ -233,6 +234,13 @@ function SalesOrder() {
         tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
     };
     const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+    const hasBuyerCode = Boolean(String(header.vendor || '').trim());
+    const isUpdateMode = Boolean(currentDocEntry);
+    const primaryActionLabel = pageState.posting
+        ? 'Saving...'
+        : isUpdateMode
+            ? 'Update (Alt+U)'
+            : 'Add (Alt+A)';
 
     // Continue in next part...
 
@@ -336,7 +344,11 @@ function SalesOrder() {
 
     // ── load existing order ───────────────────────────────────────────────────
     useEffect(() => {
-        const docEntry = location.state?.salesOrderDocEntry;
+        const docEntry =
+            location.state?.salesOrderDocEntry ||
+            location.state?.docEntry ||
+            location.state?.document?.docEntry ||
+            location.state?.document?.DocEntry;
         if (!docEntry) return;
         let ignore = false;
         const load = async () => {
@@ -427,6 +439,7 @@ function SalesOrder() {
                             return {
                                 ...createLine(),
                                 ...l,
+                                lineNum: l.lineNum ?? l.LineNum ?? index,
                                 hsnCode: hsnCode,
                                 stcode: l.stcode || l.taxCode || '',
                                 loc: l.loc || resolveLineLocation(l.whse, l.branch || so.header?.branch || header.branch),
@@ -762,6 +775,7 @@ function SalesOrder() {
 
     // ── Recalculate Tax Codes on State/Address Changes ────────────────────────
     useEffect(() => {
+        if (currentDocEntry) return;
         if (!header.vendor || !header.placeOfSupply) return;
 
         const companyState = refData.company_address?.State || selectedBranch?.State || '';
@@ -790,7 +804,7 @@ function SalesOrder() {
         );
 
         setLines(updatedLines);
-    }, [header.placeOfSupply, header.vendor, refData.company_address, selectedBranch]);
+    }, [currentDocEntry, header.placeOfSupply, header.vendor, refData.company_address, selectedBranch]);
 
     useEffect(() => {
         if (!header.vendor) return;
@@ -841,6 +855,7 @@ function SalesOrder() {
 
     // Update GST when addresses or place of supply changes
     useEffect(() => {
+        if (currentDocEntry) return;
         if (!header.vendor || !header.placeOfSupply) return;
 
         const gstType = determineGSTType();
@@ -863,7 +878,7 @@ function SalesOrder() {
                 };
             })
         );
-    }, [header.placeOfSupply, header.vendor]);
+    }, [currentDocEntry, header.placeOfSupply, header.vendor]);
 
     // ── vendor details ────────────────────────────────────────────────────────
     const loadVendorDetails = async (code) => {
@@ -1070,7 +1085,6 @@ function SalesOrder() {
                         next.whse = next.whse || item.DefaultWarehouse || header.warehouse || '';
                         next.loc = resolveLineLocation(next.whse, next.branch || header.branch);
                         next.openQty = next.openQty || '';
-                        next.deliveredQty = next.deliveredQty || '';
 
                         // Step 2: Set HSN Code from API response (OCHP.ChapterID via JOIN)
                         next.hsnCode = hsnData.hsnCode || hsnData.hsn_sww || '';
@@ -1780,7 +1794,7 @@ function SalesOrder() {
         };
 
         if (targetType === 'delivery') {
-            navigate('/Delivery', { state: copyState });
+            navigate('/delivery', { state: copyState });
         } else if (targetType === 'ar-invoice') {
             navigate('/ar-invoice', { state: copyState });
         } else if (targetType === 'ar-dpm-request') {
@@ -1985,6 +1999,7 @@ function SalesOrder() {
 
             // Clean lines - remove any readonly/computed fields
             const cleanedLines = lines.map(line => ({
+                lineNum: line.lineNum,
                 itemServiceType: line.itemServiceType,
                 itemNo: line.itemNo,
                 itemDescription: line.itemDescription,
@@ -2077,15 +2092,41 @@ function SalesOrder() {
 
     const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
 
+    useEffect(() => {
+        const handleShortcut = (event) => {
+            if (!event.altKey || event.ctrlKey || event.shiftKey || event.metaKey) return;
+            if (pageState.posting || !isDocumentEditable) return;
+
+            const key = String(event.key || '').toLowerCase();
+            const shouldSubmit = (!isUpdateMode && key === 'a') || (isUpdateMode && key === 'u');
+            if (!shouldSubmit) return;
+
+            event.preventDefault();
+            formRef.current?.requestSubmit();
+        };
+
+        window.addEventListener('keydown', handleShortcut);
+        return () => window.removeEventListener('keydown', handleShortcut);
+    }, [isDocumentEditable, isUpdateMode, pageState.posting]);
+
     // Continue in next part with render...
 
     // ── render ────────────────────────────────────────────────────────────────
     return (
-        <form className={`so-page${sidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
+        <form ref={formRef} className={`so-page${sidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
 
             {/* toolbar */}
             <div className="so-toolbar">
                 <span className="so-toolbar__title">Sales Order{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+                <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting || !isDocumentEditable} title={primaryActionLabel}>
+                    {primaryActionLabel}
+                </button>
+                <button type="button" className="so-btn" disabled={pageState.posting}>
+                    Add Draft & New
+                </button>
+                <button type="button" className="so-btn" onClick={resetForm}>
+                    Cancel
+                </button>
                 <button type="button" className="so-btn" onClick={() => setSidebarOpen(p => !p)}>
                     {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
                 </button>
@@ -2172,6 +2213,39 @@ function SalesOrder() {
                         </button>
                     </div>
                 </div>
+                <div className="so-dropdown">
+                    <button
+                        type="button"
+                        className="so-btn"
+                        disabled={!currentDocEntry}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (!currentDocEntry) return;
+                            const dropdown = e.currentTarget.parentElement;
+                            const isActive = dropdown.classList.contains('active');
+                            document.querySelectorAll('.so-dropdown').forEach(d => d.classList.remove('active'));
+                            if (!isActive) dropdown.classList.add('active');
+                        }}
+                        style={{ opacity: !currentDocEntry ? 0.5 : 1 }}
+                    >
+                        Copy To ▼
+                    </button>
+                    <div className="so-dropdown-menu">
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCopyTo('delivery'); document.querySelectorAll('.so-dropdown').forEach(d => d.classList.remove('active')); }}>
+                            Delivery
+                        </button>
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCopyTo('ar-invoice'); document.querySelectorAll('.so-dropdown').forEach(d => d.classList.remove('active')); }}>
+                            A/R Invoice
+                        </button>
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCopyTo('ar-dpm-request'); document.querySelectorAll('.so-dropdown').forEach(d => d.classList.remove('active')); }}>
+                            A/R DPM Request
+                        </button>
+                        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCopyTo('ar-dpm-invoice'); document.querySelectorAll('.so-dropdown').forEach(d => d.classList.remove('active')); }}>
+                            A/R DPM Invoice
+                        </button>
+                    </div>
+                </div>
 
                 <button type="button" className="so-btn" onClick={() => navigate('/sales-order/find')}>Find</button>
                 <button type="button" className="so-btn" onClick={resetForm}>New</button>
@@ -2239,6 +2313,11 @@ function SalesOrder() {
                                             <input name="name" className="so-field__input" value={header.name} readOnly />
                                         </div>
 
+                                        <fieldset
+                                            className="so-fieldset"
+                                            disabled={!hasBuyerCode}
+                                            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+                                        >
                                         {/* Contact Person */}
                                         <div className="so-field">
                                             <label className="so-field__label">Contact Person</label>
@@ -2343,12 +2422,18 @@ function SalesOrder() {
                                                 </div>
                                             )}
                                         </div>
+                                        </fieldset>
 
                                     </div>
                                 </div>
 
                                 {/* RIGHT COLUMN */}
                                 <div style={{ flex: '1 1 45%', minWidth: '300px', maxWidth: '100%' }}>
+                                    <fieldset
+                                        className="so-fieldset"
+                                        disabled={!hasBuyerCode}
+                                        style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+                                    >
                                     <div className="so-field-grid" style={{ gridTemplateColumns: '1fr' }}>
 
                                         {/* Series */}
@@ -2423,11 +2508,17 @@ function SalesOrder() {
                                         </div>
 
                                     </div>
+                                    </fieldset>
                                 </div>
                             </div>
                         </div>
 
                         {/* ══ TABS ══════════════════════════════════════════════════════ */}
+                        <fieldset
+                            className="so-fieldset"
+                            disabled={!hasBuyerCode}
+                            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+                        >
                         <div className="so-tabs">
                             {TAB_NAMES.map(t => (
                                 <button
@@ -2630,6 +2721,7 @@ function SalesOrder() {
                         </div>
 
                         {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+                        {false && (
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
@@ -2732,17 +2824,25 @@ function SalesOrder() {
                                 </div>
                             </div>
                         </div>
+                        )}
+                        </fieldset>
 
                     </div>
 
-                    <HeaderUdfSidebar
-                        className="so-layout__sidebar"
-                        isOpen={sidebarOpen}
-                        fields={visHdrUdfs}
-                        formSettings={formSettings}
-                        values={headerUdfs}
-                        onFieldChange={handleHeaderUdfChange}
-                    />
+                    <fieldset
+                        className="so-fieldset"
+                        disabled={!hasBuyerCode}
+                        style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+                    >
+                        <HeaderUdfSidebar
+                            className="so-layout__sidebar"
+                            isOpen={sidebarOpen}
+                            fields={visHdrUdfs}
+                            formSettings={formSettings}
+                            values={headerUdfs}
+                            onFieldChange={handleHeaderUdfChange}
+                        />
+                    </fieldset>
                 </div>
 
             </fieldset>

@@ -1,10 +1,11 @@
 import React, { useState, useCallback } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import GeneralTab    from "./components/GeneralTab";
 import AddressTab    from "./components/AddressTab";
 import AccountingTab from "./components/AccountingTab";
 import {
-  createBranch, getBranch, updateBranch,
+  createBranch, getBranch, updateBranch, searchBranches,
 } from "../../api/branchApi";
 
 const TABS  = ["General", "Address", "Accounting"];
@@ -101,6 +102,8 @@ export default function BranchModule() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -112,7 +115,20 @@ export default function BranchModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setTab(0); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setTab(0);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadBranch = async (bplid) => {
+    const data = await getBranch(bplid);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.BPLName}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.BPLName.trim()) { showAlert("error", "Branch Name is required."); return; }
@@ -129,16 +145,41 @@ export default function BranchModule() {
 
   const handleFind = async () => {
     const key = form.BPLID?.toString().trim();
-    if (!key) { showAlert("error", "Enter a Branch ID (BPLID) to search."); return; }
+    const query = key || form.BPLName.trim() || form.BPLNameForeign.trim();
+    if (!query) { showAlert("error", "Enter a Branch ID or Branch Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getBranch(key);
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.BPLName}" loaded.`);
+      if (key) {
+        try {
+          await loadBranch(key);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchBranches(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching branches found.");
+      } else if (results.length === 1) {
+        await loadBranch(results[0].BPLID);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Branch not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Branch search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadBranch(row.BPLID);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load branch.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -168,7 +209,7 @@ export default function BranchModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -250,6 +291,20 @@ export default function BranchModule() {
         {tab === 1 && <AddressTab    form={form} onChange={handleChange} />}
         {tab === 2 && <AccountingTab form={form} onChange={handleChange} />}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Branch Search Results"
+        columns={[
+          { key: "BPLID", label: "ID" },
+          { key: "BPLName", label: "Branch Name" },
+          { key: "BPLNameForeign", label: "Foreign Name" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.BPLID}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

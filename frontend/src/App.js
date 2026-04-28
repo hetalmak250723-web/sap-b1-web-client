@@ -1,4 +1,4 @@
-import { BrowserRouter,Routes,Route } from "react-router-dom";
+import { BrowserRouter,Routes,Route, Navigate } from "react-router-dom";
 
 import Layout from "./components/Layout";
 
@@ -7,7 +7,7 @@ import ItemMaster from "./pages/ItemMaster";
 import BusinessPartner from "./pages/BusinessPartner";
 import Warehouse  from "./pages/Warehouse";
 import PriceList  from "./pages/PriceList";
-import Delivery  from "./modules/Delivery/Delivery";
+import Delivery  from "./pages/Delivery";
 import DeliveryList from "./pages/DeliveryList";
 import TaxCode    from "./pages/TaxCode";
 import UoMGroup      from "./pages/UoMGroup";
@@ -78,7 +78,9 @@ return(
 <Route path="/inventory-transfer-request/find" element={<InventoryTransferRequestList/>} />
 <Route path="/inventory-transfer" element={<InventoryTransfer/>} />
 <Route path="/inventory-transfer/find" element={<InventoryTransferList/>} />
-<Route path="/Delivery"   element={<Delivery/>} /> 
+<Route path="/delivery"   element={<Delivery/>} />
+<Route path="/delivery/new" element={<Delivery/>} />
+<Route path="/Delivery"   element={<Navigate to="/delivery" replace />} />
 <Route path="/delivery/find" element={<DeliveryList/>} />
 <Route path="/shipping-type"   element={<ShippingType/>} />
 <Route path="/branch"              element={<Branch/>} />

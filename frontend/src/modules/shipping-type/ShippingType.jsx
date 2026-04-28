@@ -1,7 +1,8 @@
 import React, { useState, useCallback } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import {
-  createShippingType, getShippingType, updateShippingType,
+  createShippingType, getShippingType, updateShippingType, searchShippingTypes,
 } from "../../api/shippingTypeApi";
 
 const MODES = { ADD: "add", FIND: "find", UPDATE: "update" };
@@ -27,6 +28,8 @@ export default function ShippingTypeModule() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -38,7 +41,19 @@ export default function ShippingTypeModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadShippingType = async (code) => {
+    const data = await getShippingType(code);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.Name}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.Name.trim()) { showAlert("error", "Name is required."); return; }
@@ -55,16 +70,41 @@ export default function ShippingTypeModule() {
 
   const handleFind = async () => {
     const key = form.Code?.toString().trim();
-    if (!key) { showAlert("error", "Enter a Code to search."); return; }
+    const query = key || form.Name.trim();
+    if (!query) { showAlert("error", "Enter a Code or Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getShippingType(key);
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.Name}" loaded.`);
+      if (key) {
+        try {
+          await loadShippingType(key);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchShippingTypes(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching shipping types found.");
+      } else if (results.length === 1) {
+        await loadShippingType(results[0].Code);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Shipping Type not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Shipping Type search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadShippingType(row.Code);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load shipping type.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -94,7 +134,7 @@ export default function ShippingTypeModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -153,6 +193,20 @@ export default function ShippingTypeModule() {
 
         </div>
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Shipping Type Search Results"
+        columns={[
+          { key: "Code", label: "Code" },
+          { key: "Name", label: "Name" },
+          { key: "Website", label: "Website" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.Code}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

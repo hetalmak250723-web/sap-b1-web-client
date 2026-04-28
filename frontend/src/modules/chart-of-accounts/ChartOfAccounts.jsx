@@ -1,9 +1,11 @@
 import React, { useState, useCallback } from "react";
 import "./styles/chartOfAccounts.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import {
   createAccount,
   getAccount,
   updateAccount,
+  searchAccounts,
 } from "../../api/chartOfAccountsApi";
 
 const EMPTY_FORM = {
@@ -35,6 +37,8 @@ export default function ChartOfAccounts() {
   const [alert, setAlert] = useState(null);
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState("add");
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -49,19 +53,40 @@ export default function ChartOfAccounts() {
     }));
   }, []);
 
+  const loadAccount = async (code) => {
+    const data = await getAccount(code);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode("update");
+    showAlert("success", `Account "${data.Code}" loaded.`);
+  };
+
   const handleFind = async () => {
-    if (!form.Code.trim()) {
-      showAlert("error", "Enter an Account Code to search.");
+    const code = form.Code.trim();
+    const query = code || form.Name.trim();
+    if (!query) {
+      showAlert("error", "Enter an Account Code or Name to search.");
       return;
     }
     setLoading(true);
     try {
-      const data = await getAccount(form.Code.trim());
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode("update");
-      showAlert("success", `Account "${data.Code}" loaded.`);
+      if (code) {
+        try {
+          await loadAccount(code);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchAccounts(query, "", 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching accounts found.");
+      } else if (results.length === 1) {
+        await loadAccount(results[0].Code);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", "Account not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Account search failed.");
     } finally {
       setLoading(false);
     }
@@ -71,6 +96,20 @@ export default function ChartOfAccounts() {
     setForm(EMPTY_FORM);
     setMode("add");
     setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadAccount(row.Code);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load account.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const buildPayload = () => {
@@ -428,6 +467,21 @@ export default function ChartOfAccounts() {
           </div>
         </div>
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Account Search Results"
+        columns={[
+          { key: "Code", label: "Code" },
+          { key: "Name", label: "Name" },
+          { key: "AccountType", label: "Type" },
+          { key: "Level", label: "Level" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.Code}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

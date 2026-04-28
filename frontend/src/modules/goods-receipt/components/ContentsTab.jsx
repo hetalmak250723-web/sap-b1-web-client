@@ -38,6 +38,8 @@ const READ_ONLY_COLUMNS = new Set([
   'itemCost',
   'uomCode',
   'uomName',
+  'location',
+  'branch',
 ]);
 
 const NUMERIC_COLUMNS = new Set(['quantity', 'unitPrice', 'total', 'itemCost']);
@@ -55,6 +57,7 @@ function ContentsTab({
   onAddLine,
   onRemoveLine,
   errors,
+  headerBranchName = '',
 }) {
   const inputRefs = useRef({});
 
@@ -241,9 +244,16 @@ function ContentsTab({
                         ['quantity', 'unitPrice', 'accountCode', 'location', 'branch'].includes(
                           columnKey
                         ));
+                    const displayValue =
+                      columnKey === 'location' || columnKey === 'branch'
+                        ? headerBranchName || line[columnKey] || ''
+                        : line[columnKey] ?? '';
 
                     return (
-                      <td key={columnKey}>
+                      <td
+                        key={columnKey}
+                        className={readOnly ? 'gr-goods-receipt__cell--readonly' : undefined}
+                      >
                         <input
                           ref={(node) => {
                             inputRefs.current[`${rowIndex}:${columnKey}`] = node;
@@ -251,8 +261,9 @@ function ContentsTab({
                           className={`po-grid__input ${
                             NUMERIC_COLUMNS.has(columnKey) ? '' : 'po-grid__input--text'
                           } ${rowErrors[columnKey] ? 'gr-goods-receipt__input--error' : ''}`}
-                          value={line[columnKey] ?? ''}
+                          value={displayValue}
                           readOnly={readOnly}
+                          style={readOnly ? { background: '#fff', cursor: 'default' } : undefined}
                           onFocus={() => onFocusRow(rowIndex)}
                           onChange={(event) =>
                             onFieldChange(rowIndex, columnKey, event.target.value)

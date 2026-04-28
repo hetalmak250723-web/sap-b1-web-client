@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import GeneralTab    from "./components/GeneralTab";
 import AccountingTab from "./components/AccountingTab";
 import {
-  createTaxCode, getTaxCode, updateTaxCode,
+  createTaxCode, getTaxCode, updateTaxCode, searchTaxCodes,
   fetchTaxGLAccounts,
 } from "../../api/taxCodeApi";
 
@@ -96,6 +97,8 @@ export default function TaxCodeModule() {
   const [form, setForm]       = useState(EMPTY_FORM);
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   const showAlert = (type, msg) => {
     setAlert({ type, msg });
@@ -107,7 +110,20 @@ export default function TaxCodeModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setTab(0); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setTab(0);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadTaxCode = async (code) => {
+    const data = await getTaxCode(code);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.Code}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.Code.trim()) { showAlert("error", "Code is required."); return; }
@@ -123,16 +139,42 @@ export default function TaxCodeModule() {
   };
 
   const handleFind = async () => {
-    if (!form.Code.trim()) { showAlert("error", "Enter a Code to search."); return; }
+    const code = form.Code.trim();
+    const query = code || form.Name.trim();
+    if (!query) { showAlert("error", "Enter a Code or Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getTaxCode(form.Code.trim());
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.Code}" loaded.`);
+      if (code) {
+        try {
+          await loadTaxCode(code);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchTaxCodes(query, "", 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching tax codes found.");
+      } else if (results.length === 1) {
+        await loadTaxCode(results[0].Code);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Tax Code not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Tax Code search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadTaxCode(row.Code);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load tax code.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -161,7 +203,7 @@ export default function TaxCodeModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -283,6 +325,21 @@ export default function TaxCodeModule() {
           />
         )}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Tax Code Search Results"
+        columns={[
+          { key: "Code", label: "Code" },
+          { key: "Name", label: "Name" },
+          { key: "Category", label: "Category" },
+          { key: "Rate", label: "Rate" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.Code}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

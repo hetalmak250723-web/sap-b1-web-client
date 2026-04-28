@@ -10,6 +10,7 @@ const MATRIX_COLS = [
   { key: 'buyerQuality', label: 'Buyer - Quality', minWidth: 170 },
   { key: 'quantity', label: 'Quantity', minWidth: 85 },
   { key: 'unitPrice', label: 'Unit Price', minWidth: 110 },
+  { key: 'uomCode', label: 'UoM', minWidth: 95 },
   { key: 'sellerPrice', label: 'Seller - Price', minWidth: 110 },
   { key: 'buyerPrice', label: 'Buyer - Price', minWidth: 110 },
   { key: 'sellerDelivery', label: 'Seller - Delivery', minWidth: 120 },
@@ -258,35 +259,37 @@ export default function ContentsTab({
       ),
       unitPrice: () => (
         <td key="unitPrice">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <input
-              className="del-grid__input"
-              style={{ border: valErrors.lines[i]?.unitPrice ? '1px solid #c00' : undefined }}
-              name="unitPrice"
-              value={line.unitPrice}
-              onChange={(e) => onLineChange(i, e)}
-              onBlur={() => onNumBlur('unitPrice', 'line', i)}
-            />
-            <select
-              className="del-grid__input"
-              name="uomCode"
-              value={line.uomCode}
-              onChange={(e) => onLineChange(i, e)}
-            >
-              <option value=""></option>
-              {uomOpts.map((uom) => (
-                <option key={uom} value={uom}>
-                  {uom}
-                </option>
-              ))}
-              {line.uomCode && !uomOpts.includes(line.uomCode) && (
-                <option value={line.uomCode}>{line.uomCode}</option>
-              )}
-            </select>
-          </div>
+          <input
+            className="del-grid__input"
+            style={{ border: valErrors.lines[i]?.unitPrice ? '1px solid #c00' : undefined }}
+            name="unitPrice"
+            value={line.unitPrice}
+            onChange={(e) => onLineChange(i, e)}
+            onBlur={() => onNumBlur('unitPrice', 'line', i)}
+          />
           {valErrors.lines[i]?.unitPrice && (
             <div style={{ color: '#c00', fontSize: 10, marginTop: 2 }}>{valErrors.lines[i].unitPrice}</div>
           )}
+        </td>
+      ),
+      uomCode: () => (
+        <td key="uomCode">
+          <select
+            className="del-grid__input"
+            name="uomCode"
+            value={line.uomCode || ''}
+            onChange={(e) => onLineChange(i, e)}
+          >
+            <option value=""></option>
+            {uomOpts.map((uom) => (
+              <option key={uom} value={uom}>
+                {uom}
+              </option>
+            ))}
+            {line.uomCode && !uomOpts.includes(line.uomCode) && (
+              <option value={line.uomCode}>{line.uomCode}</option>
+            )}
+          </select>
         </td>
       ),
       sellerPrice: () => (
@@ -432,7 +435,7 @@ export default function ContentsTab({
             className="del-grid__input"
             style={{ width: '100%', textAlign: 'left', border: valErrors.lines[i]?.taxCode ? '1px solid #c00' : undefined }}
             name="taxCode"
-            value={line.taxCode}
+            value={line.taxCode || ''}
             onChange={(e) => onLineChange(i, e)}
           >
             <option value="">Select</option>
@@ -441,6 +444,9 @@ export default function ContentsTab({
                 {fmtTaxLabel(tax)}
               </option>
             ))}
+            {line.taxCode && !effectiveTaxCodes.some((tax) => String(tax.Code || '') === String(line.taxCode || '')) && (
+              <option value={line.taxCode}>{line.taxCode}</option>
+            )}
           </select>
         </td>
       ),

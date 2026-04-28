@@ -95,6 +95,7 @@ export default function ProductionOrderModule() {
   const [alert,   setAlert]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [docEntry, setDocEntry] = useState(null);
+  const [listQuery, setListQuery] = useState("");
 
   // Lookup data
   const [warehouses,  setWarehouses]  = useState([]);
@@ -148,6 +149,7 @@ export default function ProductionOrderModule() {
     setTab(0);
     setAlert(null);
     setDocEntry(null);
+    setListQuery("");
   };
 
   const handleHeaderChange = useCallback((e) => {
@@ -385,8 +387,9 @@ export default function ProductionOrderModule() {
   };
 
   const handleFind = async () => {
-    const num = header.origin_num.trim() || header.item_code.trim();
-    if (!num) { showAlert("error", "Enter a Doc No. or Item Code to search."); return; }
+    const query = header.origin_num.trim() || header.item_code.trim() || header.item_name.trim();
+    if (!query) { showAlert("error", "Enter a Doc No., Item Code, or Description to search."); return; }
+    setListQuery(query);
     setMode(MODES.LIST);
   };
 
@@ -509,7 +512,7 @@ export default function ProductionOrderModule() {
 
   // ── List view ──────────────────────────────────────────────────────────────
   if (mode === MODES.LIST) {
-    return <ProductionOrderList onSelect={handleSelectFromList} />;
+    return <ProductionOrderList initialQuery={listQuery} onSelect={handleSelectFromList} />;
   }
 
   return (
@@ -527,7 +530,7 @@ export default function ProductionOrderModule() {
         )}
 
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading || isReadOnly}>
-          {loading ? "…" : mode === MODES.FIND ? "Find" : "OK"}
+          {loading ? "…" : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => setMode(MODES.LIST)}>List</button>

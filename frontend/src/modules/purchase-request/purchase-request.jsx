@@ -1237,6 +1237,15 @@ function PurchaseRequest() {
       {/* toolbar */}
       <div className="po-toolbar">
         <span className="po-toolbar__title">Purchase Request{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button type="button" className="po-btn" disabled={pageState.posting}>
+          Add Draft & New
+        </button>
+        <button type="button" className="po-btn" onClick={resetForm}>
+          Cancel
+        </button>
         <button type="button" className="po-btn" onClick={() => setSidebarOpen(p => !p)}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
@@ -1638,6 +1647,7 @@ function PurchaseRequest() {
             </div>
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+            {false && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
@@ -1663,6 +1673,7 @@ function PurchaseRequest() {
                 </button>
               </div>
             </div>
+            )}
 
           </div>{/* end main col */}
 

@@ -20,6 +20,7 @@ const BASE_MATRIX_COLUMNS = [
   { key: 'buyerQuality', label: 'Buyer - Quality', visible: true },
   { key: 'quantity', label: 'Quantity', visible: true },
   { key: 'unitPrice', label: 'Unit Price', visible: true },
+  { key: 'uomCode', label: 'UoM', visible: true },
   { key: 'sellerPrice', label: 'Seller - Price', visible: true },
   { key: 'buyerPrice', label: 'Buyer - Price', visible: true },
   { key: 'sellerDelivery', label: 'Seller - Delivery', visible: true },
@@ -28,7 +29,6 @@ const BASE_MATRIX_COLUMNS = [
   { key: 'sellerBrokeragePercent', label: 'Seller Brokerage in Percentage', visible: true },
   { key: 'sellerBrokerage', label: 'Seller Brokerage', visible: true },
   { key: 'buyerBrokerage', label: 'Buyer Brokerage', visible: true },
-  { key: 'deliveredQty', label: 'Delivered Qty', visible: true },
   { key: 'stdDiscount', label: 'Discount %', visible: true },
   { key: 'stcode', label: 'STCODE', visible: true },
   { key: 'taxCode', label: 'Tax Code', visible: true },
@@ -51,7 +51,7 @@ const BASE_MATRIX_COLUMNS = [
   { key: 'buyerBillDiscount', label: 'Buyer Bill Discount', visible: false },
   { key: 'sellerBillDiscount', label: 'Seller Bill Discount', visible: false },
   { key: 'sellerItem', label: 'S_Item', visible: false },
-  { key: 'sellerQty', label: 'S_Qty', visible: false },
+  { key: 'sellerQty', label: 'S_Qty', visible: true },
   { key: 'freightPurchase', label: 'Freight Purchase', visible: false },
   { key: 'freightSales', label: 'Freight Sales', visible: false },
   { key: 'freightProvider', label: 'Freight Provider', visible: false },
@@ -92,7 +92,14 @@ const readSavedFormSettings = () => {
   try {
     const raw = localStorage.getItem(FORM_SETTINGS_STORAGE_KEY);
     if (!raw) return defaults;
-    return mergeNestedSettings(defaults, JSON.parse(raw));
+    const merged = mergeNestedSettings(defaults, JSON.parse(raw));
+    if (merged.matrixColumns?.sellerQty) {
+      merged.matrixColumns.sellerQty = {
+        ...merged.matrixColumns.sellerQty,
+        visible: true,
+      };
+    }
+    return merged;
   } catch (error) {
     return defaults;
   }

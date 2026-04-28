@@ -11,8 +11,9 @@ import PropertiesTab from "./components/PropertiesTab";
 import RemarksTab    from "./components/RemarksTab";
 import {
   createBP, getBP, updateBP, searchBP,
-  fetchBPGroups, fetchBPPriceLists, fetchPaymentTerms, fetchCurrencies,
+  fetchBPGroups, fetchBPPriceLists, fetchPaymentTerms, fetchCurrencies, fetchBPCountries,
   fetchSalesPersons, fetchNumberingSeries, getNextSeriesNumber,
+  fetchBPCreditCards, createBPCreditCard, fetchBPBanks,
 } from "../../api/businessPartnerApi";
 import { searchShippingTypes } from "../../api/shippingTypeApi";
 import { searchAccounts }      from "../../api/chartOfAccountsApi";
@@ -26,11 +27,23 @@ const buildInitialProps = () => {
   return p;
 };
 
+const normalizeDateInput = (value) => {
+  if (!value) return "";
+  const text = String(value);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+};
+
 const normalizeBP = (data) => {
   const d = { ...data };
   const bools = ["Valid","Frozen","BlockSendingMarketingContent","PartialDelivery","BackOrder",
     "SinglePayment","EndorsableChecksFromBP","AcceptsEndorsedChecks","PaymentBlock",
-    "CollectionAuthorization","Affiliate"];
+    "CollectionAuthorization","Affiliate","UseBillToAddrToDetermineTax",
+    "BlockDunning","EffectivePriceConsidersPriceBeforeDiscount","NoDiscounts"];
   bools.forEach((f) => {
     if (d[f] === true  || d[f] === "Y") d[f] = "tYES";
     if (d[f] === false || d[f] === "N") d[f] = "tNO";
@@ -39,6 +52,39 @@ const normalizeBP = (data) => {
     d.AutomaticPosting = "apNo";
   if (!d.BPAddresses)      d.BPAddresses      = [];
   if (!d.ContactEmployees) d.ContactEmployees = [];
+  if (!d.BPPaymentDates)   d.BPPaymentDates   = [];
+  if (!d.BPBankAccounts)   d.BPBankAccounts   = [];
+  d.BPBankAccounts = d.BPBankAccounts.map((row, index) => ({
+    ...row,
+    BankName: row.BankName || (index === 0 ? d.PaymentBankName || "" : ""),
+    CountryName: row.CountryName || (index === 0 ? d.PaymentBankCountryName || row.Country || "" : row.Country || ""),
+  }));
+  const firstBank = d.BPBankAccounts[0] || null;
+  d.CreditCardCode = d.CreditCardCode == null || Number(d.CreditCardCode) < 0 ? "" : String(d.CreditCardCode);
+  d.Priority = d.Priority == null || Number(d.Priority) < 0 ? "" : String(d.Priority);
+  d.PayTermsGrpCode = d.PayTermsGrpCode == null || d.PayTermsGrpCode === "" ? "" : String(d.PayTermsGrpCode);
+  d.PriceListNum = d.PriceListNum == null || d.PriceListNum === "" ? "" : String(d.PriceListNum);
+  d.CreditCardExpiration = normalizeDateInput(d.CreditCardExpiration);
+  d.PaymentBankCode = firstBank?.BankCode || "";
+  d.PaymentBankName = d.PaymentBankName || firstBank?.BankName || firstBank?.BankCode || "";
+  d.PaymentBankCountryCode = firstBank?.Country || d.BankCountry || "";
+  d.PaymentBankCountryName = d.PaymentBankCountryName || firstBank?.CountryName || d.PaymentBankCountryCode || "";
+  d.PaymentBankAccountNo = firstBank?.AccountNo || "";
+  d.PaymentBankBranch = firstBank?.Branch || "";
+  d.PaymentBankControlKey = firstBank?.ControlKey || "";
+  d.PaymentBankIBAN = firstBank?.IBAN || "";
+  d.PaymentBankBICSwiftCode = firstBank?.BICSwiftCode || "";
+  d.PaymentBankAccountName = firstBank?.AccountName || "";
+  d.PaymentBankCustomerIdNumber = firstBank?.CustomerIdNumber || "";
+  d.PaymentBankMandateID = firstBank?.MandateID || "";
+  d.PaymentBankSignatureDate = normalizeDateInput(firstBank?.SignatureDate);
+  d.PaymentBankInternalKey = firstBank?.InternalKey ?? "";
+  d.PaymentBankSelectedIndex = d.BPBankAccounts.length > 0 ? 0 : -1;
+  d.IBAN = d.IBAN || "";
+  d.DefaultBankCode =
+    d.DefaultBankCode == null || d.DefaultBankCode === "-1"
+      ? (firstBank?.BankCode || "")
+      : String(d.DefaultBankCode);
   for (let i = 1; i <= 64; i++) {
     const k = `Properties${i}`;
     if (d[k] === true || d[k] === "Y") d[k] = "tYES";
@@ -62,24 +108,33 @@ const EMPTY_FORM = {
   ContactPerson: "", FreeText: "",
   ChannelBP: "", Territory: "", LanguageCode: "",
   GTSRegNo: "", BlockSendingMarketingContent: "tNO",
+  ECommerceMerchantID: "", UseBillToAddrToDetermineTax: "tNO",
   AliasName: "", BranchAssignment: "Active",
   Valid: "tYES", ValidFrom: "", ValidTo: "",
   Frozen: "tNO", FrozenFrom: "", FrozenTo: "",
+  BilltoDefault: "", ShipToDefault: "",
   // Payment Terms
   PayTermsGrpCode: "", PayTermsName: "",
   IntrestRatePercent: "", PriceListNum: "", PriceListName: "",
   DiscountPercent: "", CreditLimit: "", MaxCommitment: "",
   DunningTerm: "", AutomaticPosting: "apNo",
   EffectiveDiscount: "dgrLowestDiscount", EffectivePrice: "epDefaultPriority",
-  CreditCardCode: "", CreditCardNum: "", CreditCardExpiration: "",
+  EffectivePriceConsidersPriceBeforeDiscount: "tNO",
+  CreditCardCode: "", CreditCardName: "", CreditCardNum: "", CreditCardExpiration: "",
   AvarageLate: "", Priority: "",
+  BlockDunning: "tNO", IBAN: "", BankCountry: "", DefaultBankCode: "",
+  PaymentBankCode: "", PaymentBankName: "", PaymentBankCountryCode: "", PaymentBankCountryName: "",
+  PaymentBankAccountNo: "", PaymentBankBranch: "", PaymentBankControlKey: "",
+  PaymentBankIBAN: "", PaymentBankBICSwiftCode: "", PaymentBankAccountName: "",
+  PaymentBankCustomerIdNumber: "", PaymentBankMandateID: "", PaymentBankSignatureDate: "",
+  PaymentBankInternalKey: "", PaymentBankSelectedIndex: -1, NoDiscounts: "tNO",
   PartialDelivery: "tNO", BackOrder: "tNO", SinglePayment: "tNO",
   EndorsableChecksFromBP: "tNO", AcceptsEndorsedChecks: "tNO",
   // Payment Run
   HouseBankCountry: "", HouseBank: "", HouseBankAccount: "",
   HouseBankBranch: "", HouseBankIBAN: "", HouseBankSwift: "", HouseBankControlKey: "",
   PaymentBlock: "tNO", CollectionAuthorization: "tNO", BankChargesAllocationCode: "",
-  BPPaymentMethods: [],
+  BPPaymentMethods: [], BPPaymentDates: [], BPBankAccounts: [],
   // Accounting
   ConsolidationType: "PaymentConsolidation", ConsolidatingBP: "",
   DebitorAccount: "", DebitorAccountName: "",
@@ -96,13 +151,14 @@ const EMPTY_FORM = {
 function buildPayload(form) {
   const opt = (v) => v !== "" && v != null;
   const num = (v) => (v !== "" && v != null && !isNaN(v) ? Number(v) : undefined);
+  const isManualSeries = !form.Series || form.Series === "0" || form.Series === "";
   const p = {};
 
   p.CardCode = form.CardCode;
   p.CardName = form.CardName;
   p.CardType = form.CardType || "cCustomer";
 
-  if (opt(form.Series))         { const v = num(form.Series); if (v != null) p.Series = v; }
+  if (!isManualSeries && opt(form.Series)) { const v = num(form.Series); if (v != null) p.Series = v; }
   if (opt(form.CardForeignName)) p.CardForeignName = form.CardForeignName;
   if (opt(form.GroupCode))      { const v = num(form.GroupCode); if (v != null) p.GroupCode = v; }
   if (opt(form.Currency))        p.Currency = form.Currency;
@@ -126,7 +182,11 @@ function buildPayload(form) {
   if (opt(form.LanguageCode))   { const v = num(form.LanguageCode); if (v != null) p.LanguageCode = v; }
   if (opt(form.GTSRegNo))        p.GTSRegNo = form.GTSRegNo;
   p.BlockSendingMarketingContent = form.BlockSendingMarketingContent || "tNO";
+  if (opt(form.ECommerceMerchantID)) p.ECommerceMerchantID = form.ECommerceMerchantID;
+  p.UseBillToAddrToDetermineTax = form.UseBillToAddrToDetermineTax || "tNO";
   if (opt(form.AliasName))       p.AliasName = form.AliasName;
+  if (opt(form.BilltoDefault))   p.BilltoDefault = form.BilltoDefault;
+  if (opt(form.ShipToDefault))   p.ShipToDefault = form.ShipToDefault;
   p.Valid  = form.Valid  || "tYES";
   if (opt(form.ValidFrom))       p.ValidFrom = form.ValidFrom;
   if (opt(form.ValidTo))         p.ValidTo   = form.ValidTo;
@@ -144,10 +204,16 @@ function buildPayload(form) {
   p.AutomaticPosting = form.AutomaticPosting || "apNo";
   if (opt(form.EffectiveDiscount)) p.EffectiveDiscount = form.EffectiveDiscount;
   if (opt(form.EffectivePrice))    p.EffectivePrice    = form.EffectivePrice;
+  p.EffectivePriceConsidersPriceBeforeDiscount = form.EffectivePriceConsidersPriceBeforeDiscount || "tNO";
   if (opt(form.CreditCardCode)) { const v = num(form.CreditCardCode); if (v != null) p.CreditCardCode = v; }
   if (opt(form.CreditCardNum))   p.CreditCardNum = form.CreditCardNum;
   if (opt(form.CreditCardExpiration)) p.CreditCardExpiration = form.CreditCardExpiration;
   if (opt(form.Priority))       { const v = num(form.Priority); if (v != null) p.Priority = v; }
+  if (opt(form.IBAN))            p.IBAN = form.IBAN;
+  if (opt(form.PaymentBankCountryCode || form.BankCountry)) p.BankCountry = form.PaymentBankCountryCode || form.BankCountry;
+  if (opt(form.DefaultBankCode || form.PaymentBankCode)) p.DefaultBankCode = form.DefaultBankCode || form.PaymentBankCode;
+  p.BlockDunning           = form.BlockDunning           || "tNO";
+  p.NoDiscounts            = form.NoDiscounts            || "tNO";
   p.PartialDelivery        = form.PartialDelivery        || "tNO";
   p.BackOrder              = form.BackOrder              || "tNO";
   p.SinglePayment          = form.SinglePayment          || "tNO";
@@ -184,6 +250,12 @@ function buildPayload(form) {
         Street: a.Street, StreetNo: a.StreetNo, Block: a.Block,
         BuildingFloorRoom: a.BuildingFloorRoom, City: a.City,
         ZipCode: a.ZipCode, County: a.County, Country: a.Country, State: a.State,
+        TaxOffice: a.TaxOffice || undefined,
+        GlobalLocationNumber: a.GlobalLocationNumber || undefined,
+        GSTIN: a.GSTIN || undefined,
+        GstType: a.GstType || undefined,
+        U_GSTIN_No: a.U_GSTIN_No || undefined,
+        ...(a.RowNum != null && a.RowNum !== "" ? { RowNum: Number(a.RowNum) } : {}),
       }));
   }
 
@@ -198,6 +270,62 @@ function buildPayload(form) {
         Gender: c.Gender || "gt_NotSpecified",
         BlockSendingMarketingContent: c.BlockSendingMarketingContent || "tNO",
       }));
+  }
+
+  const bankRows = (form.BPBankAccounts || []).length > 0 ? form.BPBankAccounts : [{
+    BankCode: form.PaymentBankCode,
+    Country: form.PaymentBankCountryCode || form.BankCountry,
+    AccountNo: form.PaymentBankAccountNo,
+    Branch: form.PaymentBankBranch,
+    ControlKey: form.PaymentBankControlKey,
+    IBAN: form.PaymentBankIBAN,
+    BICSwiftCode: form.PaymentBankBICSwiftCode,
+    AccountName: form.PaymentBankAccountName,
+    CustomerIdNumber: form.PaymentBankCustomerIdNumber,
+    MandateID: form.PaymentBankMandateID,
+    SignatureDate: form.PaymentBankSignatureDate,
+    InternalKey: form.PaymentBankInternalKey,
+  }];
+
+  const mappedBankRows = bankRows
+    .map((row) => {
+      const bankAccount = {};
+      if (opt(row.BankCode)) bankAccount.BankCode = row.BankCode;
+      if (opt(row.Country)) bankAccount.Country = row.Country;
+      if (opt(row.AccountNo)) bankAccount.AccountNo = row.AccountNo;
+      if (opt(row.Branch)) bankAccount.Branch = row.Branch;
+      if (opt(row.ControlKey)) bankAccount.ControlKey = row.ControlKey;
+      if (opt(row.IBAN)) bankAccount.IBAN = row.IBAN;
+      if (opt(row.BICSwiftCode)) bankAccount.BICSwiftCode = row.BICSwiftCode;
+      if (opt(row.AccountName)) bankAccount.AccountName = row.AccountName;
+      if (opt(row.CustomerIdNumber)) bankAccount.CustomerIdNumber = row.CustomerIdNumber;
+      if (opt(row.MandateID)) bankAccount.MandateID = row.MandateID;
+      if (opt(row.SignatureDate)) bankAccount.SignatureDate = row.SignatureDate;
+      if (opt(row.Street)) bankAccount.Street = row.Street;
+      if (opt(row.StreetNo)) bankAccount.StreetNo = row.StreetNo;
+      if (opt(row.BuildingFloorRoom)) bankAccount.BuildingFloorRoom = row.BuildingFloorRoom;
+      if (opt(row.ZipCode)) bankAccount.ZipCode = row.ZipCode;
+      if (opt(row.Block)) bankAccount.Block = row.Block;
+      if (opt(row.City)) bankAccount.City = row.City;
+      if (opt(row.County)) bankAccount.County = row.County;
+      if (opt(row.State)) bankAccount.State = row.State;
+      if (opt(row.UserNo1)) bankAccount.UserNo1 = row.UserNo1;
+      if (opt(row.UserNo2)) bankAccount.UserNo2 = row.UserNo2;
+      if (opt(row.UserNo3)) bankAccount.UserNo3 = row.UserNo3;
+      if (opt(row.UserNo4)) bankAccount.UserNo4 = row.UserNo4;
+      if (opt(row.InternalKey) && !Number.isNaN(Number(row.InternalKey))) bankAccount.InternalKey = Number(row.InternalKey);
+      return bankAccount;
+    })
+    .filter((row) => Object.keys(row).length > 0);
+
+  if (mappedBankRows.length > 0) {
+    p.BPBankAccounts = mappedBankRows;
+  }
+
+  if ((form.BPPaymentDates || []).length > 0) {
+    p.BPPaymentDates = form.BPPaymentDates
+      .filter((row) => opt(row?.PaymentDate))
+      .map((row) => ({ PaymentDate: row.PaymentDate }));
   }
 
   return p;
@@ -283,6 +411,16 @@ export default function BusinessPartnerModule() {
   const fetchSalesPersonsLookup = async (q = "") => {
     try { return await fetchSalesPersons(q); } catch { return []; }
   };
+  const fetchCreditCardsLookup = async (q = "") => {
+    try { return await fetchBPCreditCards(q); } catch { return []; }
+  };
+  const fetchBanksLookup = async (q = "", country = "") => {
+    try { return await fetchBPBanks(q, country); } catch { return []; }
+  };
+  const fetchCountriesLookup = async (q = "") => {
+    try { return await fetchBPCountries(q); } catch { return []; }
+  };
+  const createCreditCardLookup = async (payload) => createBPCreditCard(payload);
 
   const openCurrencyLookup = async () => {
     setCurrencyModal(true);
@@ -307,31 +445,41 @@ export default function BusinessPartnerModule() {
   }, [form]);
 
   const handleFind = useCallback(async () => {
-    if (!form.CardCode.trim()) { showAlert("error", "Enter a Card Code to search."); return; }
+    const cardCode = form.CardCode.trim();
+    const searchTerm = cardCode
+      || form.CardName.trim()
+      || form.CardForeignName.trim()
+      || form.Phone1.trim()
+      || form.EmailAddress.trim();
+
+    if (!searchTerm) { showAlert("error", "Enter a Card Code, Name, Phone, or Email to search."); return; }
     setLoading(true);
     try {
-      try {
-        const data = await getBP(form.CardCode.trim());
-        setForm({ ...EMPTY_FORM, ...normalizeBP(data) });
-        setMode(MODES.UPDATE);
-        showAlert("success", `"${data.CardCode}" loaded.`);
-      } catch {
-        const results = await searchBP(form.CardCode.trim(), form.CardType, 100);
-        if (results.length === 0) { showAlert("error", "No matching business partners found."); }
-        else if (results.length === 1) {
-          const data = await getBP(results[0].CardCode);
+      if (cardCode) {
+        try {
+          const data = await getBP(cardCode);
           setForm({ ...EMPTY_FORM, ...normalizeBP(data) });
           setMode(MODES.UPDATE);
           showAlert("success", `"${data.CardCode}" loaded.`);
-        } else {
-          setCflResults(results);
-          setShowCFL(true);
-        }
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchBP(searchTerm, form.CardType, 100);
+      if (results.length === 0) { showAlert("error", "No matching business partners found."); }
+      else if (results.length === 1) {
+        const data = await getBP(results[0].CardCode);
+        setForm({ ...EMPTY_FORM, ...normalizeBP(data) });
+        setMode(MODES.UPDATE);
+        showAlert("success", `"${data.CardCode}" loaded.`);
+      } else {
+        setCflResults(results);
+        setShowCFL(true);
       }
     } catch (err) {
       showAlert("error", err.response?.data?.message || err.message || "Search failed.");
     } finally { setLoading(false); }
-  }, [form.CardCode, form.CardType]);
+  }, [form.CardCode, form.CardName, form.CardForeignName, form.Phone1, form.EmailAddress, form.CardType]);
 
   const handleCFLSelect = async (bp) => {
     setShowCFL(false);
@@ -385,6 +533,9 @@ export default function BusinessPartnerModule() {
         <span className={`im-mode-badge im-mode-badge--${mode}`}>
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
+        <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
+        </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className={`im-btn${mode === MODES.FIND ? " im-btn--find-active" : ""}`}
           onClick={activateFind} title="Ctrl+F">Find</button>
@@ -483,20 +634,18 @@ export default function BusinessPartnerModule() {
         {tab === 1 && <ContactTab form={form} setForm={setForm} />}
         {tab === 2 && <AddressTab form={form} setForm={setForm} />}
         {tab === 3 && <PaymentTab form={form} onChange={handleChange} setForm={setForm}
-          fetchBPPriceLists={fetchBPPriceLists} fetchPaymentTerms={fetchPaymentTermsLookup} />}
+          fetchBPPriceLists={fetchBPPriceLists}
+          fetchPaymentTerms={fetchPaymentTermsLookup}
+          fetchCreditCards={fetchCreditCardsLookup}
+          fetchBanks={fetchBanksLookup}
+          fetchCountries={fetchCountriesLookup}
+          createCreditCard={createCreditCardLookup}
+          showAlert={showAlert} />}
         {tab === 4 && <PaymentRunTab form={form} onChange={handleChange} />}
         {tab === 5 && <AccountingTab form={form} onChange={handleChange} setForm={setForm}
           fetchGLAccounts={fetchGLAccountsLookup} />}
         {tab === 6 && <PropertiesTab form={form} onChange={handleChange} />}
         {tab === 7 && <RemarksTab form={form} onChange={handleChange} />}
-      </div>
-
-      {/* Bottom action bar — SAP B1 style */}
-      <div className="bp-bottom-bar">
-        <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "Saving..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
-        </button>
-        <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>Cancel</button>
       </div>
 
       {/* Currency modal */}

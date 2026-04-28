@@ -1311,12 +1311,50 @@ function APCreditMemo() {
       {/* ── Toolbar ── */}
       <div className="po-toolbar">
         <span className="po-toolbar__title">A/P Credit Memo{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button type="button" className="po-btn" disabled={pageState.posting}>Add Draft & New</button>
+        <button type="button" className="po-btn po-btn--danger" onClick={resetForm}>Cancel</button>
         <button type="button" className="po-btn" onClick={() => navigate('/ap-credit-memo/find')}>Find</button>
         <button type="button" className="po-btn" onClick={resetForm}>New</button>
         <button type="button" className="po-btn" onClick={() => setSidebarOpen(p => !p)}>
           {sidebarOpen ? 'Hide UDFs' : 'UDFs'}
         </button>
         <button type="button" className="po-btn" onClick={() => setFormSettingsOpen(p => !p)}>Settings</button>
+        <div className="po-dropdown">
+          <button
+            type="button"
+            className="po-btn"
+            disabled={!isDocumentEditable}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const dropdown = event.currentTarget.parentElement;
+              const isActive = dropdown.classList.contains('active');
+              document.querySelectorAll('.po-dropdown').forEach((node) => node.classList.remove('active'));
+              if (!isActive) dropdown.classList.add('active');
+            }}
+          >
+            Copy From ▼
+          </button>
+          <div className="po-dropdown-menu">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openCopyFromModal('grpo');
+                document.querySelectorAll('.po-dropdown').forEach((node) => node.classList.remove('active'));
+              }}
+            >
+              GRPO
+            </button>
+          </div>
+        </div>
+        <button type="button" className="po-btn" disabled>
+          Copy To ▼
+        </button>
         <span className={`po-mode-badge po-mode-badge--${currentDocEntry ? 'update' : 'add'}`}>
           {currentDocEntry ? 'Update' : 'Add'}
         </span>
@@ -1601,6 +1639,7 @@ function APCreditMemo() {
             </div>
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+            {false && (
             <div className="po-toolbar" style={{ justifyContent: 'space-between', marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
@@ -1647,6 +1686,7 @@ function APCreditMemo() {
                 </div>
               </div>
             </div>
+            )}
 
         </div>{/* end main flex */}
 

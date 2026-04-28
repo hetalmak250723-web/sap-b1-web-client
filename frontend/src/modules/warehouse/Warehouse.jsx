@@ -1,12 +1,14 @@
 import React, { useState, useCallback, useEffect } from "react";
 import "../item-master/styles/itemMaster.css";
 import "./styles/warehouse.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import GeneralTab from "./components/GeneralTab";
 import AccountingTab from "./components/AccountingTab";
 import {
   createWarehouse,
   getWarehouse,
   updateWarehouse,
+  searchWarehouses,
   fetchWHLocations,
   fetchWHBusinessPlaces,
 } from "../../api/warehouseApi";
@@ -158,6 +160,8 @@ export default function WarehouseModule() {
   const [loading, setLoading] = useState(false);
   const [isUpdateMode, setIsUpdateMode] = useState(false);
   const [mode, setMode] = useState("add");
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   // Lookup data
   const [locations, setLocations] = useState([]);
@@ -206,6 +210,16 @@ export default function WarehouseModule() {
     setAlert(null);
     setIsUpdateMode(false);
     setMode("add");
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadWarehouse = async (warehouseCode) => {
+    const data = await getWarehouse(warehouseCode);
+    setForm(mapSapToForm(data));
+    setIsUpdateMode(true);
+    setMode("update");
+    showAlert("success", `"${data.WarehouseCode}" loaded.`);
   };
 
   const validateForm = () => {
@@ -258,19 +272,44 @@ export default function WarehouseModule() {
   };
 
   const handleFind = async () => {
-    if (!form.WarehouseCode.trim()) {
-      showAlert("error", "Enter a Warehouse Code to search.");
+    const code = form.WarehouseCode.trim();
+    const query = code || form.WarehouseName.trim();
+    if (!query) {
+      showAlert("error", "Enter a Warehouse Code or Warehouse Name to search.");
       return;
     }
     setLoading(true);
     try {
-      const data = await getWarehouse(form.WarehouseCode.trim());
-      setForm(mapSapToForm(data));
-      setIsUpdateMode(true);
-      setMode("update");
-      showAlert("success", `"${data.WarehouseCode}" loaded.`);
+      if (code) {
+        try {
+          await loadWarehouse(code);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchWarehouses(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching warehouses found.");
+      } else if (results.length === 1) {
+        await loadWarehouse(results[0].WarehouseCode);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "Warehouse not found.");
+      showAlert("error", err.response?.data?.message || err.message || "Warehouse search failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadWarehouse(row.WarehouseCode);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load warehouse.");
     } finally {
       setLoading(false);
     }
@@ -306,7 +345,7 @@ export default function WarehouseModule() {
           {mode === "add" ? "Add Mode" : mode === "find" ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === "find" ? "Find" : "Save"}
+          {loading ? "..." : mode === "find" ? "Find" : mode === "add" ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode("add"); resetForm(); }}>
           New
@@ -385,6 +424,21 @@ export default function WarehouseModule() {
           />
         )}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="Warehouse Search Results"
+        columns={[
+          { key: "WarehouseCode", label: "Code" },
+          { key: "WarehouseName", label: "Warehouse Name" },
+          { key: "City", label: "City" },
+          { key: "Country", label: "Country" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.WarehouseCode}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

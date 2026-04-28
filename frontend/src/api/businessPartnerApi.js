@@ -13,5 +13,10 @@ export const fetchPaymentTerms  = (query = "") => apiClient.get(`${BASE}/lookup/
 export const fetchSalesPersons  = (query = "") => apiClient.get(`${BASE}/lookup/sales-persons`, { params: { query } }).then((r) => r.data);
 export const fetchBPPriceLists  = (query = "") => apiClient.get(`${BASE}/lookup/price-lists`,   { params: { query } }).then((r) => r.data);
 export const fetchCurrencies    = (query = "") => apiClient.get(`${BASE}/lookup/currencies`,    { params: { query } }).then((r) => r.data);
+export const fetchBPCountries   = (query = "") => apiClient.get(`${BASE}/lookup/countries`,     { params: { query } }).then((r) => r.data);
+export const fetchBPCreditCards = (query = "") => apiClient.get(`${BASE}/lookup/credit-cards`, { params: { query } }).then((r) => r.data);
+export const createBPCreditCard = (data) => apiClient.post(`${BASE}/lookup/credit-cards`, data).then((r) => r.data);
+export const fetchBPBanks       = (query = "", country = "") =>
+  apiClient.get(`${BASE}/lookup/banks`, { params: { query, country } }).then((r) => r.data);
 export const fetchNumberingSeries = (bpType = "") => apiClient.get(`${BASE}/lookup/series`, { params: { bpType } }).then((r) => r.data);
 export const getNextSeriesNumber = (series) => apiClient.get(`${BASE}/lookup/series/${series}/next`).then((r) => r.data);

@@ -122,6 +122,21 @@ function GoodsIssue() {
     null;
   const defaultPriceList = priceLists[0] || null;
   const defaultBranch = branches[0] || null;
+  const getBranchName = useCallback(
+    (branchValue) => {
+      const rawValue = String(branchValue ?? '').trim();
+      if (!rawValue) return '';
+
+      const match = branches.find(
+        (branch) =>
+          String(branch.id ?? '').trim() === rawValue ||
+          String(branch.name ?? '').trim() === rawValue
+      );
+      return match?.name || rawValue;
+    },
+    [branches]
+  );
+  const headerBranchName = getBranchName(header.branch);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -212,6 +227,7 @@ function GoodsIssue() {
     if (!item) {
       return normalizeLine({
         ...createLine(),
+        location: headerBranchName,
         branch: header.branch || '',
       });
     }
@@ -227,6 +243,7 @@ function GoodsIssue() {
       itemCost: item.itemCost != null ? String(item.itemCost) : '',
       uomCode: item.uomCode || '',
       uomName: item.uomName || '',
+      location: headerBranchName,
       branch: line.branch || header.branch || '',
       batchManaged: itemFlags.batchManaged,
       serialManaged: itemFlags.serialManaged,
@@ -235,6 +252,23 @@ function GoodsIssue() {
       uomFactor: 1,
     });
   };
+
+  useEffect(() => {
+    setLines((current) =>
+      current.map((line) => {
+        const nextLocation = headerBranchName || '';
+        const nextBranch = line.branch || header.branch || '';
+        if (line.location === nextLocation && line.branch === nextBranch) {
+          return line;
+        }
+        return {
+          ...line,
+          location: nextLocation,
+          branch: nextBranch,
+        };
+      })
+    );
+  }, [header.branch, headerBranchName]);
 
   useEffect(() => {
     let ignore = false;
@@ -275,8 +309,20 @@ function GoodsIssue() {
         setLines((current) =>
           current.map((line) =>
             line.itemCode
-              ? hydrateLineMetadata({ ...line, itemCode: line.itemCode }, loadedItems)
-              : line
+              ? hydrateLineMetadata(
+                  {
+                    ...line,
+                    itemCode: line.itemCode,
+                    location: getBranchName(line.branch || header.branch || nextDefaultBranch?.id || ''),
+                    branch: line.branch || header.branch || nextDefaultBranch?.id || '',
+                  },
+                  loadedItems
+                )
+              : {
+                  ...line,
+                  location: getBranchName(line.branch || header.branch || nextDefaultBranch?.id || ''),
+                  branch: line.branch || header.branch || nextDefaultBranch?.id || '',
+                }
           )
         );
       } catch (error) {
@@ -330,7 +376,7 @@ function GoodsIssue() {
         setLines(
           Array.isArray(document.lines) && document.lines.length
             ? document.lines.map((line) => hydrateLineMetadata({ ...createLine(), ...line }))
-            : [{ ...createLine(), branch: document.header?.branch || '' }]
+            : [{ ...createLine(), location: getBranchName(document.header?.branch || ''), branch: document.header?.branch || '' }]
         );
         setAttachments([]);
         setSelectedAttachmentId(null);
@@ -391,6 +437,7 @@ function GoodsIssue() {
       setLines((current) =>
         current.map((line) => ({
           ...line,
+          location: getBranchName(value),
           branch: line.baseEntry != null ? line.branch : value,
         }))
       );
@@ -438,13 +485,16 @@ function GoodsIssue() {
   };
 
   const addLine = () => {
-    setLines((current) => [...current, { ...createLine(), branch: header.branch || '' }]);
+    setLines((current) => [
+      ...current,
+      { ...createLine(), location: headerBranchName, branch: header.branch || '' },
+    ]);
   };
 
   const removeLine = (rowIndex) => {
     setLines((current) => {
       if (current.length === 1) {
-        return [{ ...createLine(), branch: header.branch || '' }];
+        return [{ ...createLine(), location: headerBranchName, branch: header.branch || '' }];
       }
       return current.filter((_, index) => index !== rowIndex);
     });
@@ -508,7 +558,7 @@ function GoodsIssue() {
       priceList: header.priceList || defaultPriceList?.id || '',
       branch: nextBranch,
     }));
-    setLines([{ ...createLine(), branch: nextBranch }]);
+    setLines([{ ...createLine(), location: getBranchName(nextBranch), branch: nextBranch }]);
     attachmentsRef.current.forEach((attachment) => {
       if (attachment.previewUrl) {
         URL.revokeObjectURL(attachment.previewUrl);
@@ -818,6 +868,17 @@ function GoodsIssue() {
         <span className={`po-mode-badge po-mode-badge--${currentDocEntry ? 'update' : 'add'}`}>
           {currentDocEntry ? 'Update' : 'Add'} Mode
         </span>
+        <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button
+          type="button"
+          className="po-btn po-btn--danger"
+          onClick={resetForm}
+          disabled={pageState.posting}
+        >
+          Cancel
+        </button>
         <button type="button" className="po-btn" onClick={() => navigate('/goods-issue/find')}>
           Find
         </button>
@@ -960,6 +1021,7 @@ function GoodsIssue() {
           <ContentsTab
             lines={lines}
             warehouses={branchFilteredWarehouses}
+            headerBranchName={headerBranchName}
             activeRow={activeRow}
             onFocusRow={setActiveRow}
             onItemCodeChange={handleItemCodeChange}
@@ -1015,28 +1077,7 @@ function GoodsIssue() {
       </div>
 
       <div className="po-toolbar gr-goods-receipt__action-bar">
-        <div className="gr-goods-receipt__action-left">
-          <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-            {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
-          </button>
-          <button
-            type="button"
-            className="po-btn po-btn--danger"
-            onClick={resetForm}
-            disabled={pageState.posting}
-          >
-            Cancel
-          </button>
-        </div>
-
         <div className="gr-goods-receipt__action-right">
-          <button type="button" className="po-btn" disabled>
-            Copy From v
-          </button>
-          <button type="button" className="po-btn" disabled>
-            Copy To v
-          </button>
-
           <div className="gr-goods-receipt__total-box">
             <label className="po-field__label" style={{ width: 'auto', textAlign: 'left' }}>
               Total

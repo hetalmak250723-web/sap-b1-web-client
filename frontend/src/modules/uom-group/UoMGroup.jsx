@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect } from "react";
 import "../item-master/styles/itemMaster.css";
+import FindResultsModal from "../../components/FindResultsModal";
 import UoMLinesTab from "./components/UoMLinesTab";
 import {
-  createUoMGroup, getUoMGroup, updateUoMGroup,
+  createUoMGroup, getUoMGroup, updateUoMGroup, searchUoMGroups,
   fetchUoMs,
 } from "../../api/uomGroupApi";
 
@@ -59,6 +60,8 @@ export default function UoMGroupModule() {
   const [alert, setAlert]         = useState(null);
   const [loading, setLoading]     = useState(false);
   const [uomOptions, setUomOptions] = useState([]);
+  const [findResults, setFindResults] = useState([]);
+  const [showFindResults, setShowFindResults] = useState(false);
 
   // Load all UoMs once for dropdowns
   useEffect(() => {
@@ -75,7 +78,20 @@ export default function UoMGroupModule() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  const resetForm = () => { setForm(EMPTY_FORM); setTab(0); setAlert(null); };
+  const resetForm = () => {
+    setForm(EMPTY_FORM);
+    setTab(0);
+    setAlert(null);
+    setFindResults([]);
+    setShowFindResults(false);
+  };
+
+  const loadUoMGroup = async (absEntry) => {
+    const data = await getUoMGroup(absEntry);
+    setForm({ ...EMPTY_FORM, ...data });
+    setMode(MODES.UPDATE);
+    showAlert("success", `"${data.Name}" loaded.`);
+  };
 
   const handleAdd = async () => {
     if (!form.Name.trim()) { showAlert("error", "Name is required."); return; }
@@ -92,16 +108,41 @@ export default function UoMGroupModule() {
 
   const handleFind = async () => {
     const key = form.AbsEntry?.toString().trim();
-    if (!key) { showAlert("error", "Enter an AbsEntry (ID) to search."); return; }
+    const query = key || form.Name.trim();
+    if (!query) { showAlert("error", "Enter an ID or Group Name to search."); return; }
     setLoading(true);
     try {
-      const data = await getUoMGroup(key);
-      setForm({ ...EMPTY_FORM, ...data });
-      setMode(MODES.UPDATE);
-      showAlert("success", `"${data.Name}" loaded.`);
+      if (key) {
+        try {
+          await loadUoMGroup(key);
+          return;
+        } catch (_) {}
+      }
+
+      const results = await searchUoMGroups(query, 100);
+      if (results.length === 0) {
+        showAlert("error", "No matching UoM groups found.");
+      } else if (results.length === 1) {
+        await loadUoMGroup(results[0].AbsEntry);
+      } else {
+        setFindResults(results);
+        setShowFindResults(true);
+      }
     } catch (err) {
-      showAlert("error", err.response?.data?.message || "UoM Group not found.");
+      showAlert("error", err.response?.data?.message || err.message || "UoM Group search failed.");
     } finally { setLoading(false); }
+  };
+
+  const handleFindResultSelect = async (row) => {
+    setShowFindResults(false);
+    setLoading(true);
+    try {
+      await loadUoMGroup(row.AbsEntry);
+    } catch (err) {
+      showAlert("error", err.response?.data?.message || err.message || "Failed to load UoM group.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -131,7 +172,7 @@ export default function UoMGroupModule() {
           {mode === MODES.ADD ? "Add Mode" : mode === MODES.FIND ? "Find Mode" : "Update Mode"}
         </span>
         <button className="im-btn im-btn--primary" onClick={handleSave} disabled={loading}>
-          {loading ? "..." : mode === MODES.FIND ? "Find" : "Save"}
+          {loading ? "..." : mode === MODES.FIND ? "Find" : mode === MODES.ADD ? "Add" : "Update"}
         </button>
         <button className="im-btn" onClick={() => { setMode(MODES.ADD); resetForm(); }}>New</button>
         <button className="im-btn" onClick={() => { setMode(MODES.FIND); resetForm(); }}>Find</button>
@@ -225,6 +266,20 @@ export default function UoMGroupModule() {
           />
         )}
       </div>
+
+      <FindResultsModal
+        open={showFindResults}
+        title="UoM Group Search Results"
+        columns={[
+          { key: "AbsEntry", label: "ID" },
+          { key: "Code", label: "Code" },
+          { key: "Name", label: "Group Name" },
+        ]}
+        rows={findResults}
+        getRowKey={(row) => row.AbsEntry}
+        onClose={() => setShowFindResults(false)}
+        onSelect={handleFindResultSelect}
+      />
     </div>
   );
 }

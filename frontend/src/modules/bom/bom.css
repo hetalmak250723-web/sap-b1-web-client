@@ -217,6 +217,16 @@
   background: #f0f4f8;
 }
 
+.bom-grid__row--selected,
+.bom-grid__row--selected:nth-child(even) {
+  background: #e7f1ff;
+}
+
+.bom-grid__row--selected:hover,
+.bom-grid__row--selected:nth-child(even):hover {
+  background: #d9e9ff;
+}
+
 .bom-grid__row--empty {
   height: 28px;
 }

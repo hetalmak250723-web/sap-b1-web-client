@@ -10,9 +10,9 @@ const STATUS_BADGE = {
   Cancelled:  "cancelled",
 };
 
-export default function ProductionOrderList({ onSelect }) {
+export default function ProductionOrderList({ onSelect, initialQuery = "" }) {
   const [orders,  setOrders]  = useState([]);
-  const [query,   setQuery]   = useState("");
+  const [query,   setQuery]   = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState(null);
 
@@ -29,7 +29,10 @@ export default function ProductionOrderList({ onSelect }) {
     }
   };
 
-  useEffect(() => { load(); }, []); // eslint-disable-line
+  useEffect(() => {
+    setQuery(initialQuery);
+    load(initialQuery);
+  }, [initialQuery]); // eslint-disable-line
 
   return (
     <div className="im-page" style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
@@ -45,7 +48,7 @@ export default function ProductionOrderList({ onSelect }) {
         <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
           <input
             className="im-field__input"
-            placeholder="Search by item code or description…"
+            placeholder="Search by document no., item code, or description…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && load(query)}

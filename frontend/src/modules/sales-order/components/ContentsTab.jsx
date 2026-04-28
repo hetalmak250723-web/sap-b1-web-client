@@ -11,6 +11,7 @@ const MATRIX_COLS = [
   { key: 'buyerQuality', label: 'Buyer - Quality', minWidth: 170 },
   { key: 'quantity', label: 'Quantity', minWidth: 85 },
   { key: 'unitPrice', label: 'Unit Price', minWidth: 110 },
+  { key: 'uomCode', label: 'UoM', minWidth: 95 },
   { key: 'sellerPrice', label: 'Seller - Price', minWidth: 110 },
   { key: 'buyerPrice', label: 'Buyer - Price', minWidth: 110 },
   { key: 'sellerDelivery', label: 'Seller - Delivery', minWidth: 120 },
@@ -19,7 +20,6 @@ const MATRIX_COLS = [
   { key: 'sellerBrokeragePercent', label: 'Seller Brokerage in Percentage', minWidth: 170 },
   { key: 'sellerBrokerage', label: 'Seller Brokerage', minWidth: 120 },
   { key: 'buyerBrokerage', label: 'Buyer Brokerage', minWidth: 120 },
-  { key: 'deliveredQty', label: 'Delivered Qty', minWidth: 95 },
   { key: 'stdDiscount', label: 'Discount %', minWidth: 90 },
   { key: 'stcode', label: 'STCODE', minWidth: 110 },
   { key: 'taxCode', label: 'Tax Code', minWidth: 110 },
@@ -200,35 +200,37 @@ export default function ContentsTab({
       ),
       unitPrice: () => (
         <td key="unitPrice">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-            <input
-              className="so-grid__input"
-              style={{ border: valErrors.lines[i]?.unitPrice ? '1px solid #c00' : undefined }}
-              name="unitPrice"
-              value={line.unitPrice}
-              onChange={(e) => onLineChange(i, e)}
-              onBlur={() => onNumBlur('unitPrice', 'line', i)}
-            />
-            <select
-              className="so-grid__input"
-              name="uomCode"
-              value={line.uomCode}
-              onChange={(e) => onLineChange(i, e)}
-            >
-              <option value=""></option>
-              {uomOpts.map((uom) => (
-                <option key={uom} value={uom}>
-                  {uom}
-                </option>
-              ))}
-              {line.uomCode && !uomOpts.includes(line.uomCode) && (
-                <option value={line.uomCode}>{line.uomCode}</option>
-              )}
-            </select>
-          </div>
+          <input
+            className="so-grid__input"
+            style={{ border: valErrors.lines[i]?.unitPrice ? '1px solid #c00' : undefined }}
+            name="unitPrice"
+            value={line.unitPrice}
+            onChange={(e) => onLineChange(i, e)}
+            onBlur={() => onNumBlur('unitPrice', 'line', i)}
+          />
           {valErrors.lines[i]?.unitPrice && (
             <div style={{ color: '#c00', fontSize: 10, marginTop: 2 }}>{valErrors.lines[i].unitPrice}</div>
           )}
+        </td>
+      ),
+      uomCode: () => (
+        <td key="uomCode">
+          <select
+            className="so-grid__input"
+            name="uomCode"
+            value={line.uomCode || ''}
+            onChange={(e) => onLineChange(i, e)}
+          >
+            <option value=""></option>
+            {uomOpts.map((uom) => (
+              <option key={uom} value={uom}>
+                {uom}
+              </option>
+            ))}
+            {line.uomCode && !uomOpts.includes(line.uomCode) && (
+              <option value={line.uomCode}>{line.uomCode}</option>
+            )}
+          </select>
         </td>
       ),
       sellerPrice: () => (
@@ -337,16 +339,6 @@ export default function ContentsTab({
           />
         </td>
       ),
-      deliveredQty: () => (
-        <td key="deliveredQty">
-          <input
-            className="so-grid__input"
-            value={line.deliveredQty || ''}
-            readOnly
-            style={{ background: '#f5f8fc' }}
-          />
-        </td>
-      ),
       stdDiscount: () => (
         <td key="stdDiscount">
           <input
@@ -374,7 +366,7 @@ export default function ContentsTab({
             className="so-grid__input"
             style={{ width: '100%', textAlign: 'left' }}
             name="taxCode"
-            value={line.taxCode}
+            value={line.taxCode || ''}
             onChange={(e) => onLineChange(i, e)}
           >
             <option value="">Select</option>
@@ -383,6 +375,9 @@ export default function ContentsTab({
                 {fmtTaxLabel(tax)}
               </option>
             ))}
+            {line.taxCode && !effectiveTaxCodes.some((tax) => String(tax.Code || '') === String(line.taxCode || '')) && (
+              <option value={line.taxCode}>{line.taxCode}</option>
+            )}
           </select>
         </td>
       ),

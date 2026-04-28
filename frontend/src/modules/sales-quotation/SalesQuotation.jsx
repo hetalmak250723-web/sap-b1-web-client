@@ -1708,11 +1708,31 @@ function SalesOrder() {
       {/* toolbar */}
       <div className="so-toolbar">
         <span className="so-toolbar__title">Sales Quatation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button type="button" className="so-btn" disabled={pageState.posting}>
+          Add Draft & New
+        </button>
+        <button type="button" className="so-btn" onClick={resetForm}>
+          Cancel
+        </button>
         <button type="button" className="so-btn" onClick={() => setSidebarOpen(p => !p)}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
         <button type="button" className="so-btn" onClick={() => setFormSettingsOpen(p => !p)}>
           Form Settings
+        </button>
+        <button type="button" className="so-btn" onClick={() => setCopyFromModal(true)}>
+          Copy From
+        </button>
+        <button 
+          type="button" 
+          className="so-btn" 
+          onClick={() => setCopyToModal(true)}
+          disabled={!currentDocEntry}
+        >
+          Copy To
         </button>
         <button type="button" className="so-btn" onClick={() => navigate('/sales-order/find')}>Find</button>
         <button type="button" className="so-btn" onClick={resetForm}>New</button>
@@ -2165,6 +2185,7 @@ function SalesOrder() {
             </div>
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+            {false && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
@@ -2191,6 +2212,7 @@ function SalesOrder() {
                 </button>
               </div>
             </div>
+            )}
 
           </div>{/* end main col */}
 

@@ -231,7 +231,14 @@ function InventoryTransferRequest() {
         setLines(
           Array.isArray(document.lines) && document.lines.length
             ? document.lines.map((line) => ({ ...createLine(), ...line }))
-            : [{ ...createLine(), branch: document.header?.fromBranch || '' }]
+            : [{
+                ...createLine(),
+                fromWarehouse: document.header?.fromWarehouse || '',
+                toWarehouse: document.header?.toWarehouse || '',
+                branch: document.header?.toWarehouse
+                  ? getWarehouseBranch(document.header.toWarehouse)
+                  : '',
+              }]
         );
         setAttachments([]);
         setSelectedAttachmentId(null);
@@ -332,6 +339,19 @@ function InventoryTransferRequest() {
     warehouses.find((warehouse) => warehouse.whsCode === String(whsCode || ''));
 
   const getWarehouseBranch = (whsCode) => getWarehouseByCode(whsCode)?.branchId || '';
+  const getWarehouseBranchDisplay = (whsCode, branchId = '') => {
+    const warehouse = getWarehouseByCode(whsCode);
+    if (warehouse?.city) return warehouse.city;
+    if (warehouse?.branchId) {
+      const branch = branches.find((entry) => String(entry.id || '') === String(warehouse.branchId));
+      if (branch?.name) return branch.name;
+    }
+    if (branchId) {
+      const branch = branches.find((entry) => String(entry.id || '') === String(branchId));
+      if (branch?.name) return branch.name;
+    }
+    return branchId || '';
+  };
 
   const getItem = (itemCode) => items.find((item) => item.itemCode === itemCode);
 
@@ -431,7 +451,7 @@ function InventoryTransferRequest() {
       setLines((current) =>
         current.map((line) => ({
           ...line,
-          fromWarehouse: line.itemCode ? value : line.fromWarehouse,
+          fromWarehouse: value,
         }))
       );
     }
@@ -440,8 +460,8 @@ function InventoryTransferRequest() {
       setLines((current) =>
         current.map((line) => ({
           ...line,
-          toWarehouse: line.itemCode ? value : line.toWarehouse,
-          branch: value ? getWarehouseBranch(value) : line.branch,
+          toWarehouse: value,
+          branch: value ? getWarehouseBranch(value) : '',
         }))
       );
     }
@@ -820,6 +840,17 @@ function InventoryTransferRequest() {
         <span className={`po-mode-badge po-mode-badge--${currentDocEntry ? 'update' : 'add'}`}>
           {currentDocEntry ? 'Update' : 'Add'} Mode
         </span>
+        <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button
+          type="button"
+          className="po-btn po-btn--danger"
+          onClick={resetForm}
+          disabled={pageState.posting}
+        >
+          Cancel
+        </button>
         <button
           type="button"
           className="po-btn"
@@ -1089,6 +1120,7 @@ function InventoryTransferRequest() {
             lines={lines}
             fromWarehouses={fromWarehouseOptions}
             warehouses={warehouses}
+            getBranchDisplay={getWarehouseBranchDisplay}
             activeRow={activeRow}
             onFocusRow={setActiveRow}
             onItemCodeChange={handleItemCodeChange}
@@ -1117,24 +1149,7 @@ function InventoryTransferRequest() {
       {valErrors.form && <div className="po-alert po-alert--error">{valErrors.form}</div>}
 
       <div className="po-toolbar itr-transfer-request__action-bar">
-        <div className="itr-transfer-request__action-left">
-          <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-            {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
-          </button>
-          <button
-            type="button"
-            className="po-btn po-btn--danger"
-            onClick={resetForm}
-            disabled={pageState.posting}
-          >
-            Cancel
-          </button>
-        </div>
-
         <div className="itr-transfer-request__action-right">
-          <button type="button" className="po-btn" disabled>
-            Copy To
-          </button>
           <div className="itr-transfer-request__total-box">
             <label className="po-field__label" style={{ width: 'auto', textAlign: 'left' }}>
               Total Qty

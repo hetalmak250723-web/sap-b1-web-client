@@ -51,6 +51,7 @@ function ContentsTab({
   onAddLine,
   onRemoveLine,
   errors,
+  getBranchDisplay = () => '',
 }) {
   const inputRefs = useRef({});
 
@@ -233,6 +234,10 @@ function ContentsTab({
                     }
 
                     const readOnly = READ_ONLY_COLUMNS.has(columnKey);
+                    const displayValue =
+                      columnKey === 'branch'
+                        ? getBranchDisplay(line.toWarehouse, line.branch)
+                        : line[columnKey] ?? '';
 
                     return (
                       <td key={columnKey}>
@@ -243,7 +248,7 @@ function ContentsTab({
                           className={`po-grid__input ${
                             NUMERIC_COLUMNS.has(columnKey) ? '' : 'po-grid__input--text'
                           } ${rowErrors[columnKey] ? 'itr-transfer-request__input--error' : ''}`}
-                          value={line[columnKey] ?? ''}
+                          value={displayValue}
                           readOnly={readOnly}
                           onFocus={() => onFocusRow(rowIndex)}
                           onChange={(event) =>

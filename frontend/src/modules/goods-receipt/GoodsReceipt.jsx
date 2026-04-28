@@ -129,6 +129,21 @@ function GoodsReceipt() {
     null;
   const defaultPriceList = priceLists[0] || null;
   const defaultBranch = branches[0] || null;
+  const getBranchName = useCallback(
+    (branchValue) => {
+      const rawValue = String(branchValue ?? '').trim();
+      if (!rawValue) return '';
+
+      const match = branches.find(
+        (branch) =>
+          String(branch.id ?? '').trim() === rawValue ||
+          String(branch.name ?? '').trim() === rawValue
+      );
+      return match?.name || rawValue;
+    },
+    [branches]
+  );
+  const headerBranchName = getBranchName(header.branch);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -219,6 +234,7 @@ function GoodsReceipt() {
     if (!item) {
       return normalizeLine({
         ...createLine(),
+        location: headerBranchName,
         branch: header.branch || '',
       });
     }
@@ -237,6 +253,7 @@ function GoodsReceipt() {
       itemCost: item.itemCost != null ? String(item.itemCost) : '',
       uomCode: item.uomCode || '',
       uomName: item.uomName || '',
+      location: headerBranchName,
       branch: line.branch || header.branch || '',
       batchManaged: itemFlags.batchManaged,
       serialManaged: itemFlags.serialManaged,
@@ -245,6 +262,23 @@ function GoodsReceipt() {
       uomFactor: 1,
     });
   };
+
+  useEffect(() => {
+    setLines((current) =>
+      current.map((line) => {
+        const nextLocation = headerBranchName || '';
+        const nextBranch = line.branch || header.branch || '';
+        if (line.location === nextLocation && line.branch === nextBranch) {
+          return line;
+        }
+        return {
+          ...line,
+          location: nextLocation,
+          branch: nextBranch,
+        };
+      })
+    );
+  }, [header.branch, headerBranchName]);
 
   useEffect(() => {
     let ignore = false;
@@ -292,8 +326,20 @@ function GoodsReceipt() {
         setLines((current) =>
           current.map((line) =>
             line.itemCode
-              ? hydrateLineMetadata({ ...line, itemCode: line.itemCode }, loadedItems)
-              : line
+              ? hydrateLineMetadata(
+                  {
+                    ...line,
+                    itemCode: line.itemCode,
+                    location: getBranchName(line.branch || header.branch || nextDefaultBranch?.id || ''),
+                    branch: line.branch || header.branch || nextDefaultBranch?.id || '',
+                  },
+                  loadedItems
+                )
+              : {
+                  ...line,
+                  location: getBranchName(line.branch || header.branch || nextDefaultBranch?.id || ''),
+                  branch: line.branch || header.branch || nextDefaultBranch?.id || '',
+                }
           )
         );
       } catch (error) {
@@ -347,7 +393,7 @@ function GoodsReceipt() {
         setLines(
           Array.isArray(document.lines) && document.lines.length
             ? document.lines.map((line) => hydrateLineMetadata({ ...createLine(), ...line }))
-            : [{ ...createLine(), branch: document.header?.branch || '' }]
+            : [{ ...createLine(), location: getBranchName(document.header?.branch || ''), branch: document.header?.branch || '' }]
         );
         setAttachments([]);
         setSelectedAttachmentId(null);
@@ -410,6 +456,7 @@ function GoodsReceipt() {
       setLines((current) =>
         current.map((line) => ({
           ...line,
+          location: getBranchName(value),
           branch: line.baseEntry != null ? line.branch : value,
         }))
       );
@@ -457,13 +504,16 @@ function GoodsReceipt() {
   };
 
   const addLine = () => {
-    setLines((current) => [...current, { ...createLine(), branch: header.branch || '' }]);
+    setLines((current) => [
+      ...current,
+      { ...createLine(), location: headerBranchName, branch: header.branch || '' },
+    ]);
   };
 
   const removeLine = (rowIndex) => {
     setLines((current) => {
       if (current.length === 1) {
-        return [{ ...createLine(), branch: header.branch || '' }];
+        return [{ ...createLine(), location: headerBranchName, branch: header.branch || '' }];
       }
       return current.filter((_, index) => index !== rowIndex);
     });
@@ -528,7 +578,7 @@ function GoodsReceipt() {
       priceList: header.priceList || defaultPriceList?.id || '',
       branch: nextBranch,
     }));
-    setLines([{ ...createLine(), branch: nextBranch }]);
+    setLines([{ ...createLine(), location: getBranchName(nextBranch), branch: nextBranch }]);
     attachmentsRef.current.forEach((attachment) => {
       if (attachment.previewUrl) {
         URL.revokeObjectURL(attachment.previewUrl);
@@ -753,7 +803,7 @@ function GoodsReceipt() {
       setLines(
         Array.isArray(payload.lines) && payload.lines.length
           ? payload.lines.map((line) => hydrateLineMetadata({ ...createLine(), ...line }))
-          : [{ ...createLine(), branch: header.branch || '' }]
+          : [{ ...createLine(), location: getBranchName(payload.header?.branch || header.branch || ''), branch: payload.header?.branch || header.branch || '' }]
       );
       setValErrors({ lines: {}, form: '' });
       setCopyFromModal(false);
@@ -881,12 +931,57 @@ function GoodsReceipt() {
         <span className={`po-mode-badge po-mode-badge--${currentDocEntry ? 'update' : 'add'}`}>
           {currentDocEntry ? 'Update' : 'Add'} Mode
         </span>
+        <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
+          {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button
+          type="button"
+          className="po-btn po-btn--danger"
+          onClick={resetForm}
+          disabled={pageState.posting}
+        >
+          Cancel
+        </button>
         <button type="button" className="po-btn" onClick={() => navigate('/goods-receipt/find')}>
           Find
         </button>
         <button type="button" className="po-btn" onClick={resetForm}>
           New
         </button>
+        <div className="po-dropdown">
+          <button
+            type="button"
+            className="po-btn"
+            disabled={pageState.posting || !!currentDocEntry}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const dropdown = event.currentTarget.parentElement;
+              const isActive = dropdown.classList.contains('active');
+              document
+                .querySelectorAll('.po-dropdown')
+                .forEach((node) => node.classList.remove('active'));
+              if (!isActive) dropdown.classList.add('active');
+            }}
+          >
+            Copy From v
+          </button>
+          <div className="po-dropdown-menu">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openCopyFromModal();
+                document
+                  .querySelectorAll('.po-dropdown')
+                  .forEach((node) => node.classList.remove('active'));
+              }}
+            >
+              Goods Issue
+            </button>
+          </div>
+        </div>
         {pageState.loading && (
           <span className="po-alert po-alert--warning" style={{ margin: 0 }}>
             Loading...
@@ -1023,6 +1118,7 @@ function GoodsReceipt() {
           <ContentsTab
             lines={lines}
             warehouses={branchFilteredWarehouses}
+            headerBranchName={headerBranchName}
             activeRow={activeRow}
             onFocusRow={setActiveRow}
             onItemCodeChange={handleItemCodeChange}
@@ -1078,60 +1174,7 @@ function GoodsReceipt() {
       </div>
 
       <div className="po-toolbar gr-goods-receipt__action-bar">
-        <div className="gr-goods-receipt__action-left">
-          <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-            {pageState.posting ? 'Saving...' : currentDocEntry ? 'Update' : 'Add'}
-          </button>
-          <button
-            type="button"
-            className="po-btn po-btn--danger"
-            onClick={resetForm}
-            disabled={pageState.posting}
-          >
-            Cancel
-          </button>
-        </div>
-
         <div className="gr-goods-receipt__action-right">
-          <div className="po-dropdown">
-            <button
-              type="button"
-              className="po-btn"
-              disabled={pageState.posting || !!currentDocEntry}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                const dropdown = event.currentTarget.parentElement;
-                const isActive = dropdown.classList.contains('active');
-                document
-                  .querySelectorAll('.po-dropdown')
-                  .forEach((node) => node.classList.remove('active'));
-                if (!isActive) dropdown.classList.add('active');
-              }}
-            >
-              Copy From v
-            </button>
-            <div className="po-dropdown-menu">
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  openCopyFromModal();
-                  document
-                    .querySelectorAll('.po-dropdown')
-                    .forEach((node) => node.classList.remove('active'));
-                }}
-              >
-                Goods Issue
-              </button>
-            </div>
-          </div>
-
-          <button type="button" className="po-btn" disabled>
-            Copy To v
-          </button>
-
           <div className="gr-goods-receipt__total-box">
             <label className="po-field__label" style={{ width: 'auto', textAlign: 'left' }}>
               Total

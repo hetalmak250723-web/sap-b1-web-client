@@ -112,7 +112,10 @@ function SalesOrderListPage() {
                         className="btn btn-outline-primary btn-sm"
                         onClick={() =>
                           navigate('/sales-order', {
-                            state: { salesOrderDocEntry: order.doc_entry },
+                            state: {
+                              salesOrderDocEntry: order.doc_entry,
+                              docEntry: order.doc_entry,
+                            },
                           })
                         }
                       >

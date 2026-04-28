@@ -11,6 +11,7 @@ const ISSUE_METHODS = [
 
 export default function BOMLines({
   lines,
+  selectedLineId,
   warehouses,
   priceLists,
   distRules,
@@ -20,6 +21,7 @@ export default function BOMLines({
   onChange,
   onAdd,
   onDelete,
+  onSelectLine,
   onItemSearch,
 }) {
   void projects;
@@ -73,11 +75,16 @@ export default function BOMLines({
                 const lineTotal = (Number(line.Quantity) || 0) * (Number(line.Price) || 0);
 
                 return (
-                  <tr key={line._id} className="bom-grid__row">
+                  <tr
+                    key={line._id}
+                    className={`bom-grid__row${selectedLineId === line._id ? " bom-grid__row--selected" : ""}`}
+                    onClick={() => onSelectLine(line._id)}
+                  >
                     <td className="bom-grid__cell">
                       <select
                         className="bom-cell-select"
                         value={line.ItemType}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "ItemType", e.target.value)}
                       >
                         {ITEM_TYPES.map((t) => (
@@ -93,6 +100,7 @@ export default function BOMLines({
                         <input
                           className="bom-cell-input"
                           value={line.ItemCode}
+                          onFocus={() => onSelectLine(line._id)}
                           onChange={(e) => onChange(line._id, "ItemCode", e.target.value)}
                           placeholder="Item Code"
                         />
@@ -100,7 +108,10 @@ export default function BOMLines({
                           type="button"
                           className="im-lookup-btn"
                           tabIndex={-1}
-                          onClick={() => onItemSearch(line._id)}
+                          onClick={() => {
+                            onSelectLine(line._id);
+                            onItemSearch(line._id);
+                          }}
                         >
                           ...
                         </button>
@@ -111,6 +122,7 @@ export default function BOMLines({
                       <input
                         className="bom-cell-input"
                         value={line.ItemName}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "ItemName", e.target.value)}
                       />
                     </td>
@@ -122,6 +134,7 @@ export default function BOMLines({
                         min="0"
                         step="any"
                         value={line.Quantity}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "Quantity", e.target.value)}
                       />
                     </td>
@@ -130,6 +143,7 @@ export default function BOMLines({
                       <input
                         className="bom-cell-input"
                         value={line.InventoryUOM}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "InventoryUOM", e.target.value)}
                       />
                     </td>
@@ -138,6 +152,7 @@ export default function BOMLines({
                       <select
                         className="bom-cell-select"
                         value={line.Warehouse}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "Warehouse", e.target.value)}
                       >
                         <option value="">--</option>
@@ -153,6 +168,7 @@ export default function BOMLines({
                       <select
                         className="bom-cell-select"
                         value={line.IssueMethod}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "IssueMethod", e.target.value)}
                       >
                         {ISSUE_METHODS.map((m) => (
@@ -170,6 +186,7 @@ export default function BOMLines({
                         min="0"
                         step="any"
                         value={line.ProductionStdCost}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "ProductionStdCost", e.target.value)}
                       />
                     </td>
@@ -182,6 +199,7 @@ export default function BOMLines({
                       <select
                         className="bom-cell-select"
                         value={line.PriceList}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "PriceList", e.target.value)}
                       >
                         <option value="">--</option>
@@ -200,6 +218,7 @@ export default function BOMLines({
                         min="0"
                         step="any"
                         value={line.Price}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "Price", e.target.value)}
                       />
                     </td>
@@ -212,6 +231,7 @@ export default function BOMLines({
                       <input
                         className="bom-cell-input"
                         value={line.Comment}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "Comment", e.target.value)}
                       />
                     </td>
@@ -220,6 +240,7 @@ export default function BOMLines({
                       <select
                         className="bom-cell-select"
                         value={line.DistributionRule}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "DistributionRule", e.target.value)}
                       >
                         <option value="">--</option>
@@ -235,6 +256,7 @@ export default function BOMLines({
                       <input
                         className="bom-cell-input"
                         value={line.WipAccount}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "WipAccount", e.target.value)}
                       />
                     </td>
@@ -245,6 +267,7 @@ export default function BOMLines({
                         type="number"
                         min="0"
                         value={line.RouteSequence}
+                        onFocus={() => onSelectLine(line._id)}
                         onChange={(e) => onChange(line._id, "RouteSequence", e.target.value)}
                       />
                     </td>
@@ -285,10 +308,9 @@ export default function BOMLines({
             type="button"
             className="bom-row-btn bom-row-btn--del"
             onClick={() => {
-              const last = lines[lines.length - 1];
-              if (last) onDelete(last._id);
+              if (selectedLineId) onDelete(selectedLineId);
             }}
-            title="Remove last row"
+            title="Remove selected row"
           >
             -
           </button>

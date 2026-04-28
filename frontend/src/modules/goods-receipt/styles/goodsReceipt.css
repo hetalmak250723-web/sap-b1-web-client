@@ -5,6 +5,15 @@
 .gr-goods-receipt__page .po-grid select.po-grid__input,
 .gr-goods-receipt__page .po-grid input.po-grid__input {
   height: 22px;
+  background: #fff;
+}
+
+.gr-goods-receipt__page .po-grid td,
+.gr-goods-receipt__page .po-grid tbody tr,
+.gr-goods-receipt__page .po-grid tbody tr:nth-child(even),
+.gr-goods-receipt__page .po-grid tbody tr:hover,
+.gr-goods-receipt__page .po-grid tbody tr:nth-child(even):hover {
+  background: #fff;
 }
 
 .gr-goods-receipt__grid-wrap {
@@ -12,7 +21,15 @@
 }
 
 .gr-goods-receipt__row--active td {
-  background: #fff4cc !important;
+  background: #fff !important;
+}
+
+.gr-goods-receipt__row--active td.gr-goods-receipt__cell--readonly {
+  background: #fff !important;
+}
+
+.gr-goods-receipt__row--active td.gr-goods-receipt__cell--readonly .po-grid__input {
+  background: #fff !important;
 }
 
 .gr-goods-receipt__input--error {

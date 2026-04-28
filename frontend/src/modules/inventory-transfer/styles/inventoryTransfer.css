@@ -2,12 +2,22 @@
   min-width: 110px;
 }
 
+.itr-transfer-request__page .po-grid select.po-grid__input,
+.itr-transfer-request__page .po-grid input.po-grid__input,
+.itr-transfer-request__page .po-grid td,
+.itr-transfer-request__page .po-grid tbody tr,
+.itr-transfer-request__page .po-grid tbody tr:nth-child(even),
+.itr-transfer-request__page .po-grid tbody tr:hover,
+.itr-transfer-request__page .po-grid tbody tr:nth-child(even):hover {
+  background: #fff;
+}
+
 .itr-transfer-request__grid-wrap {
   max-height: 46vh;
 }
 
 .itr-transfer-request__row--active td {
-  background: #fff7cf;
+  background: #fff;
 }
 
 .itr-transfer-request__input--error {

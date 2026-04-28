@@ -1658,6 +1658,15 @@ function ARInvoicePage() {
       {/* toolbar */}
       <div className="del-toolbar">
         <span className="del-toolbar__title">A/R Invoice{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable}>
+          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+        </button>
+        <button type="button" className="del-btn" disabled={pageState.posting || !isDocumentEditable}>
+          Add Draft & New
+        </button>
+        <button type="button" className="del-btn" onClick={resetForm}>
+          Cancel
+        </button>
       
         <button
           type="button"
@@ -1679,6 +1688,46 @@ function ARInvoicePage() {
         </button>
         <button type="button" className="del-btn" onClick={() => setFormSettingsOpen(p => !p)}>
           Form Settings
+        </button>
+        <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
+          <button
+            type="button"
+            className="del-btn"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setValErrors({ header: {}, lines: {}, form: '' });
+              setPageState(p => ({ ...p, error: '', success: '' }));
+              const dropdown = e.currentTarget.parentElement;
+              const isActive = dropdown.classList.contains('active');
+              document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+              if (!isActive) dropdown.classList.add('active');
+            }}
+          >
+            Copy From ▼
+          </button>
+          <div className="del-dropdown-menu">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                openCopyFromModal();
+                document.querySelectorAll('.del-dropdown').forEach(d => d.classList.remove('active'));
+              }}
+            >
+              Sales Orders / Deliveries
+            </button>
+          </div>
+        </div>
+        <button 
+          type="button" 
+          className="del-btn"
+          onClick={() => handleCopyTo('arCreditMemo')}
+          disabled={!currentDocEntry}
+          title={!currentDocEntry ? 'Save the AR invoice first' : 'Copy this invoice to A/R Credit Memo'}
+        >
+          Copy To
         </button>
         <button type="button" className="del-btn" onClick={() => navigate('/ar-invoice/find')}>Find</button>
         <button type="button" className="del-btn" onClick={resetForm}>New</button>
@@ -2097,6 +2146,7 @@ function ARInvoicePage() {
             </div>
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
+            {false && (
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable}>
@@ -2162,6 +2212,7 @@ function ARInvoicePage() {
                 </button>
               </div>
             </div>
+            )}
 
           </div>{/* end main col */}
 

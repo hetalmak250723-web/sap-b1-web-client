@@ -33,7 +33,7 @@ const salesArItems = [
   { label: "Sales Blanket Agreement", shortLabel: "SB" },
   { to: "/sales-quotation", label: "Sales Quotation", shortLabel: "SQ" },
   { to: "/sales-order", label: "Sales Order", shortLabel: "SO" },
-  { to: "/Delivery", label: "Delivery", shortLabel: "DL" },
+  { to: "/delivery", label: "Delivery", shortLabel: "DL" },
   { label: "Return Request", shortLabel: "RR" },
   { label: "Return", shortLabel: "RT" },
   { label: "A/R Down Payment Request", shortLabel: "DR" },

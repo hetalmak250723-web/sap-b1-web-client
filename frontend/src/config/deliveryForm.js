@@ -20,6 +20,7 @@ const BASE_MATRIX_COLUMNS = [
   { key: 'buyerQuality', label: 'Buyer - Quality', visible: true },
   { key: 'quantity', label: 'Quantity', visible: true },
   { key: 'unitPrice', label: 'Unit Price', visible: true },
+  { key: 'uomCode', label: 'UoM', visible: true },
   { key: 'sellerPrice', label: 'Seller - Price', visible: true },
   { key: 'buyerPrice', label: 'Buyer - Price', visible: true },
   { key: 'sellerDelivery', label: 'Seller - Delivery', visible: true },

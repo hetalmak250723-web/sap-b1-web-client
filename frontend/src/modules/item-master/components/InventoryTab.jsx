@@ -32,7 +32,8 @@ export default function InventoryTab({ form, onChange, stock = [], onWarehouseCh
 
         <div className="im-field">
           <label className="im-field__label">Valuation Method</label>
-          <select className="im-field__select" name="CostAccountingMethod" value={form.CostAccountingMethod || "bis_MovingAverage"} onChange={onChange}>
+          <select className="im-field__select" name="CostAccountingMethod" value={form.CostAccountingMethod || ""} onChange={onChange}>
+            <option value="">Use Item Group Default</option>
             <option value="bis_MovingAverage">Moving Average</option>
             <option value="bis_Standard">Standard</option>
             <option value="bis_FIFO">FIFO</option>
