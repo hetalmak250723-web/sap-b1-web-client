@@ -18,5 +18,9 @@ export const fetchBPCreditCards = (query = "") => apiClient.get(`${BASE}/lookup/
 export const createBPCreditCard = (data) => apiClient.post(`${BASE}/lookup/credit-cards`, data).then((r) => r.data);
 export const fetchBPBanks       = (query = "", country = "") =>
   apiClient.get(`${BASE}/lookup/banks`, { params: { query, country } }).then((r) => r.data);
+export const fetchBPHouseBankAccounts = (bankCode = "", country = "") =>
+  apiClient.get(`${BASE}/lookup/house-bank-accounts`, { params: { bankCode, country } }).then((r) => r.data);
+export const fetchBPWithholdingTaxCodes = (query = "") =>
+  apiClient.get(`${BASE}/lookup/withholding-tax-codes`, { params: { query } }).then((r) => r.data);
 export const fetchNumberingSeries = (bpType = "") => apiClient.get(`${BASE}/lookup/series`, { params: { bpType } }).then((r) => r.data);
 export const getNextSeriesNumber = (series) => apiClient.get(`${BASE}/lookup/series/${series}/next`).then((r) => r.data);

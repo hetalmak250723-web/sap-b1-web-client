@@ -13,7 +13,7 @@ import {
   createBP, getBP, updateBP, searchBP,
   fetchBPGroups, fetchBPPriceLists, fetchPaymentTerms, fetchCurrencies, fetchBPCountries,
   fetchSalesPersons, fetchNumberingSeries, getNextSeriesNumber,
-  fetchBPCreditCards, createBPCreditCard, fetchBPBanks,
+  fetchBPCreditCards, createBPCreditCard, fetchBPBanks, fetchBPHouseBankAccounts, fetchBPWithholdingTaxCodes,
 } from "../../api/businessPartnerApi";
 import { searchShippingTypes } from "../../api/shippingTypeApi";
 import { searchAccounts }      from "../../api/chartOfAccountsApi";
@@ -38,6 +38,104 @@ const normalizeDateInput = (value) => {
   return parsed.toISOString().slice(0, 10);
 };
 
+const normalizeConsolidationType = (value) =>
+  value === "cDelivery_sum" ? "DeliveryConsolidation" : "PaymentConsolidation";
+
+const normalizeWithholdingFlag = (value) => {
+  if (value === "boYES") return "boYES";
+  if (value === "boNone") return "boNone";
+  return "boNO";
+};
+
+const buildEmptyTaxInfo = () => ({
+  panNo: "",
+  panCircleNo: "",
+  panWardNo: "",
+  panAssessingOfficer: "",
+  deducteeRefNo: "",
+  lstVatNo: "",
+  cstNo: "",
+  tanNo: "",
+  serviceTaxNo: "",
+  companyType: "",
+  natureOfBusiness: "",
+  tinNo: "",
+  itrFiling: "",
+});
+
+const hasTaxInfoValues = (taxInfo = buildEmptyTaxInfo()) =>
+  Object.values(taxInfo).some((value) => String(value || "").trim() !== "");
+
+const getPrimaryFiscalTaxRow = (rows = []) =>
+  rows.find((row) => row?.Address === "" && row?.AddrType === "bo_ShipTo")
+  || rows.find((row) => row?.AddrType === "bo_ShipTo")
+  || rows[0]
+  || null;
+
+const deriveTaxInfoFromFiscalRows = (rows = []) => {
+  const row = getPrimaryFiscalTaxRow(rows);
+  if (!row) return buildEmptyTaxInfo();
+
+  return {
+    panNo: row.TaxId0 || "",
+    panCircleNo: row.TaxId5 || "",
+    panWardNo: row.TaxId6 || "",
+    panAssessingOfficer: row.TaxId7 || "",
+    deducteeRefNo: row.TaxId8 || "",
+    lstVatNo: row.TaxId1 || "",
+    cstNo: row.TaxId2 || "",
+    tanNo: row.TaxId3 || "",
+    serviceTaxNo: row.TaxId4 || "",
+    companyType: row.TaxId9 || "",
+    natureOfBusiness: row.TaxId10 || "",
+    tinNo: row.TaxId11 || "",
+    itrFiling: row.TaxId12 || "",
+  };
+};
+
+const mergeTaxInfoIntoFiscalRows = (rows = [], taxInfo = buildEmptyTaxInfo()) => {
+  if ((!rows || rows.length === 0) && !hasTaxInfoValues(taxInfo)) {
+    return [];
+  }
+
+  const nextRows = (rows || []).map((row) => ({ ...row }));
+  const targetIndex = nextRows.findIndex((row) => row?.Address === "" && row?.AddrType === "bo_ShipTo");
+  const rowIndex = targetIndex >= 0 ? targetIndex : (nextRows.findIndex((row) => row?.AddrType === "bo_ShipTo") >= 0
+    ? nextRows.findIndex((row) => row?.AddrType === "bo_ShipTo")
+    : 0);
+
+  if (nextRows.length === 0) {
+    nextRows.push({
+      Address: "",
+      AddrType: "bo_ShipTo",
+      AToRetrNFe: "tNO",
+    });
+  }
+
+  const targetRow = {
+    ...nextRows[rowIndex] || {},
+    Address: nextRows[rowIndex]?.Address || "",
+    AddrType: nextRows[rowIndex]?.AddrType || "bo_ShipTo",
+    AToRetrNFe: nextRows[rowIndex]?.AToRetrNFe || "tNO",
+    TaxId0: taxInfo.panNo || null,
+    TaxId1: taxInfo.lstVatNo || null,
+    TaxId2: taxInfo.cstNo || null,
+    TaxId3: taxInfo.tanNo || null,
+    TaxId4: taxInfo.serviceTaxNo || null,
+    TaxId5: taxInfo.panCircleNo || null,
+    TaxId6: taxInfo.panWardNo || null,
+    TaxId7: taxInfo.panAssessingOfficer || null,
+    TaxId8: taxInfo.deducteeRefNo || null,
+    TaxId9: taxInfo.companyType || null,
+    TaxId10: taxInfo.natureOfBusiness || null,
+    TaxId11: taxInfo.tinNo || null,
+    TaxId12: taxInfo.itrFiling || null,
+  };
+
+  nextRows[rowIndex] = targetRow;
+  return nextRows;
+};
+
 const normalizeBP = (data) => {
   const d = { ...data };
   const bools = ["Valid","Frozen","BlockSendingMarketingContent","PartialDelivery","BackOrder",
@@ -54,6 +152,8 @@ const normalizeBP = (data) => {
   if (!d.ContactEmployees) d.ContactEmployees = [];
   if (!d.BPPaymentDates)   d.BPPaymentDates   = [];
   if (!d.BPBankAccounts)   d.BPBankAccounts   = [];
+  if (!d.BPWithholdingTaxCollection) d.BPWithholdingTaxCollection = [];
+  if (!d.BPFiscalTaxIDCollection) d.BPFiscalTaxIDCollection = [];
   d.BPBankAccounts = d.BPBankAccounts.map((row, index) => ({
     ...row,
     BankName: row.BankName || (index === 0 ? d.PaymentBankName || "" : ""),
@@ -65,6 +165,35 @@ const normalizeBP = (data) => {
   d.PayTermsGrpCode = d.PayTermsGrpCode == null || d.PayTermsGrpCode === "" ? "" : String(d.PayTermsGrpCode);
   d.PriceListNum = d.PriceListNum == null || d.PriceListNum === "" ? "" : String(d.PriceListNum);
   d.CreditCardExpiration = normalizeDateInput(d.CreditCardExpiration);
+  d.ConsolidatingBP = d.ConsolidatingBP || d.FatherCard || "";
+  d.ConsolidatingBPName = d.ConsolidatingBPName || d.FatherCardName || "";
+  d.LinkedBusinessPartner = d.LinkedBusinessPartner || "";
+  d.LinkedBusinessPartnerName = d.LinkedBusinessPartnerName || "";
+  d.ConsolidationType = normalizeConsolidationType(d.FatherType);
+  d.DunningLevel = d.DunningLevel == null || d.DunningLevel === "" ? "" : String(d.DunningLevel);
+  d.DunningDate = normalizeDateInput(d.DunningDate);
+  d.SubjectToWithholdingTax = normalizeWithholdingFlag(d.SubjectToWithholdingTax);
+  d.WTCode = d.WTCode || "";
+  d.WTCodeName = d.WTCodeName || "";
+  d.WTTaxCategoryLabel = d.WTTaxCategoryLabel || "";
+  d.CertificateNumber = d.CertificateNumber || "";
+  d.ExpirationDate = normalizeDateInput(d.ExpirationDate);
+  d.NationalInsuranceNum = d.NationalInsuranceNum || "";
+  d.TypeReport = d.TypeReport || "atCompany";
+  d.ThresholdOverlook = d.ThresholdOverlook || "tNO";
+  d.SurchargeOverlook = d.SurchargeOverlook || "tNO";
+  d.Remark1 = d.Remark1 == null || d.Remark1 === "" ? "" : String(d.Remark1);
+  d.CertificateDetails = d.CertificateDetails || "";
+  d.TaxInfo = deriveTaxInfoFromFiscalRows(d.BPFiscalTaxIDCollection);
+  d.UseShippedGoodsAccount = d.UseShippedGoodsAccount || "tNO";
+  d.EORINumber = d.EORINumber || "";
+  d.HouseBankCountry = d.HouseBankCountry || "";
+  d.HouseBank = d.HouseBank || "";
+  d.HouseBankAccount = d.HouseBankAccount || "";
+  d.HouseBankBranch = d.HouseBankBranch || "";
+  d.HouseBankIBAN = d.HouseBankIBAN || "";
+  d.HouseBankSwift = d.HouseBankSwift || "";
+  d.HouseBankControlKey = d.HouseBankControlKey || "";
   d.PaymentBankCode = firstBank?.BankCode || "";
   d.PaymentBankName = d.PaymentBankName || firstBank?.BankName || firstBank?.BankCode || "";
   d.PaymentBankCountryCode = firstBank?.Country || d.BankCountry || "";
@@ -136,11 +265,18 @@ const EMPTY_FORM = {
   PaymentBlock: "tNO", CollectionAuthorization: "tNO", BankChargesAllocationCode: "",
   BPPaymentMethods: [], BPPaymentDates: [], BPBankAccounts: [],
   // Accounting
-  ConsolidationType: "PaymentConsolidation", ConsolidatingBP: "",
+  ConsolidationType: "PaymentConsolidation", ConsolidatingBP: "", ConsolidatingBPName: "",
+  LinkedBusinessPartner: "", LinkedBusinessPartnerName: "",
   DebitorAccount: "", DebitorAccountName: "",
   DownPaymentClearAct: "", DownPaymentClearActName: "",
   DownPaymentInterimAccount: "", DownPaymentInterimAccountName: "",
-  PlanningGroup: "", Affiliate: "tNO",
+  PlanningGroup: "", DunningLevel: "", DunningDate: "",
+  SubjectToWithholdingTax: "boNO", WTCode: "", WTCodeName: "", WTTaxCategoryLabel: "",
+  CertificateNumber: "", ExpirationDate: "", NationalInsuranceNum: "",
+  TypeReport: "atCompany", ThresholdOverlook: "tNO", SurchargeOverlook: "tNO",
+  Remark1: "", CertificateDetails: "", UseShippedGoodsAccount: "tNO",
+  EORINumber: "", Affiliate: "tNO", TaxInfo: buildEmptyTaxInfo(),
+  BPWithholdingTaxCollection: [], BPFiscalTaxIDCollection: [],
   // Remarks
   Notes: "",
   // Arrays
@@ -226,14 +362,40 @@ function buildPayload(form) {
   if (opt(form.HouseBankBranch))        p.HouseBankBranch        = form.HouseBankBranch;
   if (opt(form.HouseBankIBAN))          p.HouseBankIBAN          = form.HouseBankIBAN;
   if (opt(form.HouseBankSwift))         p.HouseBankSwift         = form.HouseBankSwift;
+  if (opt(form.HouseBankControlKey))    p.HouseBankControlKey    = form.HouseBankControlKey;
   p.PaymentBlock           = form.PaymentBlock           || "tNO";
   p.CollectionAuthorization= form.CollectionAuthorization|| "tNO";
   if (opt(form.BankChargesAllocationCode)) p.BankChargesAllocationCode = form.BankChargesAllocationCode;
 
+  p.FatherType = form.ConsolidationType === "DeliveryConsolidation" ? "cDelivery_sum" : "cPayments_sum";
+  p.FatherCard = opt(form.ConsolidatingBP) ? form.ConsolidatingBP : null;
+  p.LinkedBusinessPartner = opt(form.LinkedBusinessPartner) ? form.LinkedBusinessPartner : null;
   if (opt(form.DebitorAccount))          p.DebitorAccount          = form.DebitorAccount;
   if (opt(form.DownPaymentClearAct))     p.DownPaymentClearAct     = form.DownPaymentClearAct;
   if (opt(form.DownPaymentInterimAccount)) p.DownPaymentInterimAccount = form.DownPaymentInterimAccount;
   if (opt(form.PlanningGroup))           p.PlanningGroup           = form.PlanningGroup;
+  if (opt(form.DunningLevel) && !Number.isNaN(Number(form.DunningLevel))) p.DunningLevel = Number(form.DunningLevel);
+  else if (form.DunningLevel === "") p.DunningLevel = null;
+  if (opt(form.DunningDate)) p.DunningDate = form.DunningDate;
+  else if (form.DunningDate === "") p.DunningDate = null;
+  p.SubjectToWithholdingTax = form.SubjectToWithholdingTax || "boNO";
+  p.WTCode = opt(form.WTCode) ? form.WTCode : null;
+  if (opt(form.CertificateNumber)) p.CertificateNumber = form.CertificateNumber;
+  else if (form.CertificateNumber === "") p.CertificateNumber = null;
+  if (opt(form.ExpirationDate)) p.ExpirationDate = form.ExpirationDate;
+  else if (form.ExpirationDate === "") p.ExpirationDate = null;
+  if (opt(form.NationalInsuranceNum)) p.NationalInsuranceNum = form.NationalInsuranceNum;
+  else if (form.NationalInsuranceNum === "") p.NationalInsuranceNum = null;
+  p.TypeReport = form.TypeReport || "atCompany";
+  p.ThresholdOverlook = form.ThresholdOverlook || "tNO";
+  p.SurchargeOverlook = form.SurchargeOverlook || "tNO";
+  if (opt(form.Remark1) && !Number.isNaN(Number(form.Remark1))) p.Remark1 = Number(form.Remark1);
+  else if (form.Remark1 === "") p.Remark1 = null;
+  if (opt(form.CertificateDetails)) p.CertificateDetails = form.CertificateDetails;
+  else if (form.CertificateDetails === "") p.CertificateDetails = null;
+  p.UseShippedGoodsAccount = form.UseShippedGoodsAccount || "tNO";
+  if (opt(form.EORINumber)) p.EORINumber = form.EORINumber;
+  else if (form.EORINumber === "") p.EORINumber = null;
   p.Affiliate = form.Affiliate || "tNO";
   if (opt(form.Notes)) p.Notes = form.Notes;
 
@@ -328,6 +490,35 @@ function buildPayload(form) {
       .map((row) => ({ PaymentDate: row.PaymentDate }));
   }
 
+  const fiscalTaxRows = mergeTaxInfoIntoFiscalRows(form.BPFiscalTaxIDCollection, form.TaxInfo);
+  if (fiscalTaxRows.length > 0) {
+    p.BPFiscalTaxIDCollection = fiscalTaxRows.map((row) => ({
+      Address: row.Address || "",
+      AddrType: row.AddrType || "bo_ShipTo",
+      TaxId0: row.TaxId0 ?? null,
+      TaxId1: row.TaxId1 ?? null,
+      TaxId2: row.TaxId2 ?? null,
+      TaxId3: row.TaxId3 ?? null,
+      TaxId4: row.TaxId4 ?? null,
+      TaxId5: row.TaxId5 ?? null,
+      TaxId6: row.TaxId6 ?? null,
+      TaxId7: row.TaxId7 ?? null,
+      TaxId8: row.TaxId8 ?? null,
+      TaxId9: row.TaxId9 ?? null,
+      TaxId10: row.TaxId10 ?? null,
+      TaxId11: row.TaxId11 ?? null,
+      TaxId12: row.TaxId12 ?? null,
+      TaxId13: row.TaxId13 ?? null,
+      TaxId14: row.TaxId14 ?? null,
+      AToRetrNFe: row.AToRetrNFe || "tNO",
+      ...(row.CNAECode != null ? { CNAECode: row.CNAECode } : {}),
+    }));
+  }
+
+  p.BPWithholdingTaxCollection = (form.BPWithholdingTaxCollection || [])
+    .filter((row) => opt(row?.WTCode))
+    .map((row) => ({ WTCode: row.WTCode }));
+
   return p;
 }
 
@@ -407,6 +598,31 @@ export default function BusinessPartnerModule() {
   const fetchGLAccountsLookup = async (q = "") => {
     try { return (await searchAccounts(q)).map((i) => ({ code: i.Code, name: i.Name })); }
     catch { return []; }
+  };
+  const fetchBusinessPartnersLookup = async (q = "") => {
+    try {
+      return (await searchBP(q, form.CardType, 50)).map((bp) => ({
+        code: bp.CardCode,
+        name: bp.CardName,
+        type: bp.CardType === "cCustomer" ? "Customer" : bp.CardType === "cSupplier" ? "Supplier" : "Lead",
+      }));
+    } catch {
+      return [];
+    }
+  };
+  const fetchSuppliersLookup = async (q = "") => {
+    try {
+      return (await searchBP(q, "cSupplier", 50)).map((bp) => ({
+        code: bp.CardCode,
+        name: bp.CardName,
+        type: "Supplier",
+      }));
+    } catch {
+      return [];
+    }
+  };
+  const fetchWithholdingTaxCodesLookup = async (q = "") => {
+    try { return await fetchBPWithholdingTaxCodes(q); } catch { return []; }
   };
   const fetchSalesPersonsLookup = async (q = "") => {
     try { return await fetchSalesPersons(q); } catch { return []; }
@@ -637,13 +853,24 @@ export default function BusinessPartnerModule() {
           fetchBPPriceLists={fetchBPPriceLists}
           fetchPaymentTerms={fetchPaymentTermsLookup}
           fetchCreditCards={fetchCreditCardsLookup}
+          fetchGLAccounts={fetchGLAccountsLookup}
           fetchBanks={fetchBanksLookup}
           fetchCountries={fetchCountriesLookup}
           createCreditCard={createCreditCardLookup}
           showAlert={showAlert} />}
-        {tab === 4 && <PaymentRunTab form={form} onChange={handleChange} />}
+        {tab === 4 && <PaymentRunTab
+          form={form}
+          onChange={handleChange}
+          setForm={setForm}
+          fetchBanks={fetchBanksLookup}
+          fetchCountries={fetchCountriesLookup}
+          fetchHouseBankAccounts={fetchBPHouseBankAccounts}
+        />}
         {tab === 5 && <AccountingTab form={form} onChange={handleChange} setForm={setForm}
-          fetchGLAccounts={fetchGLAccountsLookup} />}
+          fetchGLAccounts={fetchGLAccountsLookup}
+          fetchBusinessPartners={fetchBusinessPartnersLookup}
+          fetchSuppliers={fetchSuppliersLookup}
+          fetchWithholdingTaxCodes={fetchWithholdingTaxCodesLookup} />}
         {tab === 6 && <PropertiesTab form={form} onChange={handleChange} />}
         {tab === 7 && <RemarksTab form={form} onChange={handleChange} />}
       </div>

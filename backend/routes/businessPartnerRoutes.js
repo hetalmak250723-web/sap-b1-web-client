@@ -3,7 +3,8 @@ const router  = express.Router();
 const {
   createBP, getBP, updateBP, searchBP,
   lookupBPGroups, lookupPaymentTerms, lookupSalesPersons, lookupPriceLists, lookupCurrencies, lookupCountries,
-  lookupCreditCards, createCreditCard, lookupBanks,
+  lookupCreditCards, createCreditCard, lookupBanks, lookupHouseBankAccounts,
+  lookupWithholdingTaxCodes,
   lookupNumberingSeries, getNextNumber,
 } = require("../controllers/businessPartnerController");
 
@@ -17,6 +18,8 @@ router.get("/lookup/countries",     lookupCountries);
 router.get("/lookup/credit-cards",  lookupCreditCards);
 router.post("/lookup/credit-cards", createCreditCard);
 router.get("/lookup/banks",         lookupBanks);
+router.get("/lookup/house-bank-accounts", lookupHouseBankAccounts);
+router.get("/lookup/withholding-tax-codes", lookupWithholdingTaxCodes);
 router.get("/lookup/series",        lookupNumberingSeries);
 router.get("/lookup/series/:series/next", getNextNumber);
 

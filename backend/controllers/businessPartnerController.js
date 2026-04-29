@@ -10,6 +10,12 @@ const enrichBP = async (bp) => {
     creditCard,
     bank,
     country,
+    fatherBP,
+    linkedVendorBP,
+    debitorAccount,
+    downPaymentClearAccount,
+    downPaymentInterimAccount,
+    withholdingTaxCode,
   ] = await Promise.all([
     bp.PayTermsGrpCode != null && bp.PayTermsGrpCode !== "" && Number(bp.PayTermsGrpCode) >= 0
       ? masterDataDbService.getPaymentTerms(bp.PayTermsGrpCode).catch(() => null)
@@ -26,13 +32,39 @@ const enrichBP = async (bp) => {
     bp.BPBankAccounts?.[0]?.Country
       ? masterDataDbService.getCountryByCode(bp.BPBankAccounts[0].Country).catch(() => null)
       : Promise.resolve(null),
+    bp.FatherCard
+      ? masterDataDbService.getBP(bp.FatherCard).catch(() => null)
+      : Promise.resolve(null),
+    bp.LinkedBusinessPartner
+      ? masterDataDbService.getBP(bp.LinkedBusinessPartner).catch(() => null)
+      : Promise.resolve(null),
+    bp.DebitorAccount
+      ? masterDataDbService.getAccount(bp.DebitorAccount).catch(() => null)
+      : Promise.resolve(null),
+    bp.DownPaymentClearAct
+      ? masterDataDbService.getAccount(bp.DownPaymentClearAct).catch(() => null)
+      : Promise.resolve(null),
+    bp.DownPaymentInterimAccount
+      ? masterDataDbService.getAccount(bp.DownPaymentInterimAccount).catch(() => null)
+      : Promise.resolve(null),
+    bp.WTCode
+      ? masterDataDbService.getWithholdingTaxCode(bp.WTCode).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   return {
     ...bp,
+    FatherCardName: fatherBP?.CardName || bp.FatherCardName || "",
+    ConsolidatingBPName: fatherBP?.CardName || bp.ConsolidatingBPName || "",
+    LinkedBusinessPartnerName: linkedVendorBP?.CardName || bp.LinkedBusinessPartnerName || "",
     PayTermsName: paymentTerms?.PaymentTermsGroupName || bp.PayTermsName || "",
     PriceListName: priceList?.PriceListName || bp.PriceListName || "",
     CreditCardName: creditCard?.name || bp.CreditCardName || "",
+    DebitorAccountName: debitorAccount?.Name || bp.DebitorAccountName || "",
+    DownPaymentClearActName: downPaymentClearAccount?.Name || bp.DownPaymentClearActName || "",
+    DownPaymentInterimAccountName: downPaymentInterimAccount?.Name || bp.DownPaymentInterimAccountName || "",
+    WTCodeName: withholdingTaxCode?.name || bp.WTCodeName || "",
+    WTTaxCategoryLabel: withholdingTaxCode?.taxCategory || bp.WTTaxCategoryLabel || "",
     PaymentBankName: bank?.name || bp.PaymentBankName || "",
     PaymentBankCountryName: country?.name || bank?.countryName || bp.PaymentBankCountryName || "",
   };
@@ -187,19 +219,23 @@ const createCreditCard = async (req, res) => {
       return res.status(400).json({ message: "Credit Card Name is required." });
     }
 
-    const nextCode = req.body.CreditCardCode != null && req.body.CreditCardCode !== ""
-      ? Number(req.body.CreditCardCode)
-      : await masterDataDbService.getNextCreditCardCode();
+    const GLAccount = String(req.body.GLAccount || "").trim();
+    if (!GLAccount) {
+      return res.status(400).json({ message: "G/L Account is required." });
+    }
+
+    const account = await masterDataDbService.getAccount(GLAccount);
+    if (!account) {
+      return res.status(400).json({ message: `G/L Account "${GLAccount}" was not found.` });
+    }
 
     const payload = {
-      CreditCardCode: nextCode,
       CreditCardName,
+      GLAccount,
     };
 
-    if (req.body.GLAccount) payload.GLAccount = String(req.body.GLAccount).trim();
     if (req.body.Telephone) payload.Telephone = String(req.body.Telephone).trim();
     if (req.body.CompanyID) payload.CompanyID = String(req.body.CompanyID).trim();
-    if (req.body.CountryCode) payload.CountryCode = String(req.body.CountryCode).trim();
 
     const response = await sapService.request({
       method: "POST",
@@ -208,12 +244,12 @@ const createCreditCard = async (req, res) => {
     });
 
     res.status(201).json({
-      code: String(response.data?.CreditCardCode ?? nextCode),
-      name: response.data?.CreditCardName || CreditCardName,
-      glAccount: response.data?.GLAccount || payload.GLAccount || "",
-      telephone: response.data?.Telephone || payload.Telephone || "",
-      companyId: response.data?.CompanyID || payload.CompanyID || "",
-      country: response.data?.CountryCode || payload.CountryCode || "",
+      code: String(response.data?.CreditCardCode ?? response.data?.CreditCard ?? ""),
+      name: response.data?.CreditCardName || response.data?.CardName || CreditCardName,
+      glAccount: response.data?.GLAccount || response.data?.AcctCode || payload.GLAccount || "",
+      telephone: response.data?.Telephone || response.data?.Phone || payload.Telephone || "",
+      companyId: response.data?.CompanyID || response.data?.CompanyId || payload.CompanyID || "",
+      country: response.data?.CountryCode || response.data?.Country || "",
     });
   } catch (err) {
     const msg = err.response?.data?.error?.message?.value || err.message;
@@ -224,6 +260,24 @@ const createCreditCard = async (req, res) => {
 const lookupBanks = async (req, res) => {
   try {
     const rows = await masterDataDbService.lookupBanks(req.query.query || "", req.query.country || "");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const lookupHouseBankAccounts = async (req, res) => {
+  try {
+    const rows = await masterDataDbService.lookupHouseBankAccounts(req.query.bankCode || "", req.query.country || "");
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+const lookupWithholdingTaxCodes = async (req, res) => {
+  try {
+    const rows = await masterDataDbService.lookupWithholdingTaxCodes(req.query.query || "");
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -303,6 +357,8 @@ module.exports = {
   lookupCreditCards,
   createCreditCard,
   lookupBanks,
+  lookupHouseBankAccounts,
+  lookupWithholdingTaxCodes,
   lookupNumberingSeries,
   getNextNumber,
 };

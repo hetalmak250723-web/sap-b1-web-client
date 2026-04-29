@@ -1034,6 +1034,48 @@ const lookupCreditCards = async (query = "") => {
   }));
 };
 
+const mapWithholdingTaxCode = (row) => ({
+  code: row.WTCode || "",
+  name: row.WTName || "",
+  assesseeType: Number(row.Assessee) === 1 ? "atCompany" : "atOthers",
+  assesseeTypeLabel: Number(row.Assessee) === 1 ? "Company" : "Others",
+  taxCategory: row.EBWTaxCate == null || row.EBWTaxCate === "" ? (row.Category || "") : String(row.EBWTaxCate),
+  threshold: row.Threshold ?? 0,
+  surcharge: row.Surcharge ?? 0,
+  officialCode: row.OffclCode || "",
+  rate: row.Rate ?? 0,
+  inactive: toYesNo(row.Inactive),
+});
+
+const getWithholdingTaxCode = async (code) => {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return null;
+
+  const row = await queryOne(`
+    SELECT TOP 1 WTCode, WTName, Assessee, Threshold, Surcharge, EBWTaxCate, Category, OffclCode, Rate, Inactive
+    FROM OWHT
+    WHERE WTCode = @code
+    ORDER BY WTCode
+  `, { code: trimmed });
+
+  return row ? mapWithholdingTaxCode(row) : null;
+};
+
+const lookupWithholdingTaxCodes = async (query = "") => {
+  const trimmed = String(query || "").trim();
+  const rows = await queryRows(`
+    SELECT TOP 200 WTCode, WTName, Assessee, Threshold, Surcharge, EBWTaxCate, Category, OffclCode, Rate, Inactive
+    FROM OWHT
+    WHERE @query = ''
+      OR WTCode LIKE @like
+      OR ISNULL(WTName, '') LIKE @like
+      OR ISNULL(OffclCode, '') LIKE @like
+    ORDER BY WTCode
+  `, { query: trimmed, like: `%${trimmed}%` });
+
+  return rows.map(mapWithholdingTaxCode);
+};
+
 const getNextCreditCardCode = async () => {
   const row = await queryOne(`
     SELECT ISNULL(MAX(CreditCard), 0) + 1 AS NextCode
@@ -1091,6 +1133,46 @@ const lookupBanks = async (query = "", country = "") => {
     swift: row.SwiftNum || "",
     iban: row.IBAN || "",
     branch: row.DfltBranch || "",
+  }));
+};
+
+const lookupHouseBankAccounts = async (bankCode = "", country = "") => {
+  const trimmedBankCode = String(bankCode || "").trim();
+  const trimmedCountry = String(country || "").trim();
+  if (!trimmedBankCode) return [];
+
+  const rows = await queryRows(`
+    SELECT
+      D.BankCode,
+      D.Account,
+      COALESCE(NULLIF(D.BranchName, ''), NULLIF(D.Branch, ''), NULLIF(B.DfltBranch, '')) AS Branch,
+      COALESCE(NULLIF(D.IBAN, ''), NULLIF(B.IBAN, '')) AS IBAN,
+      COALESCE(NULLIF(D.SwiftNum, ''), NULLIF(B.SwiftNum, '')) AS SwiftNum,
+      D.ControlKey,
+      D.Country,
+      B.BankName,
+      C.Name AS CountryName
+    FROM DSC1 D
+    LEFT JOIN ODSC B
+      ON B.BankCode = D.BankCode
+     AND (@country = '' OR B.CountryCod = @country)
+    LEFT JOIN OCRY C
+      ON C.Code = D.Country
+    WHERE D.BankCode = @bankCode
+      AND (@country = '' OR D.Country = @country)
+    ORDER BY D.Account
+  `, { bankCode: trimmedBankCode, country: trimmedCountry });
+
+  return rows.map((row) => ({
+    bankCode: row.BankCode || "",
+    bankName: row.BankName || row.BankCode || "",
+    account: row.Account || "",
+    branch: row.Branch || "",
+    iban: row.IBAN || "",
+    swift: row.SwiftNum || "",
+    controlKey: row.ControlKey || "",
+    country: row.Country || "",
+    countryName: row.CountryName || row.Country || "",
   }));
 };
 
@@ -1309,9 +1391,12 @@ module.exports = {
   lookupPaymentTerms,
   getCreditCardByCode,
   lookupCreditCards,
+  getWithholdingTaxCode,
+  lookupWithholdingTaxCodes,
   getNextCreditCardCode,
   getBankByCode,
   lookupBanks,
+  lookupHouseBankAccounts,
   lookupSalesPersons,
   lookupBPSeries,
   getBPSeriesNextNumber,

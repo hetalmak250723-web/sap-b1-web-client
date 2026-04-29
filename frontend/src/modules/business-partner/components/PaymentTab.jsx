@@ -14,6 +14,7 @@ const EMPTY_CREDIT_CARD_FORM = {
   CreditCardCode: "",
   CreditCardName: "",
   GLAccount: "",
+  GLAccountName: "",
   Telephone: "",
   CompanyID: "",
   CountryCode: "",
@@ -135,6 +136,7 @@ export default function PaymentTab({
   fetchBPPriceLists,
   fetchPaymentTerms,
   fetchCreditCards,
+  fetchGLAccounts,
   fetchBanks,
   fetchCountries,
   createCreditCard,
@@ -353,15 +355,18 @@ export default function PaymentTab({
       return;
     }
 
+    if (!creditCardForm.GLAccount.trim()) {
+      showAlert?.("error", "G/L Account is required.");
+      return;
+    }
+
     setCreditCardSaving(true);
     try {
       const result = await createCreditCard({
-        CreditCardCode: creditCardForm.CreditCardCode,
         CreditCardName: creditCardForm.CreditCardName.trim(),
         GLAccount: creditCardForm.GLAccount.trim(),
         Telephone: creditCardForm.Telephone.trim(),
         CompanyID: creditCardForm.CompanyID.trim(),
-        CountryCode: creditCardForm.CountryCode.trim(),
       });
 
       setForm((prev) => ({
@@ -824,7 +829,13 @@ export default function PaymentTab({
               <div className="bp-credit-card-setup-grid">
                 <div className="im-field">
                   <label className="im-field__label">Code</label>
-                  <input className="im-field__input" value={creditCardForm.CreditCardCode} onChange={(e) => setCreditCardForm((prev) => ({ ...prev, CreditCardCode: e.target.value }))} placeholder="Auto if blank" />
+                  <input
+                    className="im-field__input"
+                    value={creditCardForm.CreditCardCode}
+                    readOnly
+                    placeholder="Auto assigned by SAP"
+                    style={{ background: "#f0f2f5", color: "#555" }}
+                  />
                 </div>
                 <div className="im-field">
                   <label className="im-field__label">Name</label>
@@ -832,7 +843,23 @@ export default function PaymentTab({
                 </div>
                 <div className="im-field">
                   <label className="im-field__label">G/L Account</label>
-                  <input className="im-field__input" value={creditCardForm.GLAccount} onChange={(e) => setCreditCardForm((prev) => ({ ...prev, GLAccount: e.target.value }))} />
+                  <LookupField
+                    name="GLAccount"
+                    value={creditCardForm.GLAccount}
+                    displayValue={creditCardForm.GLAccountName || ""}
+                    onChange={(e) => setCreditCardForm((prev) => ({
+                      ...prev,
+                      GLAccount: e.target.value,
+                      GLAccountName: "",
+                    }))}
+                    onSelect={(row) => setCreditCardForm((prev) => ({
+                      ...prev,
+                      GLAccount: row.code || "",
+                      GLAccountName: row.name || "",
+                    }))}
+                    fetchOptions={fetchGLAccounts}
+                    placeholder="G/L Account"
+                  />
                 </div>
                 <div className="im-field">
                   <label className="im-field__label">Telephone</label>
@@ -844,7 +871,13 @@ export default function PaymentTab({
                 </div>
                 <div className="im-field">
                   <label className="im-field__label">Country</label>
-                  <input className="im-field__input" value={creditCardForm.CountryCode} onChange={(e) => setCreditCardForm((prev) => ({ ...prev, CountryCode: e.target.value }))} />
+                  <input
+                    className="im-field__input"
+                    value={creditCardForm.CountryCode}
+                    readOnly
+                    placeholder="Not editable in SAP"
+                    style={{ background: "#f0f2f5", color: "#555" }}
+                  />
                 </div>
               </div>
             </div>

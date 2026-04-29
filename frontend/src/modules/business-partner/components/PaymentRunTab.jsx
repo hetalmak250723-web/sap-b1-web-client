@@ -1,47 +1,271 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 
-const COUNTRIES = [
-  { code: "", name: "-- Select --" },
-  { code: "IN", name: "India" }, { code: "US", name: "United States" },
-  { code: "GB", name: "United Kingdom" }, { code: "DE", name: "Germany" },
-  { code: "AE", name: "UAE" },
-];
+const EMPTY_OPTION = { code: "", name: "-- Select --" };
 
-export default function PaymentRunTab({ form, onChange }) {
+const dedupeByValue = (items = []) => {
+  const seen = new Set();
+  return items.filter((item) => {
+    const key = String(item.value ?? "");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+export default function PaymentRunTab({
+  form,
+  onChange,
+  setForm,
+  fetchBanks,
+  fetchCountries,
+  fetchHouseBankAccounts,
+}) {
+  const [countryOptions, setCountryOptions] = useState([EMPTY_OPTION]);
+  const [bankOptions, setBankOptions] = useState([EMPTY_OPTION]);
+  const [houseBankAccounts, setHouseBankAccounts] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCountries = async () => {
+      try {
+        const rows = await fetchCountries("");
+        if (!active) return;
+        setCountryOptions([
+          EMPTY_OPTION,
+          ...rows.map((row) => ({ code: row.code || "", name: row.name || row.code || "" })),
+        ]);
+      } catch (_) {
+        if (active) setCountryOptions([EMPTY_OPTION]);
+      }
+    };
+
+    loadCountries();
+    return () => { active = false; };
+  }, [fetchCountries]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadBanks = async () => {
+      const country = String(form.HouseBankCountry || "").trim();
+      if (!country) {
+        setBankOptions([EMPTY_OPTION]);
+        return;
+      }
+
+      try {
+        const rows = await fetchBanks("", country);
+        if (!active) return;
+        setBankOptions([
+          EMPTY_OPTION,
+          ...rows.map((row) => ({
+            code: row.code || "",
+            name: row.name || row.code || "",
+            branch: row.branch || "",
+            swift: row.swift || "",
+            iban: row.iban || "",
+          })),
+        ]);
+      } catch (_) {
+        if (active) setBankOptions([EMPTY_OPTION]);
+      }
+    };
+
+    loadBanks();
+    return () => { active = false; };
+  }, [fetchBanks, form.HouseBankCountry]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadHouseBankAccounts = async () => {
+      const bankCode = String(form.HouseBank || "").trim();
+      const country = String(form.HouseBankCountry || "").trim();
+
+      if (!bankCode) {
+        setHouseBankAccounts([]);
+        return;
+      }
+
+      try {
+        const rows = await fetchHouseBankAccounts(bankCode, country);
+        if (!active) return;
+        setHouseBankAccounts(rows || []);
+      } catch (_) {
+        if (active) setHouseBankAccounts([]);
+      }
+    };
+
+    loadHouseBankAccounts();
+    return () => { active = false; };
+  }, [fetchHouseBankAccounts, form.HouseBank, form.HouseBankCountry]);
+
+  useEffect(() => {
+    if (!form.HouseBank || houseBankAccounts.length === 0) return;
+
+    const hasSelectedAccount = houseBankAccounts.some((row) => row.account === form.HouseBankAccount);
+    if (hasSelectedAccount) return;
+
+    applyLinkedBankRow(houseBankAccounts[0], {
+      HouseBank: form.HouseBank,
+      HouseBankCountry: form.HouseBankCountry || houseBankAccounts[0]?.country || "",
+    });
+  }, [houseBankAccounts, form.HouseBank, form.HouseBankAccount, form.HouseBankCountry]);
+
+  const accountOptions = dedupeByValue([
+    { value: "", label: "-- Select --" },
+    ...(form.HouseBankAccount ? [{
+      value: form.HouseBankAccount,
+      label: form.HouseBankAccount,
+    }] : []),
+    ...houseBankAccounts
+      .filter((row) => row.account)
+      .map((row) => ({
+        value: row.account,
+        label: row.branch ? `${row.account} - ${row.branch}` : row.account,
+      })),
+  ]);
+
+  const ibanOptions = dedupeByValue([
+    { value: "", label: "-- Select --" },
+    ...(form.HouseBankIBAN ? [{
+      value: form.HouseBankIBAN,
+      label: form.HouseBankIBAN,
+    }] : []),
+    ...houseBankAccounts
+      .filter((row) => row.iban)
+      .map((row) => ({
+        value: row.iban,
+        label: row.branch ? `${row.iban} - ${row.branch}` : row.iban,
+      })),
+  ]);
+
+  const selectedBankMaster = bankOptions.find((bank) => bank.code === form.HouseBank) || null;
+
+  const applyLinkedBankRow = (row, overrides = {}) => {
+    setForm((prev) => ({
+      ...prev,
+      HouseBankCountry: overrides.HouseBankCountry ?? row?.country ?? prev.HouseBankCountry ?? "",
+      HouseBank: overrides.HouseBank ?? row?.bankCode ?? prev.HouseBank ?? "",
+      HouseBankAccount: overrides.HouseBankAccount ?? row?.account ?? "",
+      HouseBankBranch: overrides.HouseBankBranch ?? row?.branch ?? selectedBankMaster?.branch ?? "",
+      HouseBankIBAN: overrides.HouseBankIBAN ?? row?.iban ?? selectedBankMaster?.iban ?? "",
+      HouseBankSwift: overrides.HouseBankSwift ?? row?.swift ?? selectedBankMaster?.swift ?? "",
+      HouseBankControlKey: overrides.HouseBankControlKey ?? row?.controlKey ?? "",
+    }));
+  };
+
+  const handleCountryChange = (e) => {
+    const nextCountry = e.target.value;
+    setForm((prev) => ({
+      ...prev,
+      HouseBankCountry: nextCountry,
+      HouseBank: "",
+      HouseBankAccount: "",
+      HouseBankBranch: "",
+      HouseBankIBAN: "",
+      HouseBankSwift: "",
+      HouseBankControlKey: "",
+    }));
+  };
+
+  const handleBankChange = (e) => {
+    const nextBank = e.target.value;
+    const matchedBank = bankOptions.find((row) => row.code === nextBank) || null;
+
+    setForm((prev) => ({
+      ...prev,
+      HouseBank: nextBank,
+      HouseBankAccount: "",
+      HouseBankBranch: matchedBank?.branch || "",
+      HouseBankIBAN: matchedBank?.iban || "",
+      HouseBankSwift: matchedBank?.swift || "",
+      HouseBankControlKey: "",
+    }));
+  };
+
+  const handleAccountChange = (e) => {
+    const nextAccount = e.target.value;
+    const matchedRow = houseBankAccounts.find((row) => row.account === nextAccount);
+
+    if (matchedRow) {
+      applyLinkedBankRow(matchedRow, {
+        HouseBankAccount: nextAccount,
+      });
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      HouseBankAccount: nextAccount,
+    }));
+  };
+
+  const handleIBANChange = (e) => {
+    const nextIBAN = e.target.value;
+    const matchedRow = houseBankAccounts.find((row) => row.iban === nextIBAN);
+
+    if (matchedRow) {
+      applyLinkedBankRow(matchedRow, {
+        HouseBankIBAN: nextIBAN,
+      });
+      return;
+    }
+
+    setForm((prev) => ({
+      ...prev,
+      HouseBankIBAN: nextIBAN,
+    }));
+  };
+
   return (
     <div style={{ display: "flex", gap: 40 }}>
-      {/* Left: House Bank */}
       <div style={{ minWidth: 320, maxWidth: 380 }}>
         <div className="im-section-title">House Bank</div>
         <div className="im-field">
           <label className="im-field__label">Country/Region</label>
-          <select className="im-field__select" name="HouseBankCountry" value={form.HouseBankCountry || ""} onChange={onChange}>
-            {COUNTRIES.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+          <select className="im-field__select" name="HouseBankCountry" value={form.HouseBankCountry || ""} onChange={handleCountryChange}>
+            {countryOptions.map((country) => (
+              <option key={country.code} value={country.code}>{country.name}</option>
+            ))}
           </select>
         </div>
         <div className="im-field">
           <label className="im-field__label">Bank</label>
-          <input className="im-field__input" name="HouseBank" value={form.HouseBank || ""} onChange={onChange} />
+          <select className="im-field__select" name="HouseBank" value={form.HouseBank || ""} onChange={handleBankChange} disabled={!form.HouseBankCountry}>
+            {bankOptions.map((bank) => (
+              <option key={`${bank.code}-${bank.name}`} value={bank.code}>{bank.name}</option>
+            ))}
+          </select>
         </div>
         <div className="im-field">
           <label className="im-field__label">Account</label>
-          <input className="im-field__input" name="HouseBankAccount" value={form.HouseBankAccount || ""} onChange={onChange} />
+          <select className="im-field__select" name="HouseBankAccount" value={form.HouseBankAccount || ""} onChange={handleAccountChange} disabled={!form.HouseBank}>
+            {accountOptions.map((option) => (
+              <option key={`acct-${option.value}`} value={option.value}>{option.label}</option>
+            ))}
+          </select>
         </div>
         <div className="im-field">
           <label className="im-field__label">Branch</label>
-          <input className="im-field__input" name="HouseBankBranch" value={form.HouseBankBranch || ""} onChange={onChange} />
+          <input className="im-field__input" name="HouseBankBranch" value={form.HouseBankBranch || ""} onChange={onChange} readOnly style={{ background: "#f7f7f7" }} />
         </div>
         <div className="im-field">
           <label className="im-field__label">IBAN</label>
-          <input className="im-field__input" name="HouseBankIBAN" value={form.HouseBankIBAN || ""} onChange={onChange} />
+          <select className="im-field__select" name="HouseBankIBAN" value={form.HouseBankIBAN || ""} onChange={handleIBANChange} disabled={!form.HouseBank}>
+            {ibanOptions.map((option) => (
+              <option key={`iban-${option.value}`} value={option.value}>{option.label}</option>
+            ))}
+          </select>
         </div>
         <div className="im-field">
           <label className="im-field__label">BIC/SWIFT Code</label>
-          <input className="im-field__input" name="HouseBankSwift" value={form.HouseBankSwift || ""} onChange={onChange} />
+          <input className="im-field__input" name="HouseBankSwift" value={form.HouseBankSwift || ""} onChange={onChange} readOnly style={{ background: "#f7f7f7" }} />
         </div>
         <div className="im-field">
           <label className="im-field__label">Control No.</label>
-          <input className="im-field__input" name="HouseBankControlKey" value={form.HouseBankControlKey || ""} onChange={onChange} />
+          <input className="im-field__input" name="HouseBankControlKey" value={form.HouseBankControlKey || ""} onChange={onChange} readOnly style={{ background: "#f7f7f7" }} />
         </div>
 
         <div style={{ marginTop: 16 }}>
@@ -73,7 +297,6 @@ export default function PaymentRunTab({ form, onChange }) {
         </div>
       </div>
 
-      {/* Right: Payment Methods grid */}
       <div style={{ flex: 1 }}>
         <div className="im-section-title">Payment Methods</div>
         <div className="im-grid-wrap">
