@@ -48,6 +48,8 @@ import ARCreditMemo from "./pages/ARCreditMemo";
 import ARCreditMemoList from "./pages/ARCreditMemoList";
 import SalesQuotation from "./pages/SalesQuotation";
 import SalesQuotationList from "./pages/SalesQuotationList";
+import SalesAnalysisReport from "./pages/SalesAnalysisReport";
+import PurchaseAnalysisReport from "./pages/PurchaseAnalysisReport";
 
 function App(){
 
@@ -101,6 +103,8 @@ return(
 <Route path="/sales-order/find" element={<SalesOrderList/>} />
 <Route path="/sales-quotation" element={<SalesQuotation/>} />
 <Route path="/sales-quotation/find" element={<SalesQuotationList/>} />
+<Route path="/reports/sales-analysis" element={<SalesAnalysisReport/>} />
+<Route path="/reports/purchase-analysis" element={<PurchaseAnalysisReport/>} />
 <Route path="/bom" element={<BOM/>} />
 <Route path="/production-order" element={<ProductionOrder/>} />
 <Route path="/issue-for-production" element={<IssueForProduction/>} />

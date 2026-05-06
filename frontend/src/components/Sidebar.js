@@ -12,7 +12,6 @@ const masterItems = [
   { to: "/payment-terms",    label: "Payment Terms",        shortLabel: "PT" },
   { to: "/shipping-type",    label: "Shipping Types",       shortLabel: "ST" },
   { to: "/branch",           label: "Branches",             shortLabel: "BR" },
-  { to: "/chart-of-accounts", label: "Chart of Accounts",  shortLabel: "CA" },
 ];
 
 const productionItems = [
@@ -75,6 +74,11 @@ const purchasingApItems = [
   { label: "Attachment", shortLabel: "AT" },
 ];
 
+const reportItems = [
+  { to: "/reports/sales-analysis", label: "Sales Analysis Report", shortLabel: "SA" },
+  { to: "/reports/purchase-analysis", label: "Purchase Analysis Report", shortLabel: "PA" },
+];
+
 function SidebarLink({ item, collapsed }) {
   if (!item.to) {
     return (
@@ -135,6 +139,7 @@ export default function Sidebar() {
   const [inventoryOpen, setInventoryOpen] = useState(true);
   const [salesOpen, setSalesOpen] = useState(true);
   const [purchasingOpen, setPurchasingOpen] = useState(true);
+  const [reportsOpen, setReportsOpen] = useState(true);
 
   return (
     <aside className={`sidebar-shell${collapsed ? " is-collapsed" : ""}`}>
@@ -216,6 +221,15 @@ export default function Sidebar() {
               items={purchasingApItems}
               open={purchasingOpen}
               onToggle={() => setPurchasingOpen((prev) => !prev)}
+              collapsed={collapsed}
+            />
+
+            <SidebarSection
+              title="Reports"
+              shortTitle="RP"
+              items={reportItems}
+              open={reportsOpen}
+              onToggle={() => setReportsOpen((prev) => !prev)}
               collapsed={collapsed}
             />
           </nav>
