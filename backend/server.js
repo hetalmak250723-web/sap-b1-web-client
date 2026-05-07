@@ -43,8 +43,12 @@ const goodsReceiptController     = require('./controllers/goodsReceiptController
 const goodsIssueRoutes           = require('./routes/goodsIssue');
 const inventoryTransferRequestRoutes = require('./routes/inventoryTransferRequest');
 const inventoryTransferRoutes    = require('./routes/inventoryTransfer');
+const salesAnalysisRoutes        = require('./routes/reports/salesAnalysis.routes');
+const purchaseAnalysisRoutes     = require('./routes/reports/purchaseAnalysis.routes');
+const reportLookupsRoutes        = require('./routes/reportLookups');
 
 const app = express();
+
 
 const redactSensitiveFields = (value) => {
   if (!value || typeof value !== 'object') return value;
@@ -63,6 +67,15 @@ const redactSensitiveFields = (value) => {
     }),
   );
 };
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[UNHANDLED_REJECTION]', reason);
+});
+
+process.on('uncaughtException', (error, origin) => {
+  console.error('[UNCAUGHT_EXCEPTION]', origin || 'unknown');
+  console.error(error?.stack || error?.message || error);
+});
 
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173', 'http://localhost:5174'],
@@ -134,6 +147,9 @@ app.use('/api/goods-receipt',      goodsReceiptRoutes);
 app.use('/api/goods-issue',        goodsIssueRoutes);
 app.use('/api/inventory-transfer-request', inventoryTransferRequestRoutes);
 app.use('/api/inventory-transfer', inventoryTransferRoutes);
+app.use('/api/reports',            salesAnalysisRoutes);
+app.use('/api/reports',            purchaseAnalysisRoutes);
+app.use('/api/lookups',            reportLookupsRoutes);
 app.use('/api',                    sapRoutes);
 
 // Health check
@@ -165,6 +181,16 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(env.port, () => {
+const server = app.listen(env.port, () => {
   console.log(`[Server] Running on http://localhost:${env.port}`);
+});
+
+server.on('error', (error) => {
+  if (error?.code === 'EADDRINUSE') {
+    console.log(`[SERVER_INFO] Port ${env.port} is already in use. Another backend instance is already running, so this duplicate start will close.`);
+    process.exit(0);
+    return;
+  }
+
+  console.error('[SERVER_ERROR]', error?.stack || error?.message || error);
 });
