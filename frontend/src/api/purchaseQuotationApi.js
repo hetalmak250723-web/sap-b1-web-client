@@ -13,8 +13,11 @@ const fetchPurchaseQuotationVendorDetails = async (vendorCode) => {
   return res;
 };
 
-const fetchPurchaseQuotations = () =>
-  apiClient.get('/purchase-quotation/list');
+const fetchPurchaseQuotations = (params = {}) =>
+  apiClient.get('/purchase-quotation/list', { params });
+
+const fetchPurchaseQuotationVendorOptions = (params = {}) =>
+  apiClient.get('/purchase-quotation/vendors/search', { params });
 
 const fetchPurchaseQuotationByDocEntry = (docEntry) =>
   apiClient.get(`/purchase-quotation/${encodeURIComponent(docEntry)}`);
@@ -44,6 +47,7 @@ export {
   fetchPurchaseQuotationReferenceData,
   fetchPurchaseQuotationByDocEntry,
   fetchPurchaseQuotations,
+  fetchPurchaseQuotationVendorOptions,
   fetchPurchaseQuotationVendorDetails,
   submitPurchaseQuotation,
   updatePurchaseQuotation,

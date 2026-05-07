@@ -9,6 +9,15 @@ const getErrorPayload = (error, fallbackMessage) => ({
     fallbackMessage,
 });
 
+const parseTopParam = (value) => {
+  if (value == null || value === '') return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return Math.floor(parsed);
+};
+
 const getReferenceData = async (req, res) => {
   try {
     const data = await purchaseQuotationService.getReferenceData(req.query.company_id);
@@ -27,9 +36,41 @@ const getVendorDetails = async (req, res) => {
   }
 };
 
+const getVendorFilterOptions = async (req, res) => {
+  try {
+    const data = await purchaseQuotationService.getVendorFilterOptions({
+      query: req.query.query,
+      vendorCode: req.query.vendorCode,
+      vendorName: req.query.vendorName,
+      top: parseTopParam(req.query.top),
+      display: req.query.display,
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load vendor filter options.'));
+  }
+};
+
 const getPurchaseQuotations = async (req, res) => {
   try {
-    const data = await purchaseQuotationService.getPurchaseQuotationList();
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? false
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
+    const data = await purchaseQuotationService.getPurchaseQuotationList({
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      vendorCode: req.query.vendorCode,
+      vendorName: req.query.vendorName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      page,
+      pageSize,
+    });
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load purchase quotations.'));
@@ -113,6 +154,7 @@ module.exports = {
   getReferenceData,
   getPurchaseQuotations,
   getPurchaseQuotationByDocEntry,
+  getVendorFilterOptions,
   getVendorDetails,
   submitPurchaseQuotation,
   updatePurchaseQuotation,

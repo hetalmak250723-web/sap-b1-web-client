@@ -1,5 +1,6 @@
 const sapService = require('./sapService');
 const grpoDb = require('./grpoDbService');
+const purchaseOrderDb = require('./purchaseOrderDbService');
 const { getDocumentFreightCharges } = require('./freightChargesDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
 
@@ -64,14 +65,75 @@ const getVendorDetails = async (vendorCode) => {
   }
 };
 
+const getVendorFilterOptions = async ({
+  query = '',
+  vendorCode = '',
+  vendorName = '',
+  top,
+  display = 'code',
+} = {}) => {
+  try {
+    const rows = await purchaseOrderDb.searchVendors({
+      query,
+      cardCode: vendorCode,
+      cardName: vendorName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
+  }
+};
+
 // ───────── GRPO LIST (USING ODBC) ─────────
 
-const getGRPOList = async () => {
+const getGRPOList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  vendorCode = '',
+  vendorName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
   try {
-    const result = await grpoDb.getGRPOList();
+    const result = await grpoDb.getGRPOList({
+      query,
+      openOnly,
+      docNum,
+      vendorCode,
+      vendorName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
-    return { grpos: [] };
+    return {
+      grpos: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
   }
 };
 
@@ -314,6 +376,7 @@ const getFreightCharges = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getVendorDetails,
+  getVendorFilterOptions,
   getGRPOList,
   getGRPO,
   submitGRPO,

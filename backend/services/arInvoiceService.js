@@ -1,6 +1,12 @@
 const sapService = require('./sapService');
 const arInvoiceDb = require('./arInvoiceDbService');
+const salesOrderDb = require('./salesOrderDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
+
+const normalizeBranchId = (branch) => {
+  const normalized = String(branch || '').trim();
+  return normalized === '' ? -1 : Number(normalized);
+};
 
 // ───────── REFERENCE DATA (USING ODBC) ─────────
 
@@ -63,14 +69,74 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── AR INVOICE LIST (USING ODBC) ─────────
 
-const getARInvoiceList = async () => {
+const getCustomerFilterOptions = async ({
+  query = '',
+  customerCode = '',
+  customerName = '',
+  top,
+  display = 'code',
+} = {}) => {
   try {
-    // Use ODBC for reading list
-    const result = await arInvoiceDb.getARInvoiceList();
+    const rows = await salesOrderDb.searchCustomers({
+      query,
+      cardCode: customerCode,
+      cardName: customerName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
+  }
+};
+
+const getARInvoiceList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  try {
+    const result = await arInvoiceDb.getARInvoiceList({
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
     console.error('[AR Invoice Service] Failed to load AR invoice list via ODBC:', error);
-    return { invoices: [] };
+    return {
+      ar_invoices: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
   }
 };
 
@@ -125,8 +191,8 @@ const submitARInvoice = async (payload) => {
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
 
       // Branch mapping
-      BPLId: payload.header.branch ? Number(payload.header.branch) : undefined,
-      BPL_IDAssignedToInvoice: payload.header.branch ? Number(payload.header.branch) : undefined,
+      BPLId: normalizeBranchId(payload.header.branch),
+      BPL_IDAssignedToInvoice: normalizeBranchId(payload.header.branch),
 
       PaymentGroupCode: payload.header.paymentTerms ? Number(payload.header.paymentTerms) : undefined,
 
@@ -343,6 +409,7 @@ const getItemsForModal = async () => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getARInvoiceList,
   getARInvoice,
   submitARInvoice,

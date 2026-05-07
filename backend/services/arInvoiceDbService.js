@@ -6,6 +6,7 @@ const db = require('./dbService');
 const salesOrderDb = require('./salesOrderDbService');
 const salesQuotationDb = require('./salesQuotationDbService');
 const deliveryDb = require('./deliveryDbService');
+const { buildMarketingDocumentListFilterQuery } = require('./documentListUtils');
 
 const safe = async (promise) => {
   try {
@@ -411,34 +412,85 @@ const getCustomerDetails = async (customerCode) => {
   };
 };
 
-const getARInvoiceList = async () => {
+const getARInvoiceList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedPageSize = Math.min(200, Math.max(1, Number(pageSize) || 25));
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const { whereClauses, params } = buildMarketingDocumentListFilterQuery({
+    query,
+    openOnly,
+    docNum,
+    partnerCode: customerCode,
+    partnerName: customerName,
+    status,
+    postingDateFrom,
+    postingDateTo,
+  });
+
+  const countRows = await safe(db.query(`
+    SELECT COUNT(*) AS total_count
+    FROM OINV T0
+    WHERE ${whereClauses.join('\n      AND ')}
+  `, params));
+
+  const totalCount = Number(countRows?.[0]?.total_count || 0);
+
   const result = await safe(db.query(`
     SELECT
-      T0.DocEntry,
-      T0.DocNum,
-      T0.CardCode,
-      T0.CardName,
-      T0.DocDate,
-      T0.DocDueDate,
-      T0.DocTotal,
-      T0.DocStatus,
-      T0.Comments
+      T0.DocEntry AS doc_entry,
+      T0.DocNum AS doc_num,
+      T0.CardCode AS customer_code,
+      T0.CardName AS customer_name,
+      T0.DocDate AS posting_date,
+      T0.DocDueDate AS delivery_date,
+      T0.DocTotal AS total_amount,
+      T0.DocCur AS currency,
+      CASE T0.DocStatus
+        WHEN 'O' THEN 'Open'
+        WHEN 'C' THEN 'Closed'
+        ELSE T0.DocStatus
+      END AS status,
+      (
+        SELECT COUNT(*)
+        FROM INV1 T1
+        WHERE T1.DocEntry = T0.DocEntry
+      ) AS line_count
     FROM OINV T0
-    ORDER BY T0.DocDate DESC, T0.DocNum DESC
-  `));
+    WHERE ${whereClauses.join('\n      AND ')}
+    ORDER BY T0.DocEntry DESC
+    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+  `, { ...params, skip, top: normalizedPageSize }));
 
   return {
-    ar_invoices: result.map(inv => ({
-      DocEntry: inv.DocEntry,
-      DocNum: inv.DocNum,
-      CardCode: inv.CardCode,
-      CardName: inv.CardName,
-      DocDate: inv.DocDate,
-      DocDueDate: inv.DocDueDate,
-      DocTotal: inv.DocTotal,
-      DocumentStatus: inv.DocStatus === 'O' ? 'Open' : inv.DocStatus === 'C' ? 'Closed' : inv.DocStatus,
-      Comments: inv.Comments,
-    }))
+    ar_invoices: result.map((row) => ({
+      doc_entry: row.doc_entry,
+      doc_num: row.doc_num,
+      customer_code: row.customer_code,
+      customer_name: row.customer_name,
+      posting_date: row.posting_date ? row.posting_date.toISOString().split('T')[0] : '',
+      delivery_date: row.delivery_date ? row.delivery_date.toISOString().split('T')[0] : '',
+      total_amount: Number(row.total_amount || 0),
+      currency: row.currency || '',
+      status: row.status || '',
+      line_count: Number(row.line_count || 0),
+    })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalCount,
+      totalPages: Math.max(1, Math.ceil(totalCount / normalizedPageSize)),
+    },
   };
 };
 

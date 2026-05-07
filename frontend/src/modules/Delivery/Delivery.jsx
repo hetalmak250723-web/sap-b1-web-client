@@ -1964,7 +1964,6 @@ function Delivery() {
     
     if (!String(header.postingDate || '').trim()) { e.header.postingDate = 'Posting date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
     if (!String(header.documentDate || '').trim()) { e.header.documentDate = 'Document date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
-    if (!String(header.branch || '').trim()) { e.header.branch = 'Branch is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
     if (!String(header.warehouse || '').trim()) { e.header.warehouse = 'Warehouse is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
 
     const pop = lines.filter(l => String(l.itemNo || '').trim());
@@ -2641,7 +2640,7 @@ function Delivery() {
 
                     {/* Branch */}
                     <div className="del-field">
-                      <label className="del-field__label">Branch *</label>
+                      <label className="del-field__label">Branch</label>
                       <select name="branch" className={`del-field__select${valErrors.header.branch ? ' del-field__select--error' : ''}`} value={header.branch} onChange={handleHeaderChange} disabled={!!currentDocEntry}>
                         <option value="">Select Branch</option>
                         {refData.branches.map(b => (

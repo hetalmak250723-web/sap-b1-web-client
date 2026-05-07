@@ -13,10 +13,11 @@ router.get('/freight-charges', arCreditMemoController.getFreightCharges);
 router.get('/items-modal', arCreditMemoController.getItemsForModal);
 router.get('/batches', arCreditMemoController.getBatchesByItem);
 router.get('/uom-conversion', arCreditMemoController.getUomConversionFactor);
+router.get('/customers/search', arCreditMemoController.getCustomerFilterOptions);
 router.get('/customers/:customerCode', arCreditMemoController.getCustomerDetails);
 
 // ── Copy From endpoints (must be before /:docEntry) ──
-router.get('/open',                            arCreditMemoController.getARCreditMemoList);
+router.get('/open',                            arCreditMemoController.getOpenARCreditMemoDocuments);
 // router.get('/open-deliveries',                 arCreditMemoController.getOpenDeliveries);
 router.get('/open-invoices',                   arCreditMemoController.getOpenARInvoices);
 // router.get('/open-sales-orders',               arCreditMemoController.getOpenSalesOrders);

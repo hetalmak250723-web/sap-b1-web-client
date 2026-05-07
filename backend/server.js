@@ -3,7 +3,10 @@ require('dotenv').config();
 const express = require('express');
 const cors    = require('cors');
 const env     = require('./config/env');
+const { authenticateAccessToken } = require('./middleware/authMiddleware');
 
+const authRoutes            = require('./routes/authRoutes');
+const menuRoutes            = require('./routes/menuRoutes');
 const sapRoutes             = require('./routes/sapRoutes');
 const itemRoutes            = require('./routes/itemRoutes');
 const businessPartnerRoutes = require('./routes/businessPartnerRoutes');
@@ -21,6 +24,9 @@ const purchaseRequestRoutes = require('./routes/purchaseRequest');
 const salesOrderRoutes      = require('./routes/salesOrder');
 const salesQuotationRoutes  = require('./routes/salesQuotation');
 const blanketAgreementRoutes = require('./routes/blanketAgreement');
+const printRoutes           = require('./routes/printRoutes');
+const reportLayoutRoutes    = require('./routes/reportLayoutRoutes');
+const salesAnalysisRoutes   = require('./routes/salesAnalysisRoutes');
 const bomRoutes             = require('./routes/bomRoutes');
 const productionOrderRoutes    = require('./routes/productionOrder');
 const issueForProductionRoutes   = require('./routes/issueForProduction');
@@ -40,6 +46,24 @@ const inventoryTransferRoutes    = require('./routes/inventoryTransfer');
 
 const app = express();
 
+const redactSensitiveFields = (value) => {
+  if (!value || typeof value !== 'object') return value;
+
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveFields);
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => {
+      if (/(password|token|secret)/i.test(key)) {
+        return [key, '[REDACTED]'];
+      }
+
+      return [key, redactSensitiveFields(fieldValue)];
+    }),
+  );
+};
+
 app.use(cors({
   origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173', 'http://localhost:5174'],
   credentials: true,
@@ -50,12 +74,28 @@ app.use(express.json());
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
   if (req.method === 'POST' || req.method === 'PATCH') {
-    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('Request body:', JSON.stringify(redactSensitiveFields(req.body), null, 2));
   }
   next();
 });
 
+app.use((req, res, next) => {
+  if (req.path === '/health') return next();
+  if (!req.path.startsWith('/api')) return next();
+  if (
+    req.path === '/api/login' ||
+    req.path === '/api/companies-public' ||
+    req.path === '/api/select-company' ||
+    req.path.startsWith('/api/companies/')
+  ) {
+    return next();
+  }
+  return authenticateAccessToken(req, res, next);
+});
+
 // Routes
+app.use('/api',                    authRoutes);
+app.use('/api/menu',               menuRoutes);
 app.get('/api/items',              goodsReceiptController.getItems);
 app.use('/api/items',              itemRoutes);
 app.use('/api/business-partners',  businessPartnerRoutes);
@@ -76,6 +116,9 @@ app.use('/api/purchase-request',   purchaseRequestRoutes);
 app.use('/api/sales-order',        salesOrderRoutes);
 app.use('/api/sales-quotation',    salesQuotationRoutes);
 app.use('/api/blanket-agreements', blanketAgreementRoutes);
+app.use('/api',                    printRoutes);
+app.use('/api',                    reportLayoutRoutes);
+app.use('/api/reports',            salesAnalysisRoutes);
 app.use('/api/bom',                bomRoutes);
 app.use('/api/production-order',   productionOrderRoutes);
 app.use('/api/issue-for-production',    issueForProductionRoutes);

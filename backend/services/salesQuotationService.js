@@ -2,6 +2,11 @@ const sapService = require('./sapService');
 const salesQuotationDb = require('./salesQuotationDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
 
+const normalizeBranchId = (branch) => {
+  const normalized = String(branch || '').trim();
+  return normalized === '' ? -1 : Number(normalized);
+};
+
 // ───────── HELPERS ─────────
 
 const convertSalesEmployeeToCode = async (input, salesEmployees = []) => {
@@ -89,12 +94,74 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── LIST ─────────
 
-const getSalesQuotationList = async () => {
+const getSalesQuotationList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
   try {
-    return await salesQuotationDb.getSalesQuotationList();
+    return await salesQuotationDb.getSalesQuotationList({
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
   } catch (error) {
     console.error('[Sales Quotation Service] Failed to load list:', error);
-    return { quotations: [] };
+    return {
+      quotations: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
+  }
+};
+
+const getCustomerFilterOptions = async ({
+  query = '',
+  customerCode = '',
+  customerName = '',
+  top,
+  display = 'code',
+} = {}) => {
+  try {
+    const rows = await salesQuotationDb.searchCustomers({
+      query,
+      cardCode: customerCode,
+      cardName: customerName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (error) {
+    console.error('[Sales Quotation Service] Failed to load customer filter options:', error);
+    return { options: [] };
   }
 };
 
@@ -136,8 +203,8 @@ const submitSalesQuotation = async (payload) => {
       DocDueDate: payload.header.deliveryDate,
       TaxDate: payload.header.documentDate,
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
-      BPLId: payload.header.branch ? Number(payload.header.branch) : undefined,
-      BPL_IDAssignedToInvoice: payload.header.branch ? Number(payload.header.branch) : undefined,
+      BPLId: normalizeBranchId(payload.header.branch),
+      BPL_IDAssignedToInvoice: normalizeBranchId(payload.header.branch),
       PaymentGroupCode: payload.header.paymentTerms ? Number(payload.header.paymentTerms) : undefined,
       ...(SlpCode !== null && SlpCode !== undefined ? { SalesPersonCode: SlpCode } : {}),
       ...(OwnerCode !== null && OwnerCode !== undefined ? { DocumentsOwner: OwnerCode } : {}),
@@ -333,6 +400,7 @@ const getSalesQuotationForCopy = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getSalesQuotationList,
   getSalesQuotation,
   submitSalesQuotation,

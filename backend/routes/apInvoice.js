@@ -6,6 +6,7 @@ const router = express.Router();
 router.get('/reference-data', apInvoiceController.getReferenceData);
 router.get('/items-modal', apInvoiceController.getItemsForModal);
 router.get('/list', apInvoiceController.getAPInvoices);
+router.get('/vendors/search', apInvoiceController.getVendorFilterOptions);
 router.get('/series', apInvoiceController.getDocumentSeries);
 router.get('/series/:series/next-number', apInvoiceController.getNextNumber);
 router.get('/vendors/:vendorCode', apInvoiceController.getVendorDetails);

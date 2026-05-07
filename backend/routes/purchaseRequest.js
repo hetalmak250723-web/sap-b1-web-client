@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.get('/reference-data', purchaseRequestController.getReferenceData);
 router.get('/list', purchaseRequestController.getPurchaseRequests);
+router.get('/vendors/search', purchaseRequestController.getVendorFilterOptions);
 router.get('/series', purchaseRequestController.getDocumentSeries);
 router.get('/series/:series/next-number', purchaseRequestController.getNextNumber);
 router.get('/freight-charges', purchaseRequestController.getFreightCharges);

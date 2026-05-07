@@ -10,6 +10,9 @@ export const fetchAPInvoiceReferenceData = (companyId) =>
 export const fetchAPInvoiceVendorDetails = (cardCode) =>
   apiClient.get(`/ap-invoice/vendors/${cardCode}`);
 
+export const fetchAPInvoiceVendorOptions = (params = {}) =>
+  apiClient.get('/ap-invoice/vendors/search', { params });
+
 // Submit
 export const submitAPInvoice = (payload) =>
   apiClient.post('/ap-invoice', payload);
@@ -39,8 +42,8 @@ export const fetchOpenGRPO = (vendor) =>
 export const fetchGRPOForCopy = (docEntry) =>
   apiClient.get(`/ap-invoice/grpo/${docEntry}`);
 
-export const fetchAPInvoices = () =>
-  apiClient.get('/ap-invoice/list');
+export const fetchAPInvoices = (params = {}) =>
+  apiClient.get('/ap-invoice/list', { params });
 
 export const fetchItemsForModal = () =>
   apiClient.get('/ap-invoice/items-modal');

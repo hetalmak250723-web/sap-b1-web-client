@@ -89,7 +89,8 @@
 
 .so-layout__sidebar {
   width: 100%;
-  overflow: hidden;
+  min-height: 0;
+  overflow: visible;
 }
 
 /* Override Bootstrap column classes in sidebar */
@@ -105,7 +106,9 @@
   position: sticky;
   top: 12px;
   max-height: calc(100vh - 24px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
   word-wrap: break-word;
   overflow-wrap: break-word;
   padding: 12px !important;
@@ -120,14 +123,14 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .so-layout__sidebar .po-udf-sidebar-card .form-label {
   font-size: 11px;
   font-weight: 600;
   color: #003366;
-  margin-bottom: 4px;
+  margin-bottom: 0;
   word-wrap: break-word;
   overflow-wrap: break-word;
   white-space: normal;
@@ -148,11 +151,29 @@
   border-radius: 2px;
 }
 
-.so-layout__sidebar .po-udf-sidebar-card .mb-3 {
-  margin-bottom: 12px;
+.so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field {
+  display: grid;
+  grid-template-columns: minmax(120px, 145px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 0;
+  margin-bottom: 10px;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
+}
+
+.so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field .form-label {
+  text-align: left;
+}
+
+.so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea {
+  align-items: start;
+}
+
+.so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea .form-control,
+.so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea .form-control-sm {
+  min-height: 64px;
 }
 
 .so-layout__sidebar .po-udf-sidebar-card h6 {
@@ -190,6 +211,7 @@
 .so-toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px 12px;
   background: #e8edf2;
@@ -201,6 +223,57 @@
   font-weight: 700;
   color: #003366;
   margin-right: auto;
+  min-width: 220px;
+}
+
+.so-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.so-toolbar__field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.so-toolbar__field-label {
+  font-size: 11px;
+  color: #44515f;
+}
+
+.so-toolbar__field-input {
+  width: 96px;
+  height: 24px;
+  padding: 0 6px;
+  font-size: 11px;
+  border: 1px solid #a0aab4;
+  border-radius: 3px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.so-toolbar__field-input--schema {
+  width: 120px;
+}
+
+.so-toolbar__field-input--layout {
+  width: 340px;
+}
+
+.so-toolbar__field-input:focus {
+  outline: none;
+  border-color: #0070c0;
+  box-shadow: 0 0 0 2px rgba(0,112,192,0.12);
+}
+
+.so-print-tools {
+  padding: 2px 8px;
+  border: 1px solid #c8d0da;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .so-btn {
@@ -214,6 +287,10 @@
   white-space: nowrap;
 }
 .so-btn:hover { background: linear-gradient(180deg, #f0f4f8 0%, #dde3ea 100%); }
+.so-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .so-btn--primary {
   background: linear-gradient(180deg, #0070c0 0%, #005a9e 100%);
   color: #fff;
@@ -753,5 +830,10 @@ select.so-grid__input {
   .so-layout__sidebar .po-udf-sidebar-card {
     position: static;
     max-height: none;
+  }
+
+  .so-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field {
+    grid-template-columns: 1fr;
+    row-gap: 6px;
   }
 }

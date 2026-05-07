@@ -11,6 +11,10 @@ export const fetchARInvoiceCustomerDetails = (customerCode) => {
   return client.get(`${API_BASE}/customers/${customerCode}`);
 };
 
+export const fetchARInvoiceCustomerOptions = (params = {}) => {
+  return client.get(`${API_BASE}/customers/search`, { params });
+};
+
 export const fetchDocumentSeries = () => {
   return client.get(`${API_BASE}/series`);
 };
@@ -55,8 +59,7 @@ export const updateARInvoice = (docEntry, data) => {
 };
 
 export const fetchARInvoiceList = (params = {}) => {
-  const query = new URLSearchParams(params).toString();
-  return client.get(`${API_BASE}/list?${query}`);
+  return client.get(`${API_BASE}/list`, { params });
 };
 
 // ─── COPY FROM ───────────────────────────────────────────────────────────────

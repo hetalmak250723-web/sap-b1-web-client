@@ -1528,12 +1528,7 @@ function SalesOrder() {
       return e; 
     }
     
-    // Validate Branch (always required)
-    if (!String(header.branch || '').trim()) { 
-      e.header.branch = 'Branch is required.'; 
-      e.form = 'Please correct the highlighted fields.'; 
-      return e; 
-    }
+
     
     if (!String(header.postingDate || '').trim()) { e.header.postingDate = 'Posting date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
     if (!String(header.documentDate || '').trim()) { e.header.documentDate = 'Document date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
@@ -1861,7 +1856,7 @@ function SalesOrder() {
 
                     {/* Branch */}
                     <div className="so-field">
-                      <label className="so-field__label">Branch *</label>
+                      <label className="so-field__label">Branch</label>
                       <select 
                         name="branch" 
                         className="so-field__select" 

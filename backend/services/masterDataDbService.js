@@ -95,13 +95,13 @@ const pagingParams = (top, skip) => ({
   skip: Math.max(0, toInt(skip, 0)),
 });
 
-const queryRows = async (sql, params = {}) => {
-  const result = await db.query(sql, params);
+const queryRows = async (sql, params = {}, options = {}) => {
+  const result = await db.query(sql, params, options);
   return result.recordset || [];
 };
 
-const queryOne = async (sql, params = {}) => {
-  const rows = await queryRows(sql, params);
+const queryOne = async (sql, params = {}, options = {}) => {
+  const rows = await queryRows(sql, params, options);
   return rows[0] || null;
 };
 
@@ -936,32 +936,50 @@ const getBP = async (cardCode) => {
   return mapBP(row, addresses.map(mapBPAddress), contacts.map(mapBPContact));
 };
 
-const searchBP = async (query = "", type = "", top = 50, skip = 0) => {
+const searchBP = async (query = "", type = "", top = 50, skip = 0, options = {}) => {
   const { top: limit, skip: offset } = pagingParams(top, skip);
   const trimmed = String(query || "").trim();
   const cardType = type === "cCustomer" ? "C" : type === "cSupplier" ? "S" : type === "cLead" ? "L" : "";
   const rows = await queryRows(`
-    SELECT CardCode, CardName, CardType, GroupCode, Phone1, E_Mail, Currency, Balance
+    SELECT
+      CardCode,
+      CardName,
+      CardType,
+      GroupCode,
+      Phone1,
+      E_Mail,
+      Currency,
+      Balance,
+      ValidFor,
+      FrozenFor,
+      BillToDef,
+      Address,
+      LicTradNum
     FROM OCRD
-    WHERE (@query = ''
-      OR CardCode LIKE @like
-      OR CardName LIKE @like)
-      AND (@cardType = '' OR CardType = @cardType)
-    ORDER BY CardCode
-    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
-  `, { query: trimmed, like: `%${trimmed}%`, cardType, top: limit, skip: offset });
+      WHERE (@query = ''
+        OR CardCode LIKE @like
+        OR CardName LIKE @like)
+        AND (@cardType = '' OR CardType = @cardType)
+      ORDER BY CardName, CardCode
+      OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+    `, { query: trimmed, like: `%${trimmed}%`, cardType, top: limit, skip: offset }, options);
 
-  return rows.map((row) => ({
-    CardCode: row.CardCode,
-    CardName: row.CardName,
-    CardType: toCardType(row.CardType),
-    GroupCode: row.GroupCode ?? "",
-    Phone1: row.Phone1 || "",
-    EmailAddress: row.E_Mail || "",
-    Currency: row.Currency || "##",
-    Balance: row.Balance ?? 0,
-  }));
-};
+    return rows.map((row) => ({
+      CardCode: row.CardCode,
+      CardName: row.CardName,
+      CardType: toCardType(row.CardType),
+      GroupCode: row.GroupCode ?? "",
+      Phone1: row.Phone1 || "",
+      EmailAddress: row.E_Mail || "",
+      Currency: row.Currency || "##",
+      Balance: row.Balance ?? 0,
+      Active: String(row.ValidFor || '').toUpperCase() === 'N' ? 'No' : 'Yes',
+      Inactive: String(row.FrozenFor || '').toUpperCase() === 'Y' ? 'Yes' : 'No',
+      BillToBlock: row.BillToDef || "",
+      BillToBuildingFloorRoom: row.Address || "",
+      GTSRegistrationNumber: row.LicTradNum || "",
+    }));
+  };
 
 const lookupBPGroups = async (query = "") => {
   const trimmed = String(query || "").trim();
@@ -1179,7 +1197,7 @@ const lookupHouseBankAccounts = async (bankCode = "", country = "") => {
 const lookupSalesPersons = async (query = "") => {
   const trimmed = String(query || "").trim();
   const rows = await queryRows(`
-    SELECT TOP 200 SlpCode, SlpName
+    SELECT TOP 200 SlpCode, SlpName, Memo
     FROM OSLP
     WHERE @query = ''
       OR CAST(SlpCode AS NVARCHAR(50)) LIKE @like
@@ -1187,7 +1205,11 @@ const lookupSalesPersons = async (query = "") => {
     ORDER BY SlpCode
   `, { query: trimmed, like: `%${trimmed}%` });
 
-  return rows.map((row) => ({ code: String(row.SlpCode), name: row.SlpName }));
+  return rows.map((row) => ({
+    code: String(row.SlpCode),
+    name: row.SlpName,
+    remarks: row.Memo || "",
+  }));
 };
 
 const lookupBPSeries = async () => {

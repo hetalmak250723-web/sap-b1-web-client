@@ -427,6 +427,32 @@
   margin-top: -1px;
 }
 
+.im-combobox__search-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px;
+  background: #fff;
+  border-bottom: 1px solid #e0e6ed;
+}
+
+.im-combobox__search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid #a0aab4;
+  border-radius: 3px;
+  background: #fff;
+  color: #1a1a1a;
+}
+
+.im-combobox__search-input:focus {
+  outline: none;
+  border-color: #0070c0;
+  box-shadow: 0 0 0 2px rgba(0,112,192,0.12);
+}
+
 .im-combobox__loading,
 .im-combobox__empty {
   padding: 8px 12px;

@@ -6,6 +6,7 @@ const router = express.Router();
 router.get('/reference-data', purchaseOrderController.getReferenceData);
 router.get('/items-modal', purchaseOrderController.getItemsForModal);
 router.get('/list', purchaseOrderController.getPurchaseOrders);
+router.get('/vendors/search', purchaseOrderController.getVendorFilterOptions);
 router.get('/series', purchaseOrderController.getDocumentSeries);
 router.get('/series/:series/next-number', purchaseOrderController.getNextNumber);
 router.get('/vendors/:vendorCode', purchaseOrderController.getVendorDetails);

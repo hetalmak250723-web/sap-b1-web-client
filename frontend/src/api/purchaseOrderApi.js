@@ -13,8 +13,11 @@ const fetchPurchaseOrderVendorDetails = async (vendorCode) => {
   return res;
 };
 
-const fetchPurchaseOrders = () =>
-  apiClient.get('/purchase-order/list');
+const fetchPurchaseOrders = (params = {}) =>
+  apiClient.get('/purchase-order/list', { params });
+
+const fetchPurchaseOrderVendorOptions = (params = {}) =>
+  apiClient.get('/purchase-order/vendors/search', { params });
 
 const fetchPurchaseOrderByDocEntry = (docEntry) =>
   apiClient.get(`/purchase-order/${encodeURIComponent(docEntry)}`);
@@ -63,6 +66,7 @@ export {
   fetchPurchaseOrderReferenceData,
   fetchPurchaseOrderByDocEntry,
   fetchPurchaseOrders,
+  fetchPurchaseOrderVendorOptions,
   fetchPurchaseOrderVendorDetails,
   submitPurchaseOrder,
   updatePurchaseOrder,

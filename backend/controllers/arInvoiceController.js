@@ -9,6 +9,15 @@ const getErrorPayload = (error, fallbackMessage) => ({
     fallbackMessage,
 });
 
+const parseTopParam = (value) => {
+  if (value == null || value === '') return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return Math.floor(parsed);
+};
+
 const handle = (fn, msg) => async (req, res) => {
   try { res.json(await fn(req)); }
   catch (e) { res.status(500).json(getErrorPayload(e, msg)); }
@@ -31,9 +40,40 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+const getCustomerFilterOptions = async (req, res) => {
+  try {
+    res.json(await arInvoiceService.getCustomerFilterOptions({
+      query: req.query.query,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      top: parseTopParam(req.query.top),
+      display: req.query.display,
+    }));
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load customer filter options.'));
+  }
+};
+
 const getARInvoiceList = async (req, res) => {
   try {
-    res.json(await arInvoiceService.getARInvoiceList());
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? false
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
+    res.json(await arInvoiceService.getARInvoiceList({
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      page,
+      pageSize,
+    }));
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load AR invoices.'));
   }
@@ -174,6 +214,7 @@ const getSalesQuotationForCopy = async (req, res) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getARInvoiceList,
   getARInvoice,
   submitARInvoice,

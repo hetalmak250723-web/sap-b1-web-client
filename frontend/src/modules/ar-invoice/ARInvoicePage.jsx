@@ -1867,7 +1867,7 @@ function ARInvoicePage() {
 
                     {/* Branch */}
                     <div className="del-field">
-                      <label className="del-field__label">Branch *</label>
+                      <label className="del-field__label">Branch</label>
                       <select name="branch" className="del-field__select" value={header.branch} onChange={handleHeaderChange} disabled={!!currentDocEntry}>
                         <option value="">Select Branch</option>
                         {refData.branches.map(b => (

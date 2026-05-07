@@ -5,6 +5,7 @@ const router = express.Router();
 
 router.get('/reference-data', purchaseQuotationController.getReferenceData);
 router.get('/list', purchaseQuotationController.getPurchaseQuotations);
+router.get('/vendors/search', purchaseQuotationController.getVendorFilterOptions);
 router.get('/series', purchaseQuotationController.getDocumentSeries);
 router.get('/series/:series/next-number', purchaseQuotationController.getNextNumber);
 router.get('/vendors/:vendorCode', purchaseQuotationController.getVendorDetails);

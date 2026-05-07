@@ -1,5 +1,6 @@
 const sapService = require('./sapService');
 const apCreditMemoDb = require('./apCreditMemoDbService');
+const purchaseOrderDb = require('./purchaseOrderDbService');
 const { getDocumentFreightCharges } = require('./freightChargesDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
 
@@ -223,11 +224,72 @@ const getVendorDetails = async (vendorCode) => {
   }
 };
 
-const getAPCreditMemoList = async () => {
+const getVendorFilterOptions = async ({
+  query = '',
+  vendorCode = '',
+  vendorName = '',
+  top,
+  display = 'code',
+} = {}) => {
   try {
-    return await apCreditMemoDb.getAPCreditMemoList();
+    const rows = await purchaseOrderDb.searchVendors({
+      query,
+      cardCode: vendorCode,
+      cardName: vendorName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
   } catch (_error) {
-    return { apCreditMemos: [] };
+    return { options: [] };
+  }
+};
+
+const getAPCreditMemoList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  vendorCode = '',
+  vendorName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  try {
+    return await apCreditMemoDb.getAPCreditMemoList({
+      query,
+      openOnly,
+      docNum,
+      vendorCode,
+      vendorName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
+  } catch (_error) {
+    return {
+      apCreditMemos: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
   }
 };
 
@@ -430,6 +492,7 @@ const getFreightCharges = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getVendorDetails,
+  getVendorFilterOptions,
   getAPCreditMemoList,
   getAPCreditMemo,
   getDocumentSeries,

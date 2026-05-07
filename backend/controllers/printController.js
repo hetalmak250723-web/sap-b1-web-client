@@ -1,0 +1,37 @@
+const reportService = require('../services/reportService');
+
+const getErrorPayload = (error, fallbackMessage) => {
+  const message =
+    error.response?.data?.error?.message?.value ||
+    error.response?.data?.error?.message ||
+    error.response?.data?.message ||
+    error.response?.data?.detail ||
+    error.message ||
+    fallbackMessage;
+
+  return {
+    message,
+    detail: message,
+  };
+};
+
+const printSalesOrder = async (req, res) => {
+  try {
+    const { docEntry, schema, docCode } = req.body || {};
+
+    const data = await reportService.exportSalesOrderPdf({
+      docEntry,
+      schema,
+      docCode,
+    });
+
+    res.json(data);
+  } catch (error) {
+    const statusCode = error.statusCode || error.response?.status || 500;
+    res.status(statusCode).json(getErrorPayload(error, 'Failed to generate sales order PDF.'));
+  }
+};
+
+module.exports = {
+  printSalesOrder,
+};

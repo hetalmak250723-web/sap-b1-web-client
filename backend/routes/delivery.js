@@ -14,6 +14,7 @@ router.get('/uom-conversion', deliveryController.getUomConversionFactor);
 router.get('/reference-data', deliveryController.getReferenceData);
 
 // Customer details
+router.get('/customers/search', deliveryController.getCustomerFilterOptions);
 router.get('/customers/:customerCode', deliveryController.getCustomerDetails);
 
 // Document series

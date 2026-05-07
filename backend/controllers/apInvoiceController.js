@@ -9,6 +9,15 @@ const getErrorPayload = (error, fallbackMessage) => ({
     fallbackMessage,
 });
 
+const parseTopParam = (value) => {
+  if (value == null || value === '') return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return Math.floor(parsed);
+};
+
 const getReferenceData = async (req, res) => {
   try {
     res.json(await apInvoiceService.getReferenceData(req.query.company_id));
@@ -25,9 +34,40 @@ const getVendorDetails = async (req, res) => {
   }
 };
 
-const getAPInvoices = async (_req, res) => {
+const getVendorFilterOptions = async (req, res) => {
   try {
-    res.json(await apInvoiceService.getAPInvoiceList());
+    res.json(await apInvoiceService.getVendorFilterOptions({
+      query: req.query.query,
+      vendorCode: req.query.vendorCode,
+      vendorName: req.query.vendorName,
+      top: parseTopParam(req.query.top),
+      display: req.query.display,
+    }));
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load vendor filter options.'));
+  }
+};
+
+const getAPInvoices = async (req, res) => {
+  try {
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? false
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
+    res.json(await apInvoiceService.getAPInvoiceList({
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      vendorCode: req.query.vendorCode,
+      vendorName: req.query.vendorName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      page,
+      pageSize,
+    }));
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load A/P Invoices.'));
   }
@@ -122,6 +162,7 @@ const getFreightCharges = async (req, res) => {
 module.exports = {
   getReferenceData,
   getVendorDetails,
+  getVendorFilterOptions,
   getAPInvoices,
   getAPInvoiceByDocEntry,
   submitAPInvoice,

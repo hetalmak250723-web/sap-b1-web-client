@@ -8,8 +8,11 @@ const fetchPurchaseRequestReferenceData = (companyId) =>
 const fetchPurchaseRequestVendorDetails = (vendorCode) =>
   apiClient.get(`/purchase-request/vendors/${encodeURIComponent(vendorCode)}`);
 
-const fetchPurchaseRequests = () =>
-  apiClient.get('/purchase-request/list');
+const fetchPurchaseRequests = (params = {}) =>
+  apiClient.get('/purchase-request/list', { params });
+
+const fetchPurchaseRequestVendorOptions = (params = {}) =>
+  apiClient.get('/purchase-request/vendors/search', { params });
 
 const fetchPurchaseRequestByDocEntry = (docEntry) =>
   apiClient.get(`/purchase-request/${encodeURIComponent(docEntry)}`);
@@ -44,6 +47,7 @@ export {
   fetchPurchaseRequestReferenceData,
   fetchPurchaseRequestByDocEntry,
   fetchPurchaseRequests,
+  fetchPurchaseRequestVendorOptions,
   fetchPurchaseRequestVendorDetails,
   fetchPurchaseRequestDocumentSeries,
   fetchPurchaseRequestNextNumber,

@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
+import { useLocation } from "react-router-dom";
 import "../item-master/styles/itemMaster.css";
 import "./styles/businessPartner.css";
 import GeneralTab    from "./components/GeneralTab";
@@ -523,6 +524,7 @@ function buildPayload(form) {
 }
 
 export default function BusinessPartnerModule() {
+  const location = useLocation();
   const [mode, setMode]       = useState(MODES.ADD);
   const [tab, setTab]         = useState(0);
   const [form, setForm]       = useState(EMPTY_FORM);
@@ -546,6 +548,47 @@ export default function BusinessPartnerModule() {
       .then((list) => setNumberingSeries(list.filter((s) => !s.isManual)))
       .catch(() => setNumberingSeries([]));
   }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    const cardCode = new URLSearchParams(location.search).get("cardCode");
+    const normalizedCardCode = String(cardCode || "").trim();
+
+    if (!normalizedCardCode) {
+      return () => {
+        ignore = true;
+      };
+    }
+
+    const loadBusinessPartner = async () => {
+      setLoading(true);
+      try {
+        const data = await getBP(normalizedCardCode);
+        if (ignore) {
+          return;
+        }
+
+        setForm({ ...EMPTY_FORM, ...normalizeBP(data) });
+        setMode(MODES.UPDATE);
+        setTab(0);
+        showAlert("success", `"${data.CardCode}" loaded.`);
+      } catch (error) {
+        if (!ignore) {
+          showAlert("error", error.response?.data?.message || `Could not load "${normalizedCardCode}".`);
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadBusinessPartner();
+
+    return () => {
+      ignore = true;
+    };
+  }, [location.search]);
 
   const handleSeriesChange = async (e) => {
     const val = e.target.value;

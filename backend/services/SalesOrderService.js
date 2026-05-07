@@ -2,6 +2,11 @@ const sapService = require('./sapService');
 const salesOrderDb = require('./salesOrderDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
 
+const normalizeBranchId = (branch) => {
+  const normalized = String(branch || '').trim();
+  return normalized === '' ? -1 : Number(normalized);
+};
+
 // ───────── HELPERS ─────────
 
 /**
@@ -218,6 +223,7 @@ const SALES_ORDER_LINE_UDF_MAPPINGS = [
   { sapField: 'U_Buyer_Delivery', getValue: (line) => line.buyerDelivery },
   { sapField: 'U_Seller_Delivery', getValue: (line) => line.sellerDelivery },
   { sapField: 'U_Buyer_Payment_Terms', getValue: (line) => line.buyerPaymentTerms },
+  { sapField: 'U_Seller_Payment_Terms', getValue: (line) => line.sellerPaymentTerms },
   { sapField: 'U_Buyer_Quality', getValue: (line) => line.buyerQuality },
   { sapField: 'U_Seller_Quality', getValue: (line) => line.sellerQuality },
   { sapField: 'U_Buyer_Price', getValue: (line) => line.buyerPrice },
@@ -410,14 +416,107 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── SALES ORDER LIST (USING ODBC) ─────────
 
-const getSalesOrderList = async () => {
+const getSalesOrderList = async ({
+  query = '',
+  openOnly = true,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
   try {
     // Use ODBC for reading list
-    const result = await salesOrderDb.getSalesOrderList();
+    const result = await salesOrderDb.getSalesOrderList({
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
     console.error('[Sales Order Service] Failed to load sales order list via ODBC:', error);
-    return { orders: [] };
+    return {
+      orders: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
+  }
+};
+
+const getCustomerFilterOptions = async ({
+  query = '',
+  customerCode = '',
+  customerName = '',
+  top,
+  display = 'code',
+} = {}) => {
+  try {
+    const rows = await salesOrderDb.searchCustomers({
+      query,
+      cardCode: customerCode,
+      cardName: customerName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (error) {
+    console.error('[Sales Order Service] Failed to load customer filter options via ODBC:', error);
+    return { options: [] };
+  }
+};
+
+const getSalesOrderFilterOptions = async ({
+  field = '',
+  query = '',
+  openOnly = true,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  top,
+} = {}) => {
+  try {
+    return await salesOrderDb.getSalesOrderFilterOptions({
+      field,
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      top,
+    });
+  } catch (error) {
+    console.error('[Sales Order Service] Failed to load sales order filter options via ODBC:', error);
+    return { options: [] };
   }
 };
 
@@ -517,8 +616,8 @@ const submitSalesOrder = async (payload) => {
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
       
       // ✅ Branch mapping - try multiple field names
-      BPLId: payload.header.branch ? Number(payload.header.branch) : undefined,
-      BPL_IDAssignedToInvoice: payload.header.branch ? Number(payload.header.branch) : undefined,
+      BPLId: normalizeBranchId(payload.header.branch),
+      BPL_IDAssignedToInvoice: normalizeBranchId(payload.header.branch),
 
       PaymentGroupCode: payload.header.paymentTerms ? Number(payload.header.paymentTerms) : undefined,
 
@@ -544,6 +643,8 @@ const submitSalesOrder = async (payload) => {
     if (payload.header.placeOfSupply) {
       sapPayload.U_PlaceOfSupply = payload.header.placeOfSupply;
     }
+
+    Object.assign(sapPayload, payload.header_udfs || {});
 
     console.log("═══════════════════════════════════════════════════");
     console.log("🔥 SAP PAYLOAD TO BE SENT:");
@@ -701,6 +802,8 @@ const updateSalesOrder = async (docEntry, payload) => {
       sapPayload.U_PlaceOfSupply = payload.header.placeOfSupply;
     }
 
+    Object.assign(sapPayload, payload.header_udfs || {});
+
     console.log("🔥 FINAL SAP PAYLOAD:", JSON.stringify(sapPayload, null, 2));
 
     // =========================
@@ -730,9 +833,9 @@ const updateSalesOrder = async (docEntry, payload) => {
 
 // ───────── DOCUMENT SERIES ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
   try {
-    const series = await salesOrderDb.getDocumentSeries();
+    const series = await salesOrderDb.getDocumentSeries(targetDate);
     return { series };
   } catch (error) {
     console.error('[Sales Order Service] Failed to load document series:', error);
@@ -784,6 +887,16 @@ const getFreightCharges = async (docEntry) => {
   }
 };
 
+const getSalesOrderPrintLayouts = async () => {
+  try {
+    const layouts = await salesOrderDb.getSalesOrderPrintLayouts();
+    return { layouts };
+  } catch (error) {
+    console.error('[Sales Order Service] Failed to get print layouts:', error);
+    return { layouts: [] };
+  }
+};
+
 const createLookupValue = async ({ field, value, description }) => {
   const fieldMap = {
     buyerQuality: 'U_Buyer_Quality',
@@ -806,7 +919,9 @@ const createLookupValue = async ({ field, value, description }) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getSalesOrderList,
+  getSalesOrderFilterOptions,
   getSalesOrder,
   submitSalesOrder,
   updateSalesOrder,
@@ -815,6 +930,7 @@ module.exports = {
   getStateFromAddress,
   getItemsForModal,
   getFreightCharges,
+  getSalesOrderPrintLayouts,
   createLookupValue,
   getOpenSalesOrders:          async () => { try { return { documents: await salesOrderDb.getOpenSalesOrders() }; } catch(e) { return { documents: [] }; } },
   getSalesOrderForCopy:        async (d) => salesOrderDb.getSalesOrderForCopy(d),

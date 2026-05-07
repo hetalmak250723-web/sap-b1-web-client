@@ -6,6 +6,7 @@ const router = express.Router();
 router.get('/reference-data', apCreditMemoController.getReferenceData);
 router.get('/items-modal', apCreditMemoController.getItemsForModal);
 router.get('/list', apCreditMemoController.getAPCreditMemos);
+router.get('/vendors/search', apCreditMemoController.getVendorFilterOptions);
 router.get('/series', apCreditMemoController.getDocumentSeries);
 router.get('/series/:series/next-number', apCreditMemoController.getNextNumber);
 router.get('/vendors/:vendorCode', apCreditMemoController.getVendorDetails);

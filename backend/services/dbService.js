@@ -5,34 +5,44 @@
 const sql = require('mssql');
 const env = require('../config/env');
 
-const config = {
+const buildConfig = (databaseName = env.dbName) => ({
   server: env.dbServer,
-  database: env.dbName,
+  database: databaseName,
   options: {
-    instanceName:          env.dbInstance || undefined,
+    instanceName: env.dbInstance || undefined,
     trustServerCertificate: env.dbTrustCert,
-    encrypt:               env.dbEncrypt,
+    encrypt: env.dbEncrypt,
   },
   authentication: {
     type: 'default',
     options: { userName: env.dbUser, password: env.dbPassword },
   },
   connectionTimeout: 15000,
-  requestTimeout:    30000,
+  requestTimeout: 30000,
   pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+});
+
+const pools = new Map();
+
+const getPool = async (databaseName = env.dbName) => {
+  const resolvedDatabase = String(databaseName || env.dbName || '').trim();
+  if (!resolvedDatabase) {
+    throw new Error('No company database is configured for SQL access.');
+  }
+
+  const existingPool = pools.get(resolvedDatabase);
+  if (existingPool?.connected) {
+    return existingPool;
+  }
+
+  const pool = await new sql.ConnectionPool(buildConfig(resolvedDatabase)).connect();
+  pools.set(resolvedDatabase, pool);
+  console.log(`[DB] SQL Server pool connected to ${resolvedDatabase}`);
+  return pool;
 };
 
-let _pool = null;
-
-const getPool = async () => {
-  if (_pool && _pool.connected) return _pool;
-  _pool = await sql.connect(config);
-  console.log('[DB] SQL Server pool connected');
-  return _pool;
-};
-
-const query = async (queryStr, params = {}) => {
-  const pool = await getPool();
+const query = async (queryStr, params = {}, options = {}) => {
+  const pool = await getPool(options.databaseName);
   const req  = pool.request();
   for (const [k, v] of Object.entries(params)) {
     req.input(k, v);
@@ -40,4 +50,4 @@ const query = async (queryStr, params = {}) => {
   return req.query(queryStr);
 };
 
-module.exports = { query, sql };
+module.exports = { query, sql, getPool };

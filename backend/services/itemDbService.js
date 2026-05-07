@@ -719,10 +719,20 @@ const getItemGroups = async (query = '') => {
     )
   );
 
-  return rows.map((row) => ({
+  const mappedGroups = rows.map((row) => ({
     code: String(row.ItmsGrpCod),
     name: row.ItmsGrpNam || '',
   }));
+
+  if (!hasQuery) {
+    return [
+      { code: '*', name: '*' },
+      ...mappedGroups,
+      { code: '', name: 'All' },
+    ];
+  }
+
+  return mappedGroups;
 };
 
 const getManufacturers = async (query = '') => {

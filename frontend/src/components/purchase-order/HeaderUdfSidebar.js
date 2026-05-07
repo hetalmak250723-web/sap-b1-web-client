@@ -9,11 +9,17 @@ function renderField(field, value, disabled, onChange) {
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       >
-        {field.options.map((option) => (
-          <option key={option} value={option}>
-            {option}
-          </option>
-        ))}
+        {field.options.map((option) => {
+          const normalizedOption = typeof option === 'object'
+            ? option
+            : { value: option, label: option };
+
+          return (
+            <option key={normalizedOption.value} value={normalizedOption.value}>
+              {normalizedOption.label}
+            </option>
+          );
+        })}
       </select>
     );
   }
@@ -76,7 +82,10 @@ function HeaderUdfSidebar({
             const disabled = formSettings.headerUdfs[field.key]?.active === false;
 
             return (
-              <div key={field.key} className="mb-3">
+              <div
+                key={field.key}
+                className={`mb-3 po-udf-sidebar-field po-udf-sidebar-field--${field.type || 'text'}`}
+              >
                 <label className="form-label mb-1">{field.label}</label>
                 {renderField(
                   field,

@@ -11,8 +11,11 @@ const fetchDeliveryCustomerDetails = (customerCode) =>
   apiClient.get(`/delivery/customers/${encodeURIComponent(customerCode)}`);
 
 // ─────────── Documents ───────────
-const fetchDeliveries = () =>
-  apiClient.get('/delivery/list');
+const fetchDeliveries = (params = {}) =>
+  apiClient.get('/delivery/list', { params });
+
+const fetchDeliveryCustomerOptions = (params = {}) =>
+  apiClient.get('/delivery/customers/search', { params });
 
 const fetchDeliveryByDocEntry = (docEntry) =>
   apiClient.get(`/delivery/${encodeURIComponent(docEntry)}`);
@@ -104,6 +107,7 @@ export {
   fetchDeliveryReferenceData,
   fetchDeliveryByDocEntry,
   fetchDeliveries,
+  fetchDeliveryCustomerOptions,
   fetchDeliveryCustomerDetails,
   submitDelivery,
   updateDelivery,

@@ -70,12 +70,73 @@ const getVendorDetails = async (vendorCode) => {
 
 // ───────── PURCHASE ORDER LIST (USING ODBC) ─────────
 
-const getPurchaseQuotationList = async () => {
+const getPurchaseQuotationList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  vendorCode = '',
+  vendorName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
   try {
-    const result = await purchaseQuotationDb.getPurchaseQuotationList();
+    const result = await purchaseQuotationDb.getPurchaseQuotationList({
+      query,
+      openOnly,
+      docNum,
+      vendorCode,
+      vendorName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
-    return { quotations: [] };
+    return {
+      quotations: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
+  }
+};
+
+const getVendorFilterOptions = async ({
+  query = '',
+  vendorCode = '',
+  vendorName = '',
+  top,
+  display = 'code',
+} = {}) => {
+  try {
+    const rows = await purchaseQuotationDb.searchVendors({
+      query,
+      cardCode: vendorCode,
+      cardName: vendorName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
   }
 };
 
@@ -281,6 +342,7 @@ const getFreightCharges = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getVendorDetails,
+  getVendorFilterOptions,
   getPurchaseQuotationList,
   getPurchaseQuotation,
   submitPurchaseQuotation,

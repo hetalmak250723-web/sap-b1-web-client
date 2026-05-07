@@ -12,8 +12,11 @@ const fetchGRPOVendorDetails = async (vendorCode) => {
   return res;
 };
 
-const fetchGRPOs = () =>
-  apiClient.get('/grpo/list');
+const fetchGRPOs = (params = {}) =>
+  apiClient.get('/grpo/list', { params });
+
+const fetchGRPOVendorOptions = (params = {}) =>
+  apiClient.get('/grpo/vendors/search', { params });
 
 const fetchGRPOByDocEntry = (docEntry) =>
   apiClient.get(`/grpo/${encodeURIComponent(docEntry)}`);
@@ -56,6 +59,7 @@ export {
   fetchGRPOReferenceData,
   fetchGRPOByDocEntry,
   fetchGRPOs,
+  fetchGRPOVendorOptions,
   fetchGRPOVendorDetails,
   submitGRPO,
   updateGRPO,

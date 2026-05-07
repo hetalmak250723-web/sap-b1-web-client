@@ -1188,11 +1188,7 @@ function APInvoice() {
       // if (!String(header.placeOfSupply || '').trim()) {
       //   console.warn('Place of Supply missing - GST may be incorrect');
       // }
-      if (refData.branches.length > 0 && !String(header.branch || '').trim()) {
-        e.header.branch = 'Branch is required.';
-        e.form = 'Please correct the highlighted fields.';
-        return e;
-      }
+
     }
 
     if (!String(header.postingDate || '').trim()) { e.header.postingDate = 'Posting date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }

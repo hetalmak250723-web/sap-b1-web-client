@@ -9,6 +9,15 @@ const getErrorPayload = (error, fallbackMessage) => ({
     fallbackMessage,
 });
 
+const parseTopParam = (value) => {
+  if (value == null || value === '') return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return Math.floor(parsed);
+};
+
 const getReferenceData = async (req, res) => {
   try {
     const data = await arCreditMemoService.getReferenceData(req.query.company_id);
@@ -29,12 +38,53 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+const getCustomerFilterOptions = async (req, res) => {
+  try {
+    const data = await arCreditMemoService.getCustomerFilterOptions({
+      query: req.query.query,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      top: parseTopParam(req.query.top),
+      display: req.query.display,
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load customer filter options.'));
+  }
+};
+
 const getARCreditMemoList = async (req, res) => {
   try {
-    const data = await arCreditMemoService.getARCreditMemoList();
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? false
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
+    const data = await arCreditMemoService.getARCreditMemoList({
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      page,
+      pageSize,
+    });
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load AR credit memos.'));
+  }
+};
+
+const getOpenARCreditMemoDocuments = async (req, res) => {
+  try {
+    const data = await arCreditMemoService.getOpenARCreditMemoDocuments();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load open AR credit memos.'));
   }
 };
 
@@ -152,7 +202,9 @@ const getUomConversionFactor = async (req, res) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getARCreditMemoList,
+  getOpenARCreditMemoDocuments,
   getARCreditMemo,
   submitARCreditMemo,
   updateARCreditMemo,

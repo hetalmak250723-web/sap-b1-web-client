@@ -12,6 +12,7 @@ router.get('/warehouse-state/:whsCode', arInvoiceController.getWarehouseState);
 router.get('/batches', arInvoiceController.getBatchesByItem);
 router.get('/freight-charges', arInvoiceController.getFreightCharges);
 router.get('/items-modal', arInvoiceController.getItemsForModal);
+router.get('/customers/search', arInvoiceController.getCustomerFilterOptions);
 router.get('/customers/:customerCode', arInvoiceController.getCustomerDetails);
 
 // ── Copy From endpoints (must be before /:docEntry) ──

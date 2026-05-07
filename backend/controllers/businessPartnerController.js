@@ -1,5 +1,7 @@
 const sapService = require("../services/sapService");
 const masterDataDbService = require("../services/masterDataDbService");
+const authDbService = require("../services/authDbService");
+const businessPartnerDbService = require("../services/businessPartnerDbService");
 
 const enrichBP = async (bp) => {
   if (!bp || !bp.CardCode) return bp;
@@ -142,7 +144,16 @@ const updateBP = async (req, res) => {
 const searchBP = async (req, res) => {
   try {
     const { query = "", type = "", top = 50, skip = 0 } = req.query;
-    const rows = await masterDataDbService.searchBP(query, type, top, skip);
+    let databaseName = '';
+
+    if (req.auth?.userId && req.auth?.companyId) {
+      const assignedCompany = await authDbService.getAssignedCompanyForUser(req.auth.userId, req.auth.companyId);
+      databaseName = String(assignedCompany?.DbName || '').trim();
+    }
+
+    const rows = await masterDataDbService.searchBP(query, type, top, skip, {
+      databaseName: databaseName || undefined,
+    });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -151,7 +162,16 @@ const searchBP = async (req, res) => {
 
 const lookupBPGroups = async (req, res) => {
   try {
-    const rows = await masterDataDbService.lookupBPGroups(req.query.query || "");
+    let databaseName = '';
+
+    if (req.auth?.userId && req.auth?.companyId) {
+      const assignedCompany = await authDbService.getAssignedCompanyForUser(req.auth.userId, req.auth.companyId);
+      databaseName = String(assignedCompany?.DbName || '').trim();
+    }
+
+    const rows = await businessPartnerDbService.getBusinessPartnerGroups(req.query.query || "", {
+      databaseName: databaseName || undefined,
+    });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "Could not load BP groups: " + err.message });

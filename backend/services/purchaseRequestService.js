@@ -3,6 +3,7 @@ const db = require('./dbService');
 const purchaseOrderDb = require('./purchaseOrderDbService');
 const { getDocumentFreightCharges } = require('./freightChargesDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
+const { buildMarketingDocumentListFilterQuery } = require('./documentListUtils');
 
 const PURCHASE_REQUEST_OBJECT_CODE = '1470000113';
 
@@ -377,18 +378,111 @@ const mapPurchaseRequestSummary = (request = {}) => ({
     request.DocTotal !== undefined && request.DocTotal !== null ? request.DocTotal : 0,
 });
 
-const getPurchaseRequests = async () => {
-  const response = await sapService.request({
-    method: 'get',
-    url:
-      '/PurchaseRequests' +
-      '?$select=DocEntry,DocNum,CardCode,CardName,DocDate,RequriedDate,DocDueDate,DocTotal,DocumentStatus' +
-      '&$orderby=DocEntry desc',
+const getPurchaseRequests = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  vendorCode = '',
+  vendorName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedPageSize = Math.min(200, Math.max(1, Number(pageSize) || 25));
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const { whereClauses, params } = buildMarketingDocumentListFilterQuery({
+    query,
+    openOnly,
+    docNum,
+    partnerCode: vendorCode,
+    partnerName: vendorName,
+    status,
+    postingDateFrom,
+    postingDateTo,
   });
 
+  const countRows = await safeQuery(`
+    SELECT COUNT(*) AS total_count
+    FROM OPRQ T0
+    WHERE ${whereClauses.join('\n      AND ')}
+  `, params);
+
+  const totalCount = Number(countRows?.[0]?.total_count || 0);
+
+  const rows = await safeQuery(`
+    SELECT
+      T0.DocEntry,
+      T0.DocNum,
+      ISNULL(T0.CardCode, '') AS CardCode,
+      ISNULL(T0.CardName, '') AS CardName,
+      T0.DocDate,
+      COALESCE(T0.RequriedDate, T0.DocDueDate) AS DeliveryDate,
+      T0.DocTotal,
+      T0.DocStatus,
+      (
+        SELECT COUNT(*)
+        FROM PRQ1 T1
+        WHERE T1.DocEntry = T0.DocEntry
+      ) AS line_count
+    FROM OPRQ T0
+    WHERE ${whereClauses.join('\n      AND ')}
+    ORDER BY T0.DocEntry DESC
+    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+  `, { ...params, skip, top: normalizedPageSize });
+
   return {
-    requests: (response.data?.value || []).map(mapPurchaseRequestSummary),
+    requests: rows.map((request) => ({
+      doc_entry: request.DocEntry,
+      doc_num: request.DocNum,
+      vendor_code: request.CardCode || '',
+      vendor_name: request.CardName || '',
+      posting_date: formatDateForInput(request.DocDate),
+      delivery_date: formatDateForInput(request.DeliveryDate),
+      status: formatDocumentStatus(request.DocStatus),
+      total_amount: request.DocTotal !== undefined && request.DocTotal !== null ? request.DocTotal : 0,
+      line_count: Number(request.line_count || 0),
+    })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalCount,
+      totalPages: Math.max(Math.ceil(totalCount / normalizedPageSize), 1),
+    },
   };
+};
+
+const getVendorFilterOptions = async ({
+  query = '',
+  vendorCode = '',
+  vendorName = '',
+  top,
+  display = 'code',
+} = {}) => {
+  try {
+    const rows = await purchaseOrderDb.searchVendors({
+      query,
+      cardCode: vendorCode,
+      cardName: vendorName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
+  }
 };
 
 const getOpenPurchaseRequests = async (vendorCode = null) => {
@@ -592,6 +686,7 @@ const getFreightCharges = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getVendorDetails,
+  getVendorFilterOptions,
   getPurchaseRequests,
   getOpenPurchaseRequests,
   getPurchaseRequestForCopy,

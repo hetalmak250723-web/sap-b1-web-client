@@ -8,6 +8,9 @@ export const fetchAPCreditMemoReferenceData = (companyId) =>
 export const fetchAPCreditMemoVendorDetails = (cardCode) =>
   apiClient.get(`/ap-credit-memo/vendors/${cardCode}`);
 
+export const fetchAPCreditMemoVendorOptions = (params = {}) =>
+  apiClient.get('/ap-credit-memo/vendors/search', { params });
+
 export const fetchItemsForModal = () =>
   apiClient.get('/ap-credit-memo/items-modal');
 
@@ -37,8 +40,8 @@ export const fetchAPCreditMemoOpenGRPO = (vendor) =>
 export const fetchAPCreditMemoGRPOForCopy = (docEntry) =>
   apiClient.get(`/ap-credit-memo/grpo/${docEntry}`);
 
-export const fetchAPCreditMemos = () =>
-  apiClient.get('/ap-credit-memo/list');
+export const fetchAPCreditMemos = (params = {}) =>
+  apiClient.get('/ap-credit-memo/list', { params });
 
 export const fetchFreightCharges = (docEntry) =>
   apiClient.get('/ap-credit-memo/freight-charges', { params: { docEntry } });

@@ -1,5 +1,6 @@
 const sapService = require('./sapService');
 const deliveryDb = require('./deliveryDbService');
+const salesOrderDb = require('./salesOrderDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
 
 // ───────── HELPERS ─────────
@@ -230,12 +231,73 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── DELIVERY LIST (USING ODBC) ─────────
 
-const getDeliveryList = async () => {
+const getCustomerFilterOptions = async ({
+  query = '',
+  customerCode = '',
+  customerName = '',
+  top,
+  display = 'code',
+} = {}) => {
   try {
-    const result = await deliveryDb.getDeliveryList();
+    const rows = await salesOrderDb.searchCustomers({
+      query,
+      cardCode: customerCode,
+      cardName: customerName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
+  }
+};
+
+const getDeliveryList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  try {
+    const result = await deliveryDb.getDeliveryList({
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
-    return { deliveries: [] };
+    return {
+      deliveries: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
   }
 };
 
@@ -629,6 +691,7 @@ const validateDeliveryDocument = async (payload) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getDeliveryList,
   getDelivery,
   getDocumentSeries,

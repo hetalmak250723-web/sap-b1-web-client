@@ -36,6 +36,7 @@ const MATRIX_COLS = [
   { key: 'commission', label: 'Commision', minWidth: 100 },
   { key: 'sellerBrokeragePerQty', label: 'BrokPerQty', minWidth: 100 },
   { key: 'buyerPaymentTerms', label: 'Buyer - Terms of Payment', minWidth: 170 },
+  { key: 'sellerPaymentTerms', label: 'Seller - Terms of Payment', minWidth: 170 },
   { key: 'buyerSpecialInstruction', label: 'Buyer - Special Instruction', minWidth: 180 },
   { key: 'sellerSpecialInstruction', label: 'Seller - Special Instruction', minWidth: 180 },
   { key: 'buyerBillDiscount', label: 'Buyer Bill Discount', minWidth: 130 },
@@ -135,6 +136,7 @@ export default function ContentsTab({
         <td key="itemDescription">
           <input
             className="so-grid__input"
+            style={{ textAlign: 'left' }}
             name="itemDescription"
             value={line.itemDescription}
             onChange={(e) => onLineChange(i, e)}
@@ -544,6 +546,16 @@ export default function ContentsTab({
             className="so-grid__input"
             name="buyerPaymentTerms"
             value={line.buyerPaymentTerms || ''}
+            onChange={(e) => onLineChange(i, e)}
+          />
+        </td>
+      ),
+      sellerPaymentTerms: () => (
+        <td key="sellerPaymentTerms">
+          <input
+            className="so-grid__input"
+            name="sellerPaymentTerms"
+            value={line.sellerPaymentTerms || ''}
             onChange={(e) => onLineChange(i, e)}
           />
         </td>

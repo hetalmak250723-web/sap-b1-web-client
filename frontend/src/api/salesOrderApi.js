@@ -13,8 +13,14 @@ const fetchSalesOrderCustomerDetails = async (customerCode) => {
   return res;
 };
 
-const fetchSalesOrders = () =>
-  apiClient.get('/sales-order/list');
+const fetchSalesOrderCustomerOptions = (params = {}) =>
+  apiClient.get('/sales-order/customers/search', { params });
+
+const fetchSalesOrders = (params = {}) =>
+  apiClient.get('/sales-order/list', { params });
+
+const fetchSalesOrderFilterOptions = (params = {}) =>
+  apiClient.get('/sales-order/list/filter-options', { params });
 
 const fetchSalesOrderByDocEntry = (docEntry) =>
   apiClient.get(`/sales-order/${encodeURIComponent(docEntry)}`);
@@ -33,8 +39,10 @@ const updateSalesOrder = (docEntry, payload) => {
     payload
   );
 };
-const fetchDocumentSeries = () =>
-  apiClient.get('/sales-order/series');
+const fetchDocumentSeries = (date = '') =>
+  apiClient.get('/sales-order/series', {
+    params: date ? { date } : {},
+  });
 
 const fetchNextNumber = (series) =>
   apiClient.get(`/sales-order/series/next?series=${series}`);
@@ -47,6 +55,9 @@ const fetchItemsForModal = () =>
 
 const fetchFreightCharges = (docEntry) =>
   apiClient.get('/sales-order/freight-charges', { params: { docEntry } });
+
+const fetchSalesOrderPrintLayouts = () =>
+  apiClient.get('/sales-order/print-layouts');
 
 const createSalesOrderLookupValue = (field, value, description = '') =>
   apiClient.post('/sales-order/lookup-values', { field, value, description });
@@ -71,10 +82,19 @@ const fetchOpenSalesOrdersForCopy = () =>
 const fetchSalesOrderForCopy = (docEntry) =>
   apiClient.get(`/sales-order/${encodeURIComponent(docEntry)}/copy`);
 
+const printSalesOrder = ({ docEntry, schema, docCode }) =>
+  apiClient.post('/print-sales-order', {
+    docEntry,
+    schema,
+    docCode,
+  });
+
 export {
   fetchSalesOrderReferenceData,
   fetchSalesOrderCustomerDetails,
+  fetchSalesOrderCustomerOptions,
   fetchSalesOrders,
+  fetchSalesOrderFilterOptions,
   fetchSalesOrderByDocEntry,
   submitSalesOrder,
   updateSalesOrder,
@@ -83,6 +103,7 @@ export {
   fetchStateFromAddress,
   fetchItemsForModal,
   fetchFreightCharges,
+  fetchSalesOrderPrintLayouts,
   createSalesOrderLookupValue,
   fetchOpenSalesQuotations,
   fetchOpenBlanketAgreements,
@@ -90,4 +111,5 @@ export {
   fetchBlanketAgreementForCopy,
   fetchOpenSalesOrdersForCopy,
   fetchSalesOrderForCopy,
+  printSalesOrder,
 };

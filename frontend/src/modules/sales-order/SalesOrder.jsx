@@ -20,6 +20,7 @@ import CopyToModal from './components/CopyToModal';
 import HSNCodeModal from './components/HSNCodeModal';
 import ItemSelectionModal from './components/ItemSelectionModal';
 import QualitySelectionModal from './components/QualitySelectionModal';
+import PrintSalesOrderActions from './components/PrintSalesOrderActions';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import { summarizeFreightRows } from '../../components/freight/freightUtils';
 import { determineTaxCode, recalculateAllTaxCodes, getGSTTypeLabel } from '../../utils/taxEngine';
@@ -125,7 +126,7 @@ const createLine = () => ({
     sellerBrokerageAmtPer: '', sellerBrokeragePercent: '',
     sellerBrokerage: '', buyerBrokerage: '',
     specialRebate: '', commission: '', sellerBrokeragePerQty: '', unitPriceUdf: '',
-    buyerPaymentTerms: '', buyerSpecialInstruction: '', sellerSpecialInstruction: '',
+    buyerPaymentTerms: '', sellerPaymentTerms: '', buyerSpecialInstruction: '', sellerSpecialInstruction: '',
     buyerBillDiscount: '', sellerBillDiscount: '', sellerItem: '', sellerQty: '',
     freightPurchase: '', freightSales: '', freightProvider: '', freightProviderName: '',
     brokerageNumber: '',
@@ -148,6 +149,12 @@ const INIT_HEADER = {
     billToAddress: '', billToCode: '', shipToAddress: '', shipToCode: '',
 };
 
+const createInitialHeader = () => ({
+    ...INIT_HEADER,
+    postingDate: today(),
+    documentDate: today(),
+});
+
 const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
     id: i + 1, targetPath: '', fileName: '', attachmentDate: '',
     freeText: '', copyToTargetDocument: '', documentType: '', atchDocDate: '', alert: '',
@@ -160,7 +167,7 @@ function SalesOrder() {
     const formRef = useRef(null);
     const [isCopyFromClick, setIsCopyFromClick] = useState(false);
     const [currentDocEntry, setCurrentDocEntry] = useState(null);
-    const [header, setHeader] = useState(INIT_HEADER);
+    const [header, setHeader] = useState(() => createInitialHeader());
     const [lines, setLines] = useState([createLine()]);
     const [attachments] = useState(INIT_ATTACH);
     const [activeTab, setActiveTab] = useState('Contents');
@@ -210,6 +217,20 @@ function SalesOrder() {
         assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
     });
 
+    const resolvePreferredSeries = (seriesList, postingDateValue, selectedSeries = '') => {
+        if (!Array.isArray(seriesList) || !seriesList.length) return null;
+
+        const normalizedSeries = String(selectedSeries || '').trim();
+        const matchedSeries = normalizedSeries
+            ? seriesList.find((series) => String(series.Series) === normalizedSeries)
+            : null;
+
+        if (matchedSeries) return matchedSeries;
+
+        const seriesDate = postingDateValue ? new Date(`${postingDateValue}T00:00:00`) : new Date();
+        return getDefaultSeriesForCurrentYear(seriesList, seriesDate) || seriesList[0];
+    };
+
     useEffect(() => { localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings)); }, [formSettings]);
 
 
@@ -250,9 +271,8 @@ function SalesOrder() {
         const load = async () => {
             setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
             try {
-                const [refDataRes, seriesRes, hsnRes] = await Promise.all([
+                const [refDataRes, hsnRes] = await Promise.all([
                     fetchSalesOrderReferenceData(SALES_ORDER_COMPANY_ID),
-                    fetchDocumentSeries(),
                     fetchHSNCodes(),
                 ]);
 
@@ -267,7 +287,6 @@ function SalesOrder() {
                 console.log('  - Shipping Types:', refDataRes.data.shipping_types?.length || 0);
                 console.log('  - Branches:', refDataRes.data.branches?.length || 0);
                 console.log('  - States:', refDataRes.data.states?.length || 0);
-                console.log('  - Series:', seriesRes.data.series?.length || 0);
                 console.log('  - HSN Codes:', hsnRes.data?.length || 0);
                 console.log('  - Sales Employees:', refDataRes.data.sales_employees?.length || 0);
                 console.log('  - Owners:', refDataRes.data.owners?.length || 0);
@@ -295,13 +314,14 @@ function SalesOrder() {
                 console.log('═══════════════════════════════════════════════════');
 
                 if (!ignore) {
-                    setRefData({
+                    setRefData(prev => ({
+                        ...prev,
                         company: refDataRes.data.company || '',
                         vendors: refDataRes.data.vendors || [],
-                        contacts: refDataRes.data.contacts || [],
-                        pay_to_addresses: refDataRes.data.pay_to_addresses || [],
-                        ship_to_addresses: refDataRes.data.ship_to_addresses || [],
-                        bill_to_addresses: refDataRes.data.bill_to_addresses || [],
+                        contacts: prev.contacts?.length ? prev.contacts : (refDataRes.data.contacts || []),
+                        pay_to_addresses: prev.pay_to_addresses?.length ? prev.pay_to_addresses : (refDataRes.data.pay_to_addresses || []),
+                        ship_to_addresses: prev.ship_to_addresses?.length ? prev.ship_to_addresses : (refDataRes.data.ship_to_addresses || []),
+                        bill_to_addresses: prev.bill_to_addresses?.length ? prev.bill_to_addresses : (refDataRes.data.bill_to_addresses || []),
                         items: refDataRes.data.items || [],
                         warehouses: refDataRes.data.warehouses || [],
                         warehouse_addresses: refDataRes.data.warehouse_addresses || [],
@@ -321,15 +341,7 @@ function SalesOrder() {
                         price_options: refDataRes.data.price_options || { buyer: [], seller: [] },
                         decimal_settings: { ...DEC, ...(refDataRes.data.decimal_settings || {}) },
                         warnings: refDataRes.data.warnings || [],
-                        series: seriesRes.data.series || [],
-                    });
-
-                    if (seriesRes.data.series && seriesRes.data.series.length > 0 && !currentDocEntry) {
-                        const defaultSeries = getDefaultSeriesForCurrentYear(seriesRes.data.series);
-                        if (defaultSeries?.Series != null) {
-                            handleSeriesChange(defaultSeries.Series);
-                        }
-                    }
+                    }));
                 }
             } catch (e) {
                 console.error('❌ Error loading reference data:', e);
@@ -344,6 +356,52 @@ function SalesOrder() {
 
     // ── load existing order ───────────────────────────────────────────────────
     useEffect(() => {
+        if (currentDocEntry) return;
+
+        const seriesDate = String(header.postingDate || '').trim();
+        if (!seriesDate) {
+            setRefData(prev => ({ ...prev, series: [] }));
+            setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+            return;
+        }
+
+        let ignore = false;
+
+        const loadSeriesForPostingDate = async () => {
+            try {
+                const seriesResponse = await fetchDocumentSeries(seriesDate);
+                const availableSeries = seriesResponse.data?.series || [];
+
+                if (ignore) return;
+
+                setRefData(prev => ({ ...prev, series: availableSeries }));
+
+                if (!availableSeries.length) {
+                    setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+                    return;
+                }
+
+                const currentSeries = String(header.series || '');
+                const defaultSeries = resolvePreferredSeries(availableSeries, seriesDate, currentSeries);
+
+                if (!defaultSeries?.Series) return;
+
+                if (String(defaultSeries.Series) !== currentSeries || !String(header.nextNumber || '').trim()) {
+                    handleSeriesChange(defaultSeries.Series);
+                }
+            } catch (e) {
+                if (!ignore) {
+                    setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load document series.') }));
+                }
+            }
+        };
+
+        loadSeriesForPostingDate();
+
+        return () => { ignore = true; };
+    }, [currentDocEntry, header.postingDate]);
+
+    useEffect(() => {
         const docEntry =
             location.state?.salesOrderDocEntry ||
             location.state?.docEntry ||
@@ -356,6 +414,14 @@ function SalesOrder() {
             try {
                 const r = await fetchSalesOrderByDocEntry(docEntry);
                 const so = r.data.sales_order;
+                let editSeries = [];
+                try {
+                    const seriesDate = so?.header?.documentDate || so?.header?.postingDate || '';
+                    const seriesResponse = await fetchDocumentSeries(seriesDate);
+                    editSeries = seriesResponse.data?.series || [];
+                } catch (_seriesError) {
+                    editSeries = [];
+                }
 
                 console.log('📥 Loaded Sales Order:', so);
                 console.log('📥 Header data:', so.header);
@@ -375,6 +441,13 @@ function SalesOrder() {
                 console.log('📥 EDIT DATA - Freight:', so.header?.freight);
                 console.log('📥 EDIT DATA - refData.sales_employees:', refData.sales_employees?.length || 0);
                 console.log('📥 EDIT DATA - refData.owners:', refData.owners?.length || 0);
+
+                if (editSeries.length) {
+                    setRefData(prev => ({
+                        ...prev,
+                        series: editSeries,
+                    }));
+                }
 
                 const newHeader = {
                     ...INIT_HEADER,
@@ -407,7 +480,8 @@ function SalesOrder() {
                     deliveryDate: so.header?.deliveryDate || '',
                     documentDate: so.header?.documentDate || '',
                     customerRefNo: so.header?.customerRefNo || '',
-                    docNum: so.header?.docNum || '',
+                    docNo: String(so.header?.docNum || ''),
+                    nextNumber: String(so.header?.docNum || ''),
                     status: so.header?.status || '',
                     shippingType: so.header?.shippingType || '',
                     confirmed: so.header?.confirmed || false,
@@ -418,11 +492,6 @@ function SalesOrder() {
                 console.log('📥 Final header state:', newHeader);
                 setHeader(newHeader);
                 setFreightModal({ open: false, freightCharges: [], loading: false });
-
-                // If series is loaded, fetch the next number for display
-                if (so.header?.series) {
-                    handleSeriesChange(so.header.series);
-                }
 
                 setLines(
                     Array.isArray(so.lines) && so.lines.length
@@ -1863,12 +1932,7 @@ function SalesOrder() {
             return e;
         }
 
-        // Validate Branch (always required)
-        if (!String(header.branch || '').trim()) {
-            e.header.branch = 'Branch is required.';
-            e.form = 'Please correct the highlighted fields.';
-            return e;
-        }
+
 
         if (!String(header.postingDate || '').trim()) { e.header.postingDate = 'Posting date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
         if (!String(header.documentDate || '').trim()) { e.header.documentDate = 'Document date is required.'; e.form = 'Please correct the highlighted fields.'; return e; }
@@ -2021,6 +2085,7 @@ function SalesOrder() {
                 sellerBrokeragePerQty: line.sellerBrokeragePerQty,
                 unitPriceUdf: line.unitPriceUdf,
                 buyerPaymentTerms: line.buyerPaymentTerms,
+                sellerPaymentTerms: line.sellerPaymentTerms,
                 buyerSpecialInstruction: line.buyerSpecialInstruction,
                 sellerSpecialInstruction: line.sellerSpecialInstruction,
                 buyerBillDiscount: line.buyerBillDiscount,
@@ -2062,14 +2127,16 @@ function SalesOrder() {
 
             const r = currentDocEntry ? await updateSalesOrder(currentDocEntry, payload) : await submitSalesOrder(payload);
             const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
-            setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
+            const resetHeader = createInitialHeader();
+            setCurrentDocEntry(null); setHeader(resetHeader); setLines([createLine()]);
             setFreightModal({ open: false, freightCharges: [], loading: false });
             setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
             setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
             setValErrors({ header: {}, lines: {}, form: '' });
 
-            if (refData.series.length > 0) {
-                handleSeriesChange(refData.series[0].Series);
+            const defaultSeries = resolvePreferredSeries(refData.series, resetHeader.postingDate);
+            if (defaultSeries?.Series != null) {
+                handleSeriesChange(defaultSeries.Series);
             }
 
             setPageState(p => ({ ...p, success: `${r.data.message || 'Sales order saved.'}${dn}` }));
@@ -2083,11 +2150,17 @@ function SalesOrder() {
     };
 
     const resetForm = () => {
-        setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
+        const resetHeader = createInitialHeader();
+        setCurrentDocEntry(null); setHeader(resetHeader); setLines([createLine()]);
         setFreightModal({ open: false, freightCharges: [], loading: false });
         setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
         setValErrors({ header: {}, lines: {}, form: '' });
         setPageState(p => ({ ...p, error: '', success: '' }));
+
+        const defaultSeries = resolvePreferredSeries(refData.series, resetHeader.postingDate);
+        if (defaultSeries?.Series != null) {
+            handleSeriesChange(defaultSeries.Series);
+        }
     };
 
     const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
@@ -2133,6 +2206,13 @@ function SalesOrder() {
                 <button type="button" className="so-btn" onClick={() => setFormSettingsOpen(p => !p)}>
                     Form Settings
                 </button>
+                <PrintSalesOrderActions
+                    docEntry={currentDocEntry}
+                    docNumber={header.docNo}
+                    disabled={pageState.posting}
+                    onSuccess={(message) => setPageState(p => ({ ...p, error: '', success: message }))}
+                    onError={(message) => setPageState(p => ({ ...p, success: '', error: message }))}
+                />
 
                 {/* Copy From Dropdown */}
                 <div className="so-dropdown">
@@ -2378,7 +2458,7 @@ function SalesOrder() {
 
                                         {/* Branch */}
                                         <div className="so-field">
-                                            <label className="so-field__label">Branch *</label>
+                                            <label className="so-field__label">Branch</label>
                                             <select
                                                 name="branch"
                                                 className="so-field__select"
@@ -2461,7 +2541,7 @@ function SalesOrder() {
                                             <input
                                                 name="nextNumber"
                                                 className="so-field__input"
-                                                value={header.nextNumber || ''}
+                                                value={currentDocEntry ? (header.docNo || header.nextNumber || '') : (header.nextNumber || '')}
                                                 readOnly
                                                 style={{ background: '#f0f2f5' }}
                                             />

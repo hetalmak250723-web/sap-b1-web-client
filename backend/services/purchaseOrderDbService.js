@@ -3,6 +3,11 @@
  * Reads data directly from SAP B1 SQL Server database
  */
 const db = require('./dbService');
+const {
+  escapeLike,
+  normalizeTopLimit,
+  buildMarketingDocumentListFilterQuery,
+} = require('./documentListUtils');
 
 const safe = async (promise) => {
   try {
@@ -16,13 +21,41 @@ const safe = async (promise) => {
 // ── REFERENCE DATA QUERIES ────────────────────────────────────────────────────
 
 const getVendors = () => safe(db.query(`
-  SELECT CardCode, CardName, CardType, Currency,
-         VatGroup, GroupNum AS PayTermsGrpCode
+  SELECT *
   FROM   OCRD
   WHERE  CardType = 'S'
-    AND  frozenFor <> 'Y'
-  ORDER  BY CardName
+  ORDER  BY CardName, CardCode
 `));
+
+const searchVendors = async ({ query = '', cardCode = '', cardName = '', top, sortBy = 'code' } = {}) => {
+  const normalizedQuery = String(query || '').trim();
+  const normalizedCardCode = String(cardCode || '').trim();
+  const normalizedCardName = String(cardName || '').trim();
+  const normalizedTop = normalizeTopLimit(top);
+  const orderBy = String(sortBy || '').trim().toLowerCase() === 'name'
+    ? 'CardName, CardCode'
+    : 'CardCode, CardName';
+  const topClause = normalizedTop ? 'TOP (@top)' : '';
+
+  return safe(db.query(`
+    SELECT ${topClause}
+      *
+    FROM OCRD
+    WHERE CardType = 'S'
+      AND (@query = '' OR CardCode LIKE @queryLike OR CardName LIKE @queryLike)
+      AND (@cardCode = '' OR CardCode LIKE @cardCodeLike)
+      AND (@cardName = '' OR CardName LIKE @cardNameLike)
+    ORDER BY ${orderBy}
+  `, {
+    ...(normalizedTop ? { top: normalizedTop } : {}),
+    query: normalizedQuery,
+    queryLike: `%${escapeLike(normalizedQuery)}%`,
+    cardCode: normalizedCardCode,
+    cardCodeLike: `%${escapeLike(normalizedCardCode)}%`,
+    cardName: normalizedCardName,
+    cardNameLike: `%${escapeLike(normalizedCardName)}%`,
+  }));
+};
 
 const getItems = () => safe(db.query(`
   SELECT
@@ -202,9 +235,42 @@ const getAddressesByVendor = async (cardCode) => {
 
 // ── PURCHASE ORDER LIST ───────────────────────────────────────────────────────
 
-const getPurchaseOrderList = async () => {
+const getPurchaseOrderList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  vendorCode = '',
+  vendorName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedPageSize = Math.min(200, Math.max(1, Number(pageSize) || 25));
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const { whereClauses, params } = buildMarketingDocumentListFilterQuery({
+    query,
+    openOnly,
+    docNum,
+    partnerCode: vendorCode,
+    partnerName: vendorName,
+    status,
+    postingDateFrom,
+    postingDateTo,
+  });
+
+  const countRows = await safe(db.query(`
+    SELECT COUNT(*) AS total_count
+    FROM OPOR T0
+    WHERE ${whereClauses.join('\n      AND ')}
+  `, params));
+
+  const totalCount = Number(countRows?.[0]?.total_count || 0);
+
   const result = await safe(db.query(`
-    SELECT TOP 100
+    SELECT
       T0.DocEntry AS doc_entry,
       T0.DocNum AS doc_num,
       T0.CardCode AS vendor_code,
@@ -216,12 +282,39 @@ const getPurchaseOrderList = async () => {
         WHEN 'O' THEN 'Open'
         WHEN 'C' THEN 'Closed'
         ELSE T0.DocStatus
-      END AS status
+      END AS status,
+      T0.DocCur AS currency,
+      (
+        SELECT COUNT(*)
+        FROM POR1 T1
+        WHERE T1.DocEntry = T0.DocEntry
+      ) AS line_count
     FROM OPOR T0
+    WHERE ${whereClauses.join('\n      AND ')}
     ORDER BY T0.DocEntry DESC
-  `));
+    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+  `, { ...params, skip, top: normalizedPageSize }));
 
-  return { orders: result };
+  return {
+    orders: result.map((row) => ({
+      doc_entry: row.doc_entry,
+      doc_num: row.doc_num,
+      vendor_code: row.vendor_code,
+      vendor_name: row.vendor_name,
+      posting_date: row.posting_date ? row.posting_date.toISOString().split('T')[0] : '',
+      delivery_date: row.delivery_date ? row.delivery_date.toISOString().split('T')[0] : '',
+      total_amount: Number(row.total_amount || 0),
+      status: row.status || '',
+      currency: row.currency || '',
+      line_count: Number(row.line_count || 0),
+    })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalCount,
+      totalPages: Math.max(Math.ceil(totalCount / normalizedPageSize), 1),
+    },
+  };
 };
 
 // ── GET SINGLE PURCHASE ORDER ─────────────────────────────────────────────────
@@ -523,6 +616,7 @@ const getVendorDetails = async (vendorCode) => {
 
 module.exports = {
   getReferenceData,
+  searchVendors,
   getVendorDetails,
   getPurchaseOrderList,
   getPurchaseOrder,

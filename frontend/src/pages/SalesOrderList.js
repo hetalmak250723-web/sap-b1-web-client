@@ -1,6 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchSalesOrders } from '../api/salesOrderApi';
+import {
+  fetchSalesOrderCustomerOptions,
+  fetchSalesOrderFilterOptions,
+  fetchSalesOrders,
+} from '../api/salesOrderApi';
+import ComboBox from '../modules/item-master/components/ComboBox';
+import '../modules/item-master/styles/itemMaster.css';
+import '../styles/sales-order-list.css';
+
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
+const STATUS_OPTIONS = [
+  { code: 'Open', name: 'Open sales orders' },
+  { code: 'Closed', name: 'Closed sales orders' },
+];
+const INITIAL_FILTERS = {
+  query: '',
+  docNum: '',
+  customerCode: '',
+  customerName: '',
+  status: '',
+  postingDateFrom: '',
+  postingDateTo: '',
+};
 
 const getErrorMessage = (error, fallbackMessage) => {
   const detail = error?.response?.data?.detail;
@@ -10,9 +32,31 @@ const getErrorMessage = (error, fallbackMessage) => {
   return error?.message || fallbackMessage;
 };
 
+const buildFilterParams = (filters, extra = {}) => ({
+  openOnly: false,
+  query: filters.query || '',
+  docNum: filters.docNum || '',
+  customerCode: filters.customerCode || '',
+  customerName: filters.customerName || '',
+  status: filters.status || '',
+  postingDateFrom: filters.postingDateFrom || '',
+  postingDateTo: filters.postingDateTo || '',
+  ...extra,
+});
+
 function SalesOrderListPage() {
   const navigate = useNavigate();
   const [orders, setOrders] = useState([]);
+  const [filters, setFilters] = useState(INITIAL_FILTERS);
+  const [appliedFilters, setAppliedFilters] = useState(INITIAL_FILTERS);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: 25,
+    totalCount: 0,
+    totalPages: 1,
+  });
   const [pageState, setPageState] = useState({
     loading: true,
     error: '',
@@ -25,10 +69,20 @@ function SalesOrderListPage() {
       setPageState({ loading: true, error: '' });
 
       try {
-        const response = await fetchSalesOrders();
-        console.log("sale order list:",response.data.orders);
+        const response = await fetchSalesOrders({
+          ...buildFilterParams(appliedFilters),
+          page,
+          pageSize,
+        });
+
         if (!ignore) {
           setOrders(response.data.orders || []);
+          setPagination(response.data.pagination || {
+            page,
+            pageSize,
+            totalCount: response.data.orders?.length || 0,
+            totalPages: 1,
+          });
           setPageState({ loading: false, error: '' });
         }
       } catch (error) {
@@ -46,14 +100,85 @@ function SalesOrderListPage() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [appliedFilters, page, pageSize]);
+
+  const hasActiveFilters = Object.values(appliedFilters).some((value) => String(value || '').trim() !== '');
+  const pageStart = pagination.totalCount === 0 ? 0 : ((pagination.page - 1) * pagination.pageSize) + 1;
+  const pageEnd = Math.min(pagination.page * pagination.pageSize, pagination.totalCount);
+
+  const updateFilter = (name, value) => {
+    setFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFilterChange = (event) => {
+    const { name, value } = event.target;
+    updateFilter(name, value);
+  };
+
+  const handleFilterSelect = (name, option) => {
+    const nextFilters = {
+      ...filters,
+      [name]: option?.code || '',
+    };
+
+    setFilters(nextFilters);
+    setAppliedFilters(nextFilters);
+    setPage(1);
+  };
+
+  const handleApplyFilters = () => {
+    setAppliedFilters({ ...filters });
+    setPage(1);
+  };
+
+  const handleClearFilters = () => {
+    setFilters(INITIAL_FILTERS);
+    setAppliedFilters(INITIAL_FILTERS);
+    setPage(1);
+  };
+
+  const handlePageSizeChange = (event) => {
+    setPageSize(Number(event.target.value) || 25);
+    setPage(1);
+  };
+
+  const handleFilterKeyDown = (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      handleApplyFilters();
+    }
+  };
+
+  const fetchLookupOptions = (field) => async (searchTerm = '') => {
+    if (field === 'customerCode' || field === 'customerName') {
+      const response = await fetchSalesOrderCustomerOptions({
+        query: searchTerm,
+        customerCode: field === 'customerName' ? (filters.customerCode || '') : '',
+        customerName: field === 'customerCode' ? (filters.customerName || '') : '',
+        top: 50,
+        display: field === 'customerName' ? 'name' : 'code',
+      });
+
+      return response.data?.options || [];
+    }
+
+    const response = await fetchSalesOrderFilterOptions(
+      buildFilterParams(filters, {
+        field,
+        query: searchTerm,
+        top: 50,
+      })
+    );
+
+    return response.data?.options || [];
+  };
 
   return (
     <div className="container-fluid">
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h2 className="mb-1">Open Sales Orders</h2>
-          <small className="text-muted">Only sales orders with open status are shown.</small>
+          <h2 className="mb-1">Sales Orders</h2>
+          <small className="text-muted">Filter by document, customer, status, and posting date.</small>
         </div>
         <button
           type="button"
@@ -71,6 +196,160 @@ function SalesOrderListPage() {
       )}
 
       <div className="card p-3">
+        <div className="row g-3 mb-3">
+          <div className="col-12 col-md-3">
+            <label className="form-label mb-1">Doc No</label>
+            <input
+              type="text"
+              className="form-control"
+              name="docNum"
+              value={filters.docNum}
+              onChange={handleFilterChange}
+              onKeyDown={handleFilterKeyDown}
+              placeholder="Enter Doc No"
+            />
+          </div>
+
+          <div className="col-12 col-md-3">
+            <label className="form-label mb-1">Customer Code</label>
+            <div onKeyDown={handleFilterKeyDown}>
+              <ComboBox
+                key="customer-code-filter"
+                name="customerCode"
+                value={filters.customerCode}
+                onChange={handleFilterChange}
+                onSelect={(option) => handleFilterSelect('customerCode', option)}
+                fetchOptions={fetchLookupOptions('customerCode')}
+                className="sales-order-list__filter-combobox"
+                dropdownSearchable
+                dropdownSearchPlaceholder="Search customer code"
+                placeholder="Choose Customer Code"
+                title="Search customer codes from database"
+              />
+            </div>
+          </div>
+
+          <div className="col-12 col-md-4">
+            <label className="form-label mb-1">Customer Name</label>
+            <div onKeyDown={handleFilterKeyDown}>
+              <ComboBox
+                key="customer-name-filter"
+                name="customerName"
+                value={filters.customerName}
+                onChange={handleFilterChange}
+                onSelect={(option) => handleFilterSelect('customerName', option)}
+                fetchOptions={fetchLookupOptions('customerName')}
+                className="sales-order-list__filter-combobox"
+                dropdownSearchable
+                dropdownSearchPlaceholder="Search customer name"
+                placeholder="Choose Customer Name"
+                title="Search customer names from database"
+              />
+            </div>
+          </div>
+
+          <div className="col-12 col-md-3">
+            <label className="form-label mb-1">Status</label>
+            <div onKeyDown={handleFilterKeyDown}>
+              <ComboBox
+                key="status-filter"
+                name="status"
+                value={filters.status}
+                onChange={handleFilterChange}
+                onSelect={(option) => handleFilterSelect('status', option)}
+                staticOptions={STATUS_OPTIONS}
+                className="sales-order-list__filter-combobox"
+                dropdownSearchable
+                dropdownSearchPlaceholder="Search status"
+                placeholder="All Statuses"
+              />
+            </div>
+          </div>
+
+          <div className="col-12 col-md-3">
+            <label className="form-label mb-1">Posting Date From</label>
+            <input
+              type="date"
+              className="form-control"
+              name="postingDateFrom"
+              value={filters.postingDateFrom}
+              onChange={handleFilterChange}
+              onKeyDown={handleFilterKeyDown}
+            />
+          </div>
+
+          <div className="col-12 col-md-3">
+            <label className="form-label mb-1">Posting Date To</label>
+            <input
+              type="date"
+              className="form-control"
+              name="postingDateTo"
+              value={filters.postingDateTo}
+              onChange={handleFilterChange}
+              onKeyDown={handleFilterKeyDown}
+            />
+          </div>
+
+          <div className="col-12 col-md-3 d-flex align-items-end gap-2">
+            <button
+              type="button"
+              className="btn btn-primary w-100"
+              onClick={handleApplyFilters}
+            >
+              Search
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline-secondary w-100"
+              onClick={handleClearFilters}
+            >
+              Clear Filters
+            </button>
+          </div>
+        </div>
+
+        <div className="row g-3 align-items-end mb-3">
+          <div className="col-12 col-md-8">
+            <label className="form-label mb-1">Global Search</label>
+            <input
+              type="text"
+              className="form-control"
+              name="query"
+              value={filters.query}
+              onChange={handleFilterChange}
+              onKeyDown={handleFilterKeyDown}
+              placeholder="Search by Doc No., Customer Code or Customer Name"
+            />
+          </div>
+
+          <div className="col-12 col-md-4">
+            <div className="d-flex flex-column flex-sm-row align-items-sm-center justify-content-sm-end gap-2 h-100">
+              <small className="text-muted">
+                {pageState.loading
+                  ? 'Searching...'
+                  : pagination.totalCount === 0
+                    ? '0 orders found'
+                    : `${pagination.totalCount} orders found`}
+              </small>
+              <label className="d-flex align-items-center gap-2 text-muted mb-0">
+                <span>Rows</span>
+                <select
+                  className="form-select form-select-sm"
+                  value={pageSize}
+                  onChange={handlePageSizeChange}
+                  style={{ width: 'auto' }}
+                >
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <option key={size} value={size}>
+                      {size}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div className="table-responsive">
           <table className="table table-bordered table-hover align-middle mb-0">
             <thead className="table-light">
@@ -98,7 +377,7 @@ function SalesOrderListPage() {
               {!pageState.loading && orders.length === 0 && (
                 <tr>
                   <td colSpan="9" className="text-center text-muted py-4">
-                    No open sales orders found.
+                    {hasActiveFilters ? 'No sales orders found for the selected filters.' : 'No sales orders found.'}
                   </td>
                 </tr>
               )}
@@ -134,6 +413,35 @@ function SalesOrderListPage() {
                 ))}
             </tbody>
           </table>
+        </div>
+
+        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mt-3">
+          <small className="text-muted">
+            {pagination.totalCount === 0
+              ? 'Showing 0 orders'
+              : `Showing ${pageStart}-${pageEnd} of ${pagination.totalCount} orders`}
+          </small>
+          <div className="d-flex align-items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={pageState.loading || pagination.page <= 1}
+            >
+              Previous
+            </button>
+            <small className="text-muted mb-0">
+              Page {pagination.page} of {pagination.totalPages}
+            </small>
+            <button
+              type="button"
+              className="btn btn-outline-secondary btn-sm"
+              onClick={() => setPage((current) => Math.min(pagination.totalPages, current + 1))}
+              disabled={pageState.loading || pagination.page >= pagination.totalPages}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </div>

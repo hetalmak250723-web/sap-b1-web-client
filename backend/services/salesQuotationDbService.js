@@ -3,6 +3,11 @@
  * Mirrors salesOrderDbService.js but targets OQUT/QUT1 tables (ObjectCode = '23').
  */
 const db = require('./dbService');
+const {
+  escapeLike,
+  normalizeTopLimit,
+  buildMarketingDocumentListFilterQuery,
+} = require('./documentListUtils');
 
 const safe = async (promise) => {
   try {
@@ -16,13 +21,41 @@ const safe = async (promise) => {
 // ── queries ───────────────────────────────────────────────────────────────────
 
 const getCustomers = () => safe(db.query(`
-  SELECT CardCode, CardName, CardType, Currency,
-         VatGroup, GroupNum AS PayTermsGrpCode
+  SELECT *
   FROM   OCRD
   WHERE  CardType = 'C'
-    AND  frozenFor <> 'Y'
-  ORDER  BY CardName
+  ORDER  BY CardName, CardCode
 `));
+
+const searchCustomers = async ({ query = '', cardCode = '', cardName = '', top, sortBy = 'code' } = {}) => {
+  const normalizedQuery = String(query || '').trim();
+  const normalizedCardCode = String(cardCode || '').trim();
+  const normalizedCardName = String(cardName || '').trim();
+  const normalizedTop = normalizeTopLimit(top);
+  const orderBy = String(sortBy || '').trim().toLowerCase() === 'name'
+    ? 'CardName, CardCode'
+    : 'CardCode, CardName';
+  const topClause = normalizedTop ? 'TOP (@top)' : '';
+
+  return safe(db.query(`
+    SELECT ${topClause}
+      *
+    FROM OCRD
+    WHERE CardType = 'C'
+      AND (@query = '' OR CardCode LIKE @queryLike OR CardName LIKE @queryLike)
+      AND (@cardCode = '' OR CardCode LIKE @cardCodeLike)
+      AND (@cardName = '' OR CardName LIKE @cardNameLike)
+    ORDER BY ${orderBy}
+  `, {
+    ...(normalizedTop ? { top: normalizedTop } : {}),
+    query: normalizedQuery,
+    queryLike: `%${escapeLike(normalizedQuery)}%`,
+    cardCode: normalizedCardCode,
+    cardCodeLike: `%${escapeLike(normalizedCardCode)}%`,
+    cardName: normalizedCardName,
+    cardNameLike: `%${escapeLike(normalizedCardName)}%`,
+  }));
+};
 
 const getItems = () => safe(db.query(`
   SELECT ItemCode, ItemName,
@@ -270,8 +303,12 @@ const getReferenceData = async () => {
 
   const mappedCustomers = customers.map(c => ({
     CardCode: c.CardCode, CardName: c.CardName,
+    CardType: c.CardType,
     Currency: c.Currency, VatGroup: c.VatGroup,
-    PayTermsGrpCode: c.PayTermsGrpCode,
+    PayTermsGrpCode: c.GroupNum,
+    Balance: c.Balance,
+    CurrentAccountBalance: c.Balance,
+    FrozenFor: c.frozenFor,
   }));
 
   const mappedWarehouses = warehouses.map(w => ({
@@ -327,16 +364,62 @@ const getCustomerDetails = async (cardCode) => {
 
 // ── quotation list ────────────────────────────────────────────────────────────
 
-const getSalesQuotationList = async () => {
+const getSalesQuotationList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedPageSize = Math.min(200, Math.max(1, Number(pageSize) || 25));
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const { whereClauses, params } = buildMarketingDocumentListFilterQuery({
+    query,
+    openOnly,
+    docNum,
+    partnerCode: customerCode,
+    partnerName: customerName,
+    status,
+    postingDateFrom,
+    postingDateTo,
+  });
+
+  const countRows = await safe(db.query(`
+    SELECT COUNT(*) AS total_count
+    FROM OQUT T0
+    WHERE ${whereClauses.join('\n      AND ')}
+  `, params));
+
+  const totalCount = Number(countRows?.[0]?.total_count || 0);
+
   const rows = await safe(db.query(`
-    SELECT TOP 100
-           DocEntry, DocNum, CardCode, CardName,
-           DocDate, DocDueDate, DocStatus,
-           DocTotal, DocCur
-    FROM   OQUT
-    WHERE  CANCELED <> 'Y'
-    ORDER  BY DocEntry DESC
-  `));
+    SELECT
+      T0.DocEntry,
+      T0.DocNum,
+      T0.CardCode,
+      T0.CardName,
+      T0.DocDate,
+      T0.DocDueDate,
+      T0.DocStatus,
+      T0.DocTotal,
+      T0.DocCur,
+      (
+        SELECT COUNT(*)
+        FROM QUT1 T1
+        WHERE T1.DocEntry = T0.DocEntry
+      ) AS line_count
+    FROM OQUT T0
+    WHERE ${whereClauses.join('\n      AND ')}
+    ORDER BY T0.DocEntry DESC
+    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+  `, { ...params, skip, top: normalizedPageSize }));
+
   return {
     quotations: rows.map(o => ({
       doc_entry: o.DocEntry,
@@ -348,7 +431,14 @@ const getSalesQuotationList = async () => {
       status: o.DocStatus === 'O' ? 'Open' : o.DocStatus === 'C' ? 'Closed' : 'Unknown',
       total_amount: Number(o.DocTotal || 0),
       currency: o.DocCur || '',
+      line_count: Number(o.line_count || 0),
     })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalCount,
+      totalPages: Math.max(Math.ceil(totalCount / normalizedPageSize), 1),
+    },
   };
 };
 
@@ -568,6 +658,7 @@ const getSalesQuotationForCopy = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  searchCustomers,
   getSalesQuotationList,
   getSalesQuotation,
   getDocumentSeries,

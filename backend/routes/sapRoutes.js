@@ -27,8 +27,8 @@ const getSapErrorDetail = (err) => {
   return err.message || 'Unknown SAP login error';
 };
 
-// LOGIN
-router.post('/login', async (req, res) => {
+// SAP service layer session bootstrap
+router.post('/sap-session/login', async (req, res) => {
   try {
     const response = await axios.post(
       `${env.sapBaseUrl}/Login`,

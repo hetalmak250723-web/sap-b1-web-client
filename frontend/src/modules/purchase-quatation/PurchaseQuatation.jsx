@@ -19,18 +19,20 @@ import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
 import {
-  fetchPurchaseOrderByDocEntry,
-  fetchPurchaseOrderReferenceData,
-  fetchPurchaseOrderVendorDetails,
-  submitPurchaseOrder,
-  updatePurchaseOrder,
+  fetchPurchaseQuotationByDocEntry,
+  fetchPurchaseQuotationReferenceData,
+  fetchPurchaseQuotationVendorDetails,
+  submitPurchaseQuotation,
+  updatePurchaseQuotation,
   fetchDocumentSeries,
   fetchNextNumber,
   fetchStateFromAddress,
+  fetchFreightCharges,
+} from '../../api/purchaseQuotationApi';
+import {
   fetchOpenPurchaseRequestsForCopy,
   fetchPurchaseRequestForCopy,
 } from '../../api/purchaseOrderApi';
-import { fetchFreightCharges } from '../../api/purchaseQuotationApi';
 import { fetchHSNCodes, fetchHSNCodeFromItem } from '../../api/hsnCodeApi';
 import { PURCHASE_ORDER_COMPANY_ID } from '../../config/appConfig';
 import { FALLBACK_TAX_CODES } from '../../utils/fallbackTaxCodes';
@@ -328,7 +330,7 @@ function PurchaseOrder() {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
         const [refDataRes, seriesRes, hsnRes] = await Promise.all([
-          fetchPurchaseOrderReferenceData(PURCHASE_ORDER_COMPANY_ID),
+          fetchPurchaseQuotationReferenceData(PURCHASE_ORDER_COMPANY_ID),
           fetchDocumentSeries(),
           fetchHSNCodes(),
         ]);
@@ -376,34 +378,34 @@ function PurchaseOrder() {
 
   // ── load existing order ───────────────────────────────────────────────────
   useEffect(() => {
-    const docEntry = location.state?.purchaseOrderDocEntry;
+    const docEntry = location.state?.purchaseQuotationDocEntry;
     if (!docEntry) return;
     let ignore = false;
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
-        const r = await fetchPurchaseOrderByDocEntry(docEntry);
-        const po = r.data.purchase_order;
-        if (ignore || !po) return;
-        setCurrentDocEntry(po.doc_entry || Number(docEntry));
+        const r = await fetchPurchaseQuotationByDocEntry(docEntry);
+        const quotation = r.data.purchase_quotation;
+        if (ignore || !quotation) return;
+        setCurrentDocEntry(quotation.doc_entry || Number(docEntry));
         setHeader(prev => ({
           ...prev,
           ...INIT_HEADER,
-          ...(po.header || {}),
+          ...(quotation.header || {}),
         }));
 
         setLines(
-          Array.isArray(po.lines) && po.lines.length
-            ? po.lines.map(l => ({ ...createLine(), ...l, taxCodeManuallyOverridden: true, udf: { ...createUdfState(ROW_UDF_DEFINITIONS), ...(l.udf || {}) } }))
+          Array.isArray(quotation.lines) && quotation.lines.length
+            ? quotation.lines.map(l => ({ ...createLine(), ...l, taxCodeManuallyOverridden: true, udf: { ...createUdfState(ROW_UDF_DEFINITIONS), ...(l.udf || {}) } }))
             : [createLine()]
         );
-        setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(po.header_udfs || {}) });
-        if (po.header?.vendor) {
-          loadVendorDetails(po.header.vendor);
+        setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(quotation.header_udfs || {}) });
+        if (quotation.header?.vendor) {
+          loadVendorDetails(quotation.header.vendor);
         }
-        setPageState(p => ({ ...p, success: po.doc_num ? `Purchase order ${po.doc_num} loaded.` : 'Purchase order loaded.' }));
+        setPageState(p => ({ ...p, success: quotation.doc_num ? `Purchase quotation ${quotation.doc_num} loaded.` : 'Purchase quotation loaded.' }));
       } catch (e) {
-        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load purchase order.') }));
+        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load purchase quotation.') }));
       } finally {
         if (!ignore) {
           setPageState(p => ({ ...p, loading: false }));
@@ -707,7 +709,7 @@ function PurchaseOrder() {
     setPageState(p => ({ ...p, vendorLoading: true }));
 
     try {
-      const r = await fetchPurchaseOrderVendorDetails(code);
+      const r = await fetchPurchaseQuotationVendorDetails(code);
       const contacts = r.data.contacts || [];
       const payToAddresses = r.data.pay_to_addresses || [];
       const shipToAddresses = r.data.ship_to_addresses || [];
@@ -1305,7 +1307,7 @@ function PurchaseOrder() {
       };
 
       const payload = { company_id: PURCHASE_ORDER_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
-      const r = currentDocEntry ? await updatePurchaseOrder(currentDocEntry, payload) : await submitPurchaseOrder(payload);
+      const r = currentDocEntry ? await updatePurchaseQuotation(currentDocEntry, payload) : await submitPurchaseQuotation(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
@@ -1316,9 +1318,9 @@ function PurchaseOrder() {
         handleSeriesChange(refData.series[0].Series);
       }
 
-      setPageState(p => ({ ...p, success: `${r.data.message || 'Purchase order saved.'}${dn}` }));
+      setPageState(p => ({ ...p, success: `${r.data.message || 'Purchase quotation saved.'}${dn}` }));
     } catch (e) {
-      setPageState(p => ({ ...p, error: getErrMsg(e, 'Purchase order submission failed.') }));
+      setPageState(p => ({ ...p, error: getErrMsg(e, 'Purchase quotation submission failed.') }));
     } finally {
       setPageState(p => ({ ...p, posting: false }));
     }
@@ -1418,7 +1420,7 @@ function PurchaseOrder() {
             </button>
           </div>
         </div>
-        <button type="button" className="po-btn" onClick={() => navigate('/purchase-order/find')}>Find</button>
+        <button type="button" className="po-btn" onClick={() => navigate('/purchase-quotation/find')}>Find</button>
         <button type="button" className="po-btn" onClick={resetForm}>New</button>
       </div>
 

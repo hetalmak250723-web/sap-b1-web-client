@@ -13,16 +13,128 @@ const safe = async (promise) => {
   }
 };
 
+const escapeLike = (value) => String(value || '').replace(/[%_[\]]/g, (match) => `[${match}]`);
+const normalizeTopLimit = (value) => {
+  if (value == null || value === '') return null;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+
+  return Math.floor(parsed);
+};
+
+const normalizeSalesOrderStatusCode = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (normalized === 'o' || normalized === 'open') return 'O';
+  if (normalized === 'c' || normalized === 'close' || normalized === 'closed') return 'C';
+  return '';
+};
+
+const buildSalesOrderListFilterQuery = ({
+  query = '',
+  openOnly = true,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+}, options = {}) => {
+  const normalizedQuery = String(query || '').trim();
+  const normalizedDocNum = String(docNum || '').trim();
+  const normalizedCustomerCode = String(customerCode || '').trim();
+  const normalizedCustomerName = String(customerName || '').trim();
+  const normalizedDateFrom = String(postingDateFrom || '').trim();
+  const normalizedDateTo = String(postingDateTo || '').trim();
+  const normalizedStatus = normalizeSalesOrderStatusCode(status);
+  const openOnlyFilter = openOnly !== false;
+  const excludeField = String(options.excludeField || '').trim();
+  const whereClauses = ["T0.CANCELED <> 'Y'"];
+  const params = {};
+
+  if (normalizedStatus && excludeField !== 'status') {
+    whereClauses.push('T0.DocStatus = @status');
+    params.status = normalizedStatus;
+  } else if (openOnlyFilter) {
+    whereClauses.push("T0.DocStatus = 'O'");
+  }
+
+  if (normalizedQuery) {
+    whereClauses.push(`(
+      CAST(T0.DocNum AS NVARCHAR(50)) LIKE @query
+      OR T0.CardCode LIKE @query
+      OR T0.CardName LIKE @query
+    )`);
+    params.query = `%${escapeLike(normalizedQuery)}%`;
+  }
+
+  if (normalizedDocNum && excludeField !== 'docNum') {
+    whereClauses.push('CAST(T0.DocNum AS NVARCHAR(50)) = @docNum');
+    params.docNum = normalizedDocNum;
+  }
+
+  if (normalizedCustomerCode && excludeField !== 'customerCode') {
+    whereClauses.push('T0.CardCode LIKE @customerCode');
+    params.customerCode = `%${escapeLike(normalizedCustomerCode)}%`;
+  }
+
+  if (normalizedCustomerName && excludeField !== 'customerName') {
+    whereClauses.push('T0.CardName LIKE @customerName');
+    params.customerName = `%${escapeLike(normalizedCustomerName)}%`;
+  }
+
+  if (normalizedDateFrom && excludeField !== 'postingDateFrom') {
+    whereClauses.push('CAST(T0.DocDate AS date) >= CAST(@postingDateFrom AS date)');
+    params.postingDateFrom = normalizedDateFrom;
+  }
+
+  if (normalizedDateTo && excludeField !== 'postingDateTo') {
+    whereClauses.push('CAST(T0.DocDate AS date) <= CAST(@postingDateTo AS date)');
+    params.postingDateTo = normalizedDateTo;
+  }
+
+  return { whereClauses, params };
+};
+
 // ── queries ───────────────────────────────────────────────────────────────────
 
 const getCustomers = () => safe(db.query(`
-  SELECT CardCode, CardName, CardType, Currency,
-         VatGroup, GroupNum AS PayTermsGrpCode
+  SELECT *
   FROM   OCRD
   WHERE  CardType = 'C'
-    AND  frozenFor <> 'Y'
-  ORDER  BY CardName
+  ORDER  BY CardName, CardCode
 `));
+
+const searchCustomers = async ({ query = '', cardCode = '', cardName = '', top, sortBy = 'code' } = {}) => {
+  const normalizedQuery = String(query || '').trim();
+  const normalizedCardCode = String(cardCode || '').trim();
+  const normalizedCardName = String(cardName || '').trim();
+  const normalizedTop = normalizeTopLimit(top);
+  const orderBy = String(sortBy || '').trim().toLowerCase() === 'name'
+    ? 'CardName, CardCode'
+    : 'CardCode, CardName';
+  const topClause = normalizedTop ? 'TOP (@top)' : '';
+
+  return safe(db.query(`
+    SELECT ${topClause}
+      *
+    FROM OCRD
+    WHERE CardType = 'C'
+      AND (@query = '' OR CardCode LIKE @queryLike OR CardName LIKE @queryLike)
+      AND (@cardCode = '' OR CardCode LIKE @cardCodeLike)
+      AND (@cardName = '' OR CardName LIKE @cardNameLike)
+    ORDER BY ${orderBy}
+  `, {
+    ...(normalizedTop ? { top: normalizedTop } : {}),
+    query: normalizedQuery,
+    queryLike: `%${escapeLike(normalizedQuery)}%`,
+    cardCode: normalizedCardCode,
+    cardCodeLike: `%${escapeLike(normalizedCardCode)}%`,
+    cardName: normalizedCardName,
+    cardNameLike: `%${escapeLike(normalizedCardName)}%`,
+  }));
+};
 
 const getItems = () => safe(db.query(`
   SELECT ItemCode, ItemName,
@@ -139,6 +251,37 @@ const getShippingTypes = () => safe(db.query(`
   SELECT TrnspCode, TrnspName
   FROM   OSHP
   ORDER  BY TrnspName
+`));
+
+const getSalesOrderPrintLayouts = () => safe(db.query(`
+  SELECT
+    DocCode AS layout_id,
+    DocName AS layout_name,
+    CASE
+      WHEN Category = 'P' THEN 'PLD'
+      WHEN Category = 'C' THEN 'Crystal Reports'
+      ELSE Category
+    END AS layout_type,
+    CASE Language
+      WHEN 8 THEN 'English (UK)'
+      WHEN 3 THEN 'English'
+      WHEN 1 THEN 'Default'
+      ELSE ''
+    END AS language_name,
+    TypeCode AS type_code,
+    Category AS category_code,
+    Language AS language_code,
+    Status AS status_code,
+    CASE
+      WHEN Category = 'C' THEN CAST(1 AS bit)
+      ELSE CAST(0 AS bit)
+    END AS is_export_supported
+  FROM RDOC
+  WHERE TypeCode = 'RDR2'
+    AND Status = 'A'
+  ORDER BY
+    CONVERT(int, SUBSTRING(DocCode, 4, LEN(DocCode) - 3)),
+    DocCode
 `));
 
 const getBranches = () => safe(db.query(`
@@ -553,7 +696,9 @@ const createLookupValue = async (aliasId, value, description = '') => {
 
 // ── Document Series ───────────────────────────────────────────────────────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
+  const effectiveTargetDate = targetDate || new Date().toISOString().split('T')[0];
+
   const result = await safe(db.query(`
     SELECT 
     T0.Series,
@@ -568,9 +713,9 @@ INNER JOIN OFPR T1
     ON T0.Indicator = T1.Indicator
 WHERE T0.ObjectCode = '17'
     AND T0.Locked = 'N'
-    AND GETDATE() BETWEEN T1.F_RefDate AND T1.T_RefDate
+    AND CAST(@targetDate AS date) BETWEEN T1.F_RefDate AND T1.T_RefDate
 ORDER BY T0.SeriesName
-  `));
+  `, { targetDate: effectiveTargetDate }));
   
   return result.map(s => ({
     Series: s.Series,
@@ -673,9 +818,13 @@ const getReferenceData = async () => {
   const mappedCustomers = customers.map(c => ({
     CardCode:        c.CardCode,
     CardName:        c.CardName,
+    CardType:        c.CardType,
     Currency:        c.Currency,
     VatGroup:        c.VatGroup,
-    PayTermsGrpCode: c.PayTermsGrpCode,
+    PayTermsGrpCode: c.GroupNum,
+    Balance:         c.Balance,
+    CurrentAccountBalance: c.Balance,
+    FrozenFor:       c.frozenFor,
   }));
 
   const mappedWarehouses = warehouses.map(w => ({
@@ -796,16 +945,61 @@ const getItemDetails = async (itemCode) => {
 
 // ── sales order list ──────────────────────────────────────────────────────────
 
-const getSalesOrderList = async () => {
+const getSalesOrderList = async ({
+  query = '',
+  openOnly = true,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const normalizedPage = Math.max(1, Number(page) || 1);
+  const normalizedPageSize = Math.min(200, Math.max(1, Number(pageSize) || 25));
+  const skip = (normalizedPage - 1) * normalizedPageSize;
+  const { whereClauses, params } = buildSalesOrderListFilterQuery({
+    query,
+    openOnly,
+    docNum,
+    customerCode,
+    customerName,
+    status,
+    postingDateFrom,
+    postingDateTo,
+  });
+
+  const countResult = await safe(db.query(`
+    SELECT COUNT(*) AS total_count
+    FROM   ORDR T0
+    WHERE  ${whereClauses.join('\n      AND ')}
+  `, params));
+
+  const totalCount = Number(countResult?.[0]?.total_count || countResult?.[0]?.TOTAL_COUNT || 0);
+
   const orders = await safe(db.query(`
-    SELECT TOP 100
-           DocEntry, DocNum, CardCode, CardName,
-           DocDate, DocDueDate, DocStatus,
-           DocTotal, DocCur
-    FROM   ORDR
-    WHERE  CANCELED <> 'Y'
-    ORDER  BY DocEntry DESC
-  `));
+    SELECT
+           T0.DocEntry,
+           T0.DocNum,
+           T0.CardCode,
+           T0.CardName,
+           T0.DocDate,
+           T0.DocDueDate,
+           T0.DocStatus,
+           T0.DocTotal,
+           T0.DocCur,
+           (
+             SELECT COUNT(*)
+             FROM   RDR1 T1
+             WHERE  T1.DocEntry = T0.DocEntry
+           ) AS line_count
+    FROM   ORDR T0
+    WHERE  ${whereClauses.join('\n      AND ')}
+    ORDER  BY T0.DocEntry DESC
+    OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY
+  `, { ...params, skip, top: normalizedPageSize }));
 
   return {
     orders: orders.map(o => ({
@@ -816,9 +1010,145 @@ const getSalesOrderList = async () => {
       posting_date: o.DocDate ? o.DocDate.toISOString().split('T')[0] : '',
       delivery_date: o.DocDueDate ? o.DocDueDate.toISOString().split('T')[0] : '',
       status: o.DocStatus === 'O' ? 'Open' : o.DocStatus === 'C' ? 'Closed' : 'Unknown',
+      line_count: Number(o.line_count || 0),
       total_amount: Number(o.DocTotal || 0),
       currency: o.DocCur || '',
     })),
+    pagination: {
+      page: normalizedPage,
+      pageSize: normalizedPageSize,
+      totalCount,
+      totalPages: Math.max(1, Math.ceil(totalCount / normalizedPageSize)),
+    },
+  };
+};
+
+const getSalesOrderFilterOptions = async ({
+  field = '',
+  query = '',
+  openOnly = true,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  top = 50,
+} = {}) => {
+  const normalizedField = String(field || '').trim();
+  const normalizedQuery = String(query || '').trim();
+  const normalizedTop = normalizeTopLimit(top);
+
+  if (normalizedField === 'customerCode' || normalizedField === 'customerName') {
+    const customerWhereClauses = [
+      "CardType = 'C'",
+      "(@lookupQuery = '' OR CardCode LIKE @lookupLike OR CardName LIKE @lookupLike)",
+    ];
+    const customerParams = {
+      lookupQuery: normalizedQuery,
+      lookupLike: `%${escapeLike(normalizedQuery)}%`,
+    };
+    const topClause = normalizedTop ? 'TOP (@top)' : '';
+
+    if (normalizedTop) {
+      customerParams.top = normalizedTop;
+    }
+
+    const normalizedCustomerCode = String(customerCode || '').trim();
+    const normalizedCustomerName = String(customerName || '').trim();
+
+    if (normalizedCustomerCode && normalizedField !== 'customerCode') {
+      customerWhereClauses.push('CardCode LIKE @customerCode');
+      customerParams.customerCode = `%${escapeLike(normalizedCustomerCode)}%`;
+    }
+
+    if (normalizedCustomerName && normalizedField !== 'customerName') {
+      customerWhereClauses.push('CardName LIKE @customerName');
+      customerParams.customerName = `%${escapeLike(normalizedCustomerName)}%`;
+    }
+
+    const customerRows = await safe(db.query(`
+      SELECT ${topClause}
+        *
+      FROM OCRD
+      WHERE ${customerWhereClauses.join('\n        AND ')}
+      ORDER BY ${normalizedField === 'customerCode' ? 'CardCode' : 'CardName'}, CardCode
+    `, customerParams));
+
+    return {
+      options: customerRows.map((row) => ({
+        code: normalizedField === 'customerCode'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+        name: normalizedField === 'customerCode'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+      })).filter((option) => option.code),
+    };
+  }
+
+  const fieldConfig = {
+    docNum: {
+      select: `
+        DISTINCT TOP (@top)
+        CAST(T0.DocNum AS NVARCHAR(50)) AS code,
+        T0.CardName AS name,
+        T0.DocNum AS sort_code
+      `,
+      queryClause: 'CAST(T0.DocNum AS NVARCHAR(50)) LIKE @lookupQuery',
+      orderBy: 'sort_code DESC',
+    },
+    customerCode: {
+      select: `
+        DISTINCT TOP (@top)
+        T0.CardCode AS code,
+        T0.CardName AS name
+      `,
+      queryClause: '(T0.CardCode LIKE @lookupQuery OR T0.CardName LIKE @lookupQuery)',
+      orderBy: 'code',
+    },
+    customerName: {
+      select: `
+        DISTINCT TOP (@top)
+        T0.CardName AS code,
+        T0.CardCode AS name
+      `,
+      queryClause: '(T0.CardName LIKE @lookupQuery OR T0.CardCode LIKE @lookupQuery)',
+      orderBy: 'code',
+    },
+  };
+
+  const config = fieldConfig[normalizedField];
+  if (!config) return { options: [] };
+
+  const { whereClauses, params } = buildSalesOrderListFilterQuery({
+    query: '',
+    openOnly,
+    docNum,
+    customerCode,
+    customerName,
+    status,
+    postingDateFrom,
+    postingDateTo,
+  }, { excludeField: normalizedField });
+
+  if (normalizedQuery) {
+    whereClauses.push(config.queryClause);
+    params.lookupQuery = `%${escapeLike(normalizedQuery)}%`;
+  }
+
+  const rows = await safe(db.query(`
+    SELECT ${config.select}
+    FROM ORDR T0
+    WHERE ${whereClauses.join('\n      AND ')}
+    ORDER BY ${config.orderBy}
+  `, { ...params, top: normalizedTop }));
+
+  return {
+    options: rows.map((row) => ({
+      code: String(row.code || '').trim(),
+      name: String(row.name || '').trim(),
+    })).filter((option) => option.code),
   };
 };
 
@@ -851,6 +1181,8 @@ const getSalesOrder = async (docEntry) => {
   }
 
   const resolvedDocEntry = resolvedDocument.DocEntry;
+  const lineFieldMetadata = await getSalesOrderLineFieldMetadata();
+  const hasSellerPaymentTermsField = Boolean(lineFieldMetadata?.U_Seller_Payment_Terms);
 
   // ✅ Get complete header and line data with Place of Supply and HSN Code
   let rows = await safe(db.query(`
@@ -926,6 +1258,7 @@ const getSalesOrder = async (docEntry) => {
     T1.U_Buyer_Delivery AS BuyerDelivery,
     T1.U_Seller_Delivery AS SellerDelivery,
     T1.U_Buyer_Payment_Terms AS BuyerPaymentTerms,
+    ${hasSellerPaymentTermsField ? 'T1.U_Seller_Payment_Terms AS SellerPaymentTerms,' : "'' AS SellerPaymentTerms,"}
     T1.U_Buyer_Quality AS BuyerQuality,
     T1.U_Seller_Quality AS SellerQuality,
     T1.U_Buyer_Price AS BuyerPrice,
@@ -994,17 +1327,97 @@ ORDER BY T1.LineNum
   let headerUdfs = {};
   try {
     const udfRows = await db.query(`
-      SELECT U_LoadPortRemark, U_InspectionReq, U_SupplierRefDate, U_PaymentAdvice
+      SELECT
+        U_SCharge,
+        U_TRNS,
+        U_LRNO,
+        U_LRDT,
+        U_DSTN,
+        U_DSTNADD,
+        U_FDSTN,
+        U_VEHNO,
+        U_DOCTHR,
+        U_UOM,
+        U_Price,
+        U_SAmount,
+        U_B_FromDate,
+        U_B_ToDate,
+        U_Seller_Code,
+        U_Seller_Name,
+        U_Seller_AddressId,
+        U_Seller_Address,
+        U_Old_Soda_Nodh_No,
+        U_Old_Soda_Nodh_Date,
+        U_Canceled,
+        U_TrfId,
+        U_TrfName,
+        U_TrfVehi,
+        U_TrfDist,
+        U_TrfMode,
+        U_TrfVType,
+        U_AckNo,
+        U_AckDt,
+        U_CanDt,
+        U_QrCode,
+        U_SigInv,
+        U_EwbDt,
+        U_EwbVliDt,
+        U_EWayBCan,
+        U_TrfCode,
+        U_MultiVeh,
+        U_MultiVehPosted,
+        U_SubSuply,
+        U_DocType,
+        U_TraType,
+        U_DelRemarks
       FROM   ORDR
       WHERE  DocEntry = @DocEntry
     `, { DocEntry: resolvedDocEntry });
     if (udfRows.recordset && udfRows.recordset.length > 0) {
       const udf = udfRows.recordset[0];
       headerUdfs = {
-        U_LoadPortRemark: udf.U_LoadPortRemark || '',
-        U_InspectionReq: udf.U_InspectionReq || 'No',
-        U_SupplierRefDate: udf.U_SupplierRefDate ? udf.U_SupplierRefDate.toISOString().split('T')[0] : '',
-        U_PaymentAdvice: udf.U_PaymentAdvice || '',
+        U_SCharge: udf.U_SCharge || '',
+        U_TRNS: udf.U_TRNS || '',
+        U_LRNO: udf.U_LRNO || '',
+        U_LRDT: udf.U_LRDT ? udf.U_LRDT.toISOString().split('T')[0] : '',
+        U_DSTN: udf.U_DSTN || '',
+        U_DSTNADD: udf.U_DSTNADD || '',
+        U_FDSTN: udf.U_FDSTN || '',
+        U_VEHNO: udf.U_VEHNO || '',
+        U_DOCTHR: udf.U_DOCTHR || '',
+        U_UOM: udf.U_UOM || '',
+        U_Price: udf.U_Price != null ? String(udf.U_Price) : '',
+        U_SAmount: udf.U_SAmount != null ? String(udf.U_SAmount) : '',
+        U_B_FromDate: udf.U_B_FromDate ? udf.U_B_FromDate.toISOString().split('T')[0] : '',
+        U_B_ToDate: udf.U_B_ToDate ? udf.U_B_ToDate.toISOString().split('T')[0] : '',
+        U_Seller_Code: udf.U_Seller_Code || '',
+        U_Seller_Name: udf.U_Seller_Name || '',
+        U_Seller_AddressId: udf.U_Seller_AddressId || '',
+        U_Seller_Address: udf.U_Seller_Address || '',
+        U_Old_Soda_Nodh_No: udf.U_Old_Soda_Nodh_No || '',
+        U_Old_Soda_Nodh_Date: udf.U_Old_Soda_Nodh_Date ? udf.U_Old_Soda_Nodh_Date.toISOString().split('T')[0] : '',
+        U_Canceled: udf.U_Canceled || '',
+        U_TrfId: udf.U_TrfId || '',
+        U_TrfName: udf.U_TrfName || '',
+        U_TrfVehi: udf.U_TrfVehi || '',
+        U_TrfDist: udf.U_TrfDist != null ? String(udf.U_TrfDist) : '',
+        U_TrfMode: udf.U_TrfMode || '',
+        U_TrfVType: udf.U_TrfVType || '',
+        U_AckNo: udf.U_AckNo || '',
+        U_AckDt: udf.U_AckDt || '',
+        U_CanDt: udf.U_CanDt || '',
+        U_QrCode: udf.U_QrCode || '',
+        U_SigInv: udf.U_SigInv || '',
+        U_EwbDt: udf.U_EwbDt || '',
+        U_EwbVliDt: udf.U_EwbVliDt || '',
+        U_EWayBCan: udf.U_EWayBCan || '',
+        U_TrfCode: udf.U_TrfCode || '',
+        U_MultiVeh: udf.U_MultiVeh || '',
+        U_MultiVehPosted: udf.U_MultiVehPosted || '',
+        U_SubSuply: udf.U_SubSuply || '',
+        U_DocType: udf.U_DocType || '',
+        U_TraType: udf.U_TraType || '',
+        U_DelRemarks: udf.U_DelRemarks || '',
       };
     }
   } catch (err) {
@@ -1033,6 +1446,7 @@ ORDER BY T1.LineNum
         U_Buyer_Delivery,
         U_Seller_Delivery,
         U_Buyer_Payment_Terms,
+        ${hasSellerPaymentTermsField ? 'U_Seller_Payment_Terms,' : ''}
         U_Buyer_Quality,
         U_Seller_Quality,
         U_Buyer_Price,
@@ -1070,6 +1484,7 @@ ORDER BY T1.LineNum
           U_Buyer_Delivery: row.U_Buyer_Delivery || '',
           U_Seller_Delivery: row.U_Seller_Delivery || '',
           U_Buyer_Payment_Terms: row.U_Buyer_Payment_Terms || '',
+          U_Seller_Payment_Terms: row.U_Seller_Payment_Terms || '',
           U_Buyer_Quality: row.U_Buyer_Quality || '',
           U_Seller_Quality: row.U_Seller_Quality || '',
           U_Buyer_Price: row.U_Buyer_Price || '',
@@ -1183,6 +1598,7 @@ ORDER BY T1.LineNum
           commission: lineUdf.U_COMPRC != null ? String(lineUdf.U_COMPRC) : (line.Commission != null ? String(line.Commission) : ''),
           sellerBrokeragePerQty: lineUdf.U_S_BrokPerQty != null ? String(lineUdf.U_S_BrokPerQty) : (line.SellerBrokeragePerQty != null ? String(line.SellerBrokeragePerQty) : ''),
           buyerPaymentTerms: lineUdf.U_Buyer_Payment_Terms || line.BuyerPaymentTerms || '',
+          sellerPaymentTerms: lineUdf.U_Seller_Payment_Terms || line.SellerPaymentTerms || '',
           buyerSpecialInstruction: lineUdf.U_Buyer_SPINS || line.BuyerSpecialInstruction || '',
           sellerSpecialInstruction: lineUdf.U_Seller_SPINS || line.SellerSpecialInstruction || '',
           buyerBillDiscount: lineUdf.U_Buyer_Bill_Disc != null ? String(lineUdf.U_Buyer_Bill_Disc) : (line.BuyerBillDiscount != null ? String(line.BuyerBillDiscount) : ''),
@@ -1220,6 +1636,7 @@ ORDER BY T1.LineNum
             U_Buyer_Delivery: lineUdf.U_Buyer_Delivery || '',
             U_Seller_Delivery: lineUdf.U_Seller_Delivery || '',
             U_Buyer_Payment_Terms: lineUdf.U_Buyer_Payment_Terms || '',
+            U_Seller_Payment_Terms: lineUdf.U_Seller_Payment_Terms || '',
             U_Buyer_Quality: lineUdf.U_Buyer_Quality || '',
             U_Seller_Quality: lineUdf.U_Seller_Quality || '',
             U_Buyer_Price: lineUdf.U_Buyer_Price || '',
@@ -1348,18 +1765,21 @@ const getSalesOrderForCopy = async (docEntry) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  searchCustomers,
   getItemDetails,
   getSalesOrderLineFieldMetadata,
   resolveSalesOrderLineUomEntry,
   getLookupValues,
   createLookupValue,
   getSalesOrderList,
+  getSalesOrderFilterOptions,
   getSalesOrder,
   getDocumentSeries,
   getNextNumber,
   getStateFromAddress,
   getItemsForModal,
   getFreightCharges,
+  getSalesOrderPrintLayouts,
   getOpenSalesOrders,
   getSalesOrderForCopy,
 };

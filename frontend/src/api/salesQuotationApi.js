@@ -8,8 +8,11 @@ const fetchSalesQuotationReferenceData = (companyId) =>
 const fetchSalesQuotationCustomerDetails = (customerCode) =>
   apiClient.get(`/sales-quotation/customers/${encodeURIComponent(customerCode)}`);
 
-const fetchSalesQuotations = () =>
-  apiClient.get('/sales-quotation/list');
+const fetchSalesQuotations = (params = {}) =>
+  apiClient.get('/sales-quotation/list', { params });
+
+const fetchSalesQuotationCustomerOptions = (params = {}) =>
+  apiClient.get('/sales-quotation/customers/search', { params });
 
 const fetchSalesQuotationByDocEntry = (docEntry) =>
   apiClient.get(`/sales-quotation/${encodeURIComponent(docEntry)}`);
@@ -45,6 +48,7 @@ export {
   fetchSalesQuotationReferenceData,
   fetchSalesQuotationCustomerDetails,
   fetchSalesQuotations,
+  fetchSalesQuotationCustomerOptions,
   fetchSalesQuotationByDocEntry,
   submitSalesQuotation,
   updateSalesQuotation,

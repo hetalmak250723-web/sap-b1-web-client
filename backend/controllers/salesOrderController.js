@@ -9,6 +9,15 @@ const getErrorPayload = (error, fallbackMessage) => ({
     fallbackMessage,
 });
 
+const parseTopParam = (value) => {
+  if (value == null || value === '') return undefined;
+
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
+
+  return Math.floor(parsed);
+};
+
 const getReferenceData = async (req, res) => {
   try {
     const data = await salesOrderService.getReferenceData(req.query.company_id);
@@ -27,12 +36,68 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+const getCustomerFilterOptions = async (req, res) => {
+  try {
+    const data = await salesOrderService.getCustomerFilterOptions({
+      query: req.query.query,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      top: parseTopParam(req.query.top),
+      display: req.query.display,
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load customer filter options.'));
+  }
+};
+
 const getSalesOrderList = async (req, res) => {
   try {
-    const data = await salesOrderService.getSalesOrderList();
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? true
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize) || 25));
+    const data = await salesOrderService.getSalesOrderList({
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      page,
+      pageSize,
+    });
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load sales orders.'));
+  }
+};
+
+const getSalesOrderFilterOptions = async (req, res) => {
+  try {
+    const rawOpenOnly = req.query.openOnly;
+    const openOnly = rawOpenOnly === undefined
+      ? true
+      : !['false', '0', 'no'].includes(String(rawOpenOnly).trim().toLowerCase());
+    const data = await salesOrderService.getSalesOrderFilterOptions({
+      field: req.query.field,
+      query: req.query.query,
+      openOnly,
+      docNum: req.query.docNum,
+      customerCode: req.query.customerCode,
+      customerName: req.query.customerName,
+      status: req.query.status,
+      postingDateFrom: req.query.postingDateFrom,
+      postingDateTo: req.query.postingDateTo,
+      top: parseTopParam(req.query.top),
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load sales order filter options.'));
   }
 };
 
@@ -65,7 +130,7 @@ const updateSalesOrder = async (req, res) => {
 
 const getDocumentSeries = async (req, res) => {
   try {
-    const data = await salesOrderService.getDocumentSeries();
+    const data = await salesOrderService.getDocumentSeries(req.query.date);
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load document series.'));
@@ -110,6 +175,15 @@ const getFreightCharges = async (req, res) => {
   }
 };
 
+const getSalesOrderPrintLayouts = async (_req, res) => {
+  try {
+    const data = await salesOrderService.getSalesOrderPrintLayouts();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json(getErrorPayload(error, 'Failed to load sales order print layouts.'));
+  }
+};
+
 const createLookupValue = async (req, res) => {
   try {
     const result = await salesOrderService.createLookupValue(req.body || {});
@@ -122,7 +196,9 @@ const createLookupValue = async (req, res) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getSalesOrderList,
+  getSalesOrderFilterOptions,
   getSalesOrder,
   submitSalesOrder,
   updateSalesOrder,
@@ -131,6 +207,7 @@ module.exports = {
   getStateFromAddress,
   getItemsForModal,
   getFreightCharges,
+  getSalesOrderPrintLayouts,
   createLookupValue,
   getOpenSalesOrders:          async (req, res) => { try { res.json(await salesOrderService.getOpenSalesOrders()); } catch(e) { res.status(500).json(getErrorPayload(e, 'Failed.')); } },
   getSalesOrderForCopy:        async (req, res) => { try { res.json(await salesOrderService.getSalesOrderForCopy(req.params.docEntry)); } catch(e) { res.status(500).json(getErrorPayload(e, 'Failed.')); } },

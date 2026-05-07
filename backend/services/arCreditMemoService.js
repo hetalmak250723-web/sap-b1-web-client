@@ -1,6 +1,12 @@
 const sapService = require('./sapService');
 const arCreditMemoDb = require('./arCreditMemoDbService');
+const salesOrderDb = require('./salesOrderDbService');
 const { buildDocumentAdditionalExpenses } = require('./freightPayloadUtils');
+
+const normalizeBranchId = (branch) => {
+  const normalized = String(branch || '').trim();
+  return normalized === '' ? -1 : Number(normalized);
+};
 
 // ───────── REFERENCE DATA (USING ODBC) ─────────
 
@@ -59,13 +65,98 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── AR CREDIT MEMO LIST (USING ODBC) ─────────
 
-const getARCreditMemoList = async () => {
+const getCustomerFilterOptions = async ({
+  query = '',
+  customerCode = '',
+  customerName = '',
+  top,
+  display = 'code',
+} = {}) => {
   try {
-    // Use ODBC for reading list
-    const result = await arCreditMemoDb.getARCreditMemoList();
+    const rows = await salesOrderDb.searchCustomers({
+      query,
+      cardCode: customerCode,
+      cardName: customerName,
+      top,
+      sortBy: display === 'name' ? 'name' : 'code',
+    });
+
+    return {
+      options: rows.map((row) => ({
+        code: display === 'name'
+          ? String(row.CardName || '').trim()
+          : String(row.CardCode || '').trim(),
+        name: display === 'name'
+          ? String(row.CardCode || '').trim()
+          : String(row.CardName || '').trim(),
+      })).filter((option) => option.code),
+    };
+  } catch (_error) {
+    return { options: [] };
+  }
+};
+
+const getARCreditMemoList = async ({
+  query = '',
+  openOnly = false,
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  try {
+    const result = await arCreditMemoDb.getARCreditMemoList({
+      query,
+      openOnly,
+      docNum,
+      customerCode,
+      customerName,
+      status,
+      postingDateFrom,
+      postingDateTo,
+      page,
+      pageSize,
+    });
     return result;
   } catch (error) {
-    return { credit_memos: [] };
+    return {
+      ar_credit_memos: [],
+      pagination: {
+        page: Math.max(1, Number(page) || 1),
+        pageSize: Math.min(200, Math.max(1, Number(pageSize) || 25)),
+        totalCount: 0,
+        totalPages: 1,
+      },
+    };
+  }
+};
+
+const getOpenARCreditMemoDocuments = async () => {
+  try {
+    const result = await arCreditMemoDb.getARCreditMemoList({
+      openOnly: true,
+      page: 1,
+      pageSize: 100,
+    });
+
+    return {
+      creditMemos: (result.ar_credit_memos || []).map((row) => ({
+        DocEntry: row.doc_entry,
+        DocNum: row.doc_num,
+        CardCode: row.customer_code,
+        CardName: row.customer_name,
+        DocDate: row.posting_date,
+        DocDueDate: row.delivery_date,
+        DocTotal: row.total_amount,
+        DocumentStatus: row.status,
+      })),
+    };
+  } catch (_error) {
+    return { creditMemos: [] };
   }
 };
 
@@ -119,8 +210,8 @@ const submitARCreditMemo = async (payload) => {
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
 
       // Branch mapping
-      BPLId: payload.header.branch ? Number(payload.header.branch) : undefined,
-      BPL_IDAssignedToInvoice: payload.header.branch ? Number(payload.header.branch) : undefined,
+      BPLId: normalizeBranchId(payload.header.branch),
+      BPL_IDAssignedToInvoice: normalizeBranchId(payload.header.branch),
 
       PaymentGroupCode: payload.header.paymentTerms ? Number(payload.header.paymentTerms) : undefined,
 
@@ -354,7 +445,9 @@ const getUomConversionFactor = async (itemCode, uomCode) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  getCustomerFilterOptions,
   getARCreditMemoList,
+  getOpenARCreditMemoDocuments,
   getARCreditMemo,
   submitARCreditMemo,
   updateARCreditMemo,
