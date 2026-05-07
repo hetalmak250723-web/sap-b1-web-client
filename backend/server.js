@@ -43,7 +43,6 @@ const goodsReceiptController     = require('./controllers/goodsReceiptController
 const goodsIssueRoutes           = require('./routes/goodsIssue');
 const inventoryTransferRequestRoutes = require('./routes/inventoryTransferRequest');
 const inventoryTransferRoutes    = require('./routes/inventoryTransfer');
-const salesAnalysisRoutes        = require('./routes/reports/salesAnalysis.routes');
 const purchaseAnalysisRoutes     = require('./routes/reports/purchaseAnalysis.routes');
 const reportLookupsRoutes        = require('./routes/reportLookups');
 
@@ -147,7 +146,6 @@ app.use('/api/goods-receipt',      goodsReceiptRoutes);
 app.use('/api/goods-issue',        goodsIssueRoutes);
 app.use('/api/inventory-transfer-request', inventoryTransferRequestRoutes);
 app.use('/api/inventory-transfer', inventoryTransferRoutes);
-app.use('/api/reports',            salesAnalysisRoutes);
 app.use('/api/reports',            purchaseAnalysisRoutes);
 app.use('/api/lookups',            reportLookupsRoutes);
 app.use('/api',                    sapRoutes);

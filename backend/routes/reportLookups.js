@@ -1,16 +1,41 @@
 const express = require("express");
-const salesController = require("../controllers/reports/salesAnalysis.controller");
+const {
+  searchBP,
+  lookupBPGroups,
+  lookupSalesPersons,
+} = require("../controllers/businessPartnerController");
+const {
+  searchItems,
+  lookupItemGroups,
+  lookupItemProperties,
+} = require("../controllers/itemController");
 const purchaseController = require("../controllers/reports/purchaseAnalysis.controller");
 
 const router = express.Router();
 
-router.get("/customers", salesController.lookupCustomers);
-router.get("/items", salesController.lookupItems);
-router.get("/sales-employees", salesController.lookupSalesEmployees);
-router.get("/customer-groups", salesController.lookupCustomerGroups);
-router.get("/item-groups", salesController.lookupItemGroups);
-router.get("/customer-properties", salesController.lookupCustomerProperties);
-router.get("/item-properties", salesController.lookupItemProperties);
+const lookupCustomerProperties = async (_req, res) => {
+  res.json(
+    Array.from({ length: 64 }, (_, index) => ({
+      number: index + 1,
+      name: `Business Partners Property ${index + 1}`,
+    })),
+  );
+};
+
+router.get("/customers", (req, _res, next) => {
+  req.query.type = req.query.type || "cCustomer";
+  req.query.top = req.query.top || "200";
+  return searchBP(req, _res, next);
+});
+router.get("/items", (req, _res, next) => {
+  req.query.top = req.query.top || "200";
+  return searchItems(req, _res, next);
+});
+router.get("/sales-employees", lookupSalesPersons);
+router.get("/customer-groups", lookupBPGroups);
+router.get("/item-groups", lookupItemGroups);
+router.get("/customer-properties", lookupCustomerProperties);
+router.get("/item-properties", lookupItemProperties);
 
 router.get("/purchase-vendors", purchaseController.lookupVendors);
 router.get("/purchase-items", purchaseController.lookupItems);

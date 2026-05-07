@@ -56,7 +56,7 @@ import ARCreditMemoList from "./pages/ARCreditMemoList";
 import SalesQuotation from "./pages/SalesQuotation";
 import SalesQuotationList from "./pages/SalesQuotationList";
 import SalesAnalysisReportPage from "./pages/SalesAnalysisReportPage";
-import PurchaseAnalysisReportPage from "./pages/PurchaseAnalysisReportPage";
+import PurchaseAnalysisReport from "./pages/PurchaseAnalysisReport";
 import PurchaseRequestReportPage from "./pages/PurchaseRequestReportPage";
 import ReportLayoutManagerPage from "./pages/ReportLayoutManagerPage";
 import "./App.css";
@@ -125,7 +125,9 @@ function App() {
               <Route path="/sales-quotation" element={<SalesQuotation />} />
               <Route path="/sales-quotation/find" element={<SalesQuotationList />} />
               <Route path="/reports/sales/analysis" element={<SalesAnalysisReportPage />} />
-              <Route path="/reports/purchasing/analysis" element={<PurchaseAnalysisReportPage />} />
+              <Route path="/reports/purchasing/analysis" element={<PurchaseAnalysisReport />} />
+              <Route path="/reports/purchase-analysis" element={<PurchaseAnalysisReport />} />
+              <Route path="/reports/purchase/analysis" element={<PurchaseAnalysisReport />} />
               <Route path="/reports/purchasing/purchase-request-report" element={<PurchaseRequestReportPage />} />
               <Route path="/report-layout-manager" element={<ReportLayoutManagerPage />} />
               <Route path="/bom" element={<BOM />} />

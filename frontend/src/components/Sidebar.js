@@ -4,7 +4,6 @@ import { useAuth } from '../auth/AuthContext';
 import { normalizePath } from '../auth/routeUtils';
 import '../styles/sidebar.css';
 
-<<<<<<< HEAD
 const DASHBOARD_PATH = '/dashboard';
 const STATIC_DASHBOARD_MENU = {
   menuId: 'dashboard-static',
@@ -15,19 +14,6 @@ const STATIC_DASHBOARD_MENU = {
   sortOrder: -1,
   children: [],
 };
-=======
-const masterItems = [
-  { to: "/item-master",      label: "Item Master",       shortLabel: "IM" },
-  { to: "/business-partner", label: "Business Partner",  shortLabel: "BP" },
-  { to: "/warehouse",        label: "Warehouses",         shortLabel: "WH" },
-  { to: "/price-list",       label: "Price Lists",        shortLabel: "PL" },
-  { to: "/tax-code",         label: "Tax Codes",           shortLabel: "TC" },
-  { to: "/uom-group",        label: "UoM Groups",           shortLabel: "UG" },
-  { to: "/payment-terms",    label: "Payment Terms",        shortLabel: "PT" },
-  { to: "/shipping-type",    label: "Shipping Types",       shortLabel: "ST" },
-  { to: "/branch",           label: "Branches",             shortLabel: "BR" },
-];
->>>>>>> test
 
 const TOP_LEVEL_MENU_PRIORITY = new Map([
   ['dashboard', 0],
@@ -60,7 +46,6 @@ const getDisplayMenuName = (menu) => {
     return 'Sales - A/R';
   }
 
-<<<<<<< HEAD
   return menu?.menuName;
 };
 
@@ -144,15 +129,6 @@ const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname })
   const shortLabel = buildShortLabel(displayMenuName, buildShortLabel(menu.icon, 'MN'));
 
   if (hasChildren) {
-=======
-const reportItems = [
-  { to: "/reports/sales-analysis", label: "Sales Analysis Report", shortLabel: "SA" },
-  { to: "/reports/purchase-analysis", label: "Purchase Analysis Report", shortLabel: "PA" },
-];
-
-function SidebarLink({ item, collapsed }) {
-  if (!item.to) {
->>>>>>> test
     return (
       <div className="sidebar__section">
         <button
@@ -207,17 +183,8 @@ export default function Sidebar() {
   const location = useLocation();
   const { menus, company } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-<<<<<<< HEAD
   const [openState, setOpenState] = useState({});
   const sidebarMenus = useMemo(() => buildSidebarMenus(menus), [menus]);
-=======
-  const [masterOpen, setMasterOpen] = useState(true);
-  const [productionOpen, setProductionOpen] = useState(true);
-  const [inventoryOpen, setInventoryOpen] = useState(true);
-  const [salesOpen, setSalesOpen] = useState(true);
-  const [purchasingOpen, setPurchasingOpen] = useState(true);
-  const [reportsOpen, setReportsOpen] = useState(true);
->>>>>>> test
 
   return (
     <aside className={`sidebar-shell${collapsed ? ' is-collapsed' : ''}`}>
@@ -245,7 +212,6 @@ export default function Sidebar() {
 
         <div className="sidebar__content">
           <nav className="sidebar__nav">
-<<<<<<< HEAD
             {sidebarMenus.length ? (
               sidebarMenus.map((menu) => (
                 <SidebarMenuNode
@@ -262,73 +228,6 @@ export default function Sidebar() {
                 No menus are available for this role.
               </div>
             )}
-=======
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                `sidebar__link sidebar__link--primary${isActive ? " sidebar__link--active" : ""}`
-              }
-              title={collapsed ? "Dashboard" : undefined}
-            >
-              <span className="sidebar__link-icon">DB</span>
-              {!collapsed && <span className="sidebar__link-text">Dashboard</span>}
-            </NavLink>
-
-            <SidebarSection
-              title="Master"
-              shortTitle="M"
-              items={masterItems}
-              open={masterOpen}
-              onToggle={() => setMasterOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
-
-            <SidebarSection
-              title="Production"
-              shortTitle="PR"
-              items={productionItems}
-              open={productionOpen}
-              onToggle={() => setProductionOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
-
-            <SidebarSection
-              title="Inventory"
-              shortTitle="IN"
-              items={inventoryItems}
-              open={inventoryOpen}
-              onToggle={() => setInventoryOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
-
-            <SidebarSection
-              title="Sales - A/R"
-              shortTitle="SA"
-              items={salesArItems}
-              open={salesOpen}
-              onToggle={() => setSalesOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
-
-            <SidebarSection
-              title="Purchasing - A/P"
-              shortTitle="PA"
-              items={purchasingApItems}
-              open={purchasingOpen}
-              onToggle={() => setPurchasingOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
-
-            <SidebarSection
-              title="Reports"
-              shortTitle="RP"
-              items={reportItems}
-              open={reportsOpen}
-              onToggle={() => setReportsOpen((prev) => !prev)}
-              collapsed={collapsed}
-            />
->>>>>>> test
           </nav>
         </div>
       </div>
