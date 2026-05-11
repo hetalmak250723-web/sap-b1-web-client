@@ -9,6 +9,7 @@ import LogisticsTab from './components/LogisticsTab';
 import AccountingTab from './components/AccountingTab';
 import TaxTab from './components/TaxTab';
 import ElectronicDocumentsTab from './components/ElectronicDocumentsTab';
+import TransportTab from './components/TransportTab';
 import AttachmentsTab from './components/AttachmentsTab';
 import AddressModal from './components/AddressModal';
 import EWayBillModal from './components/EWayBillModal';
@@ -104,7 +105,7 @@ const FALLBACK_WAREHOUSES = [
 
 // ─── constants ────────────────────────────────────────────────────────────────
 const DEC = { QtyDec: 2, PriceDec: 2, SumDec: 2, RateDec: 2, PercentDec: 2 };
-const TAB_NAMES = ['Contents', 'Logistics', 'Accounting', 'Tax', 'Electronic Documents', 'Attachments'];
+const TAB_NAMES = ['Contents', 'Logistics', 'Accounting', 'Tax', 'Transport', 'Electronic Documents', 'Attachments'];
 
 const createLine = () => ({
   itemNo: '', itemDescription: '', hsnCode: '', quantity: '', unitPrice: '',
@@ -131,7 +132,7 @@ const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
 }));
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-function SalesOrder() {
+function SalesQuotation() {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -373,9 +374,9 @@ function SalesOrder() {
         if (so.header?.customerCode) {
           loadVendorDetails(so.header.customerCode);
         }
-        setPageState(p => ({ ...p, success: so.doc_num ? `Sales Quatation ${so.doc_num} loaded.` : 'Sales Quatation loaded.' }));
+        setPageState(p => ({ ...p, success: so.doc_num ? `Sales Quotation ${so.doc_num} loaded.` : 'Sales Quotation loaded.' }));
       } catch (e) {
-        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load Sales Quatation.') }));
+        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load Sales Quotation.') }));
       } finally {
         if (!ignore) {
           setPageState(p => ({ ...p, loading: false }));
@@ -1137,7 +1138,15 @@ function SalesOrder() {
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
-  const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
+  const handleHeaderUdfChange = (e, val) => {
+    // Support both direct key-value pairs (from Sidebar) and standard React events (from native inputs)
+    if (typeof e === 'string') {
+      setHeaderUdfs(p => ({ ...p, [e]: val }));
+    } else if (e && e.target) {
+      const { name, value, type, checked } = e.target;
+      setHeaderUdfs(p => ({ ...p, [name]: type === 'checkbox' ? checked : value }));
+    }
+  };
   const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
 
@@ -1675,11 +1684,11 @@ function SalesOrder() {
         handleSeriesChange(refData.series[0].Series);
       }
       
-      setPageState(p => ({ ...p, success: `${r.data.message || 'Sales Quatation saved.'}${dn}` }));
+      setPageState(p => ({ ...p, success: `${r.data.message || 'Sales Quotation saved.'}${dn}` }));
     } catch (e) {
-      console.error('❌ Sales Quatation Submission Error:', e);
+      console.error('❌ Sales Quotation Submission Error:', e);
       console.error('Error Response:', e.response?.data);
-      setPageState(p => ({ ...p, error: getErrMsg(e, 'Sales Quatation submission failed.') }));
+      setPageState(p => ({ ...p, error: getErrMsg(e, 'Sales Quotation submission failed.') }));
     } finally {
       setPageState(p => ({ ...p, posting: false }));
     }
@@ -1702,7 +1711,7 @@ function SalesOrder() {
 
       {/* toolbar */}
       <div className="so-toolbar">
-        <span className="so-toolbar__title">Sales Quatation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+        <span className="so-toolbar__title">Sales Quotation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
           {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
         </button>
@@ -2042,6 +2051,13 @@ function SalesOrder() {
               <TaxTab onOpenTaxInfoModal={openTaxInfoModal} />
             )}
 
+          {activeTab === 'Transport' && (
+            <TransportTab
+              headerUdfs={headerUdfs}
+              onHeaderUdfChange={handleHeaderUdfChange}
+            />
+          )}
+
             {activeTab === 'Electronic Documents' && (
               <ElectronicDocumentsTab />
             )}
@@ -2327,4 +2343,4 @@ function SalesOrder() {
   );
 }
 
-export default SalesOrder;
+export default SalesQuotation;
