@@ -751,7 +751,7 @@ select.so-grid__input {
   border: 1px solid #a0aab4;
   border-radius: 4px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.22);
-  width: 520px;
+  width: 420px;
   max-width: 95vw;
   max-height: 80vh;
   display: flex;

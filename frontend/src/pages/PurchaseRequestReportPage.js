@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import SapLookupModal from "../components/common/SapLookupModal";
 import PropertiesSelectionModal from "../components/reports/PropertiesSelectionModal";
+import useFloatingWindow from "../components/reports/useFloatingWindow";
+import { useSapWindowTaskbarActions } from "../components/SapWindowTaskbarContext";
 import {
   fetchPurchaseRequestReportBranches,
   fetchPurchaseRequestReportDepartments,
@@ -74,6 +76,7 @@ const formatSelectorSummary = (selector) => (
 
 function PurchaseRequestReportPage() {
   const navigate = useNavigate();
+  const { closeActiveAndRestorePrevious } = useSapWindowTaskbarActions();
   const [criteria, setCriteria] = useState(createInitialCriteria);
   const [itemGroupOptions, setItemGroupOptions] = useState([{ code: "All", name: "All" }]);
   const [itemProperties, setItemProperties] = useState([]);
@@ -85,6 +88,24 @@ function PurchaseRequestReportPage() {
     error: "",
   });
   const [reportResult, setReportResult] = useState(null);
+
+  const criteriaWindow = useFloatingWindow({
+    isOpen: true,
+    defaultTop: 22,
+    resetOnClose: true,
+    taskId: "prr-criteria",
+    taskPath: "/reports/purchasing/purchase-request-report",
+    taskTitle: "Purchase Request Report - Selection Criteria",
+  });
+
+  const reportWindow = useFloatingWindow({
+    isOpen: Boolean(reportResult),
+    defaultTop: 22,
+    resetOnClose: true,
+    taskId: "prr-report",
+    taskPath: "/reports/purchasing/purchase-request-report",
+    taskTitle: "Purchase Request Report",
+  });
 
   useEffect(() => {
     let ignore = false;
@@ -270,422 +291,524 @@ function PurchaseRequestReportPage() {
     setPageState((current) => ({ ...current, error: "" }));
   };
 
-  const lookupConfig = getLookupConfig();
-  const isShowingResults = Boolean(reportResult);
-
   const handleBackToCriteria = () => {
     setReportResult(null);
     setPageState((current) => ({ ...current, error: "" }));
   };
 
+  const handleCloseCriteriaWindow = () => {
+    if (closeActiveAndRestorePrevious()) return;
+    navigate('/dashboard');
+  };
+
+  const handleCloseReportWindow = () => {
+    setReportResult(null);
+  };
+
+  const handleMinimizeCriteria = () => {
+    criteriaWindow.toggleMinimize();
+    navigate("/dashboard");
+  };
+
+  const handleMinimizeReport = () => {
+    reportWindow.toggleMinimize();
+    navigate("/dashboard");
+  };
+
+  const lookupConfig = getLookupConfig();
+  const isShowingResults = Boolean(reportResult);
+  const criteriaWindowStyle = {
+    ...(criteriaWindow.windowProps?.style || {}),
+    ...(criteriaWindow.isMinimized
+      ? {
+          bottom: 0,
+          left: "auto",
+          right: 0,
+          top: "auto",
+          transform: "none",
+          width: 350,
+        }
+      : {}),
+  };
+  const reportWindowStyle = {
+    ...(reportWindow.windowProps?.style || {}),
+    ...(reportWindow.isMinimized
+      ? {
+          bottom: 0,
+          left: "auto",
+          right: 0,
+          top: "auto",
+          transform: "none",
+          width: 350,
+        }
+      : {}),
+  };
+
   return (
     <div className="prr-page">
-      <div className="prr-window">
-        <div className="prr-titlebar">
-          <span>{isShowingResults ? "Purchase Request Report" : "Purchase Request Report - Selection Criteria"}</span>
-          <div className="prr-titlebar-actions" aria-hidden="true">
-            <button type="button" className="prr-titlebar-btn">_</button>
-            <button type="button" className="prr-titlebar-btn">□</button>
-            <button type="button" className="prr-titlebar-btn">x</button>
+      {!isShowingResults ? (
+        <div
+          className={`prr-window${criteriaWindow.isMinimized ? " is-minimized" : ""}${criteriaWindow.isMaximized ? " is-maximized" : ""}`}
+          {...criteriaWindow.windowProps}
+          style={criteriaWindowStyle}
+        >
+          <div className="prr-titlebar" {...criteriaWindow.titleBarProps}>
+            <span>Purchase Request Report - Selection Criteria</span>
+            <div className="prr-titlebar-actions">
+              <button
+                type="button"
+                aria-label={criteriaWindow.isMinimized ? "Restore" : "Minimize"}
+                className="prr-titlebar-btn"
+                onClick={handleMinimizeCriteria}
+              />
+              <button
+                type="button"
+                aria-label={criteriaWindow.isMaximized ? "Restore Down" : "Maximize"}
+                className="prr-titlebar-btn"
+                onClick={criteriaWindow.toggleMaximize}
+              />
+              <button
+                type="button"
+                aria-label="Close"
+                className="prr-titlebar-btn"
+                onClick={handleCloseCriteriaWindow}
+              />
+            </div>
           </div>
+          <div className="prr-accent" />
+
+          {!criteriaWindow.isMinimized && (
+            <div className="prr-body">
+              {pageState.error ? <div className="prr-error">{pageState.error}</div> : null}
+              {pageState.loadingLookups ? <div className="prr-loading">Loading report criteria...</div> : null}
+
+              <div style={{ display: isShowingResults ? "none" : undefined }}>
+                <div className="prr-grid">
+                  <div className="prr-label">Type</div>
+                  <div>
+                    <select
+                      className="prr-select"
+                      value={criteria.type}
+                      onChange={(event) => updateCriteria((current) => ({ ...current, type: event.target.value }))}
+                    >
+                      <option value="Item">Item</option>
+                      <option value="Service">Service</option>
+                    </select>
+                  </div>
+
+                  <div className="prr-label">Code</div>
+                  <div className={`prr-inline-range${criteria.type === "Service" ? " prr-range-no-button" : " prr-inline-range--dual-lookup"}`}>
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.codeRange.from}
+                      onChange={(event) => updateCodeRange("codeRange", "from", event.target.value)}
+                    />
+                    {criteria.type === "Item" ? (
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "item", rangeKey: "from" })}
+                        title="Choose item code from SAP"
+                      >
+                        ...
+                      </button>
+                    ) : null}
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.codeRange.to}
+                      onChange={(event) => updateCodeRange("codeRange", "to", event.target.value)}
+                    />
+                    {criteria.type === "Item" ? (
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "item", rangeKey: "to" })}
+                        title="Choose item code to SAP"
+                      >
+                        ...
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="prr-label">Preferred Vendor</div>
+                  <div className={`prr-inline-range${criteria.type === "Service" ? " prr-range-no-button" : " prr-inline-range--dual-lookup"}`}>
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.preferredVendorRange.from}
+                      onChange={(event) => updateCodeRange("preferredVendorRange", "from", event.target.value)}
+                      disabled={criteria.type === "Service"}
+                    />
+                    {criteria.type === "Item" ? (
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "vendor", rangeKey: "from" })}
+                        title="Choose preferred vendor from SAP"
+                      >
+                        ...
+                      </button>
+                    ) : null}
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.preferredVendorRange.to}
+                      onChange={(event) => updateCodeRange("preferredVendorRange", "to", event.target.value)}
+                      disabled={criteria.type === "Service"}
+                    />
+                    {criteria.type === "Item" ? (
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "vendor", rangeKey: "to" })}
+                        title="Choose preferred vendor to SAP"
+                      >
+                        ...
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="prr-label">Item Group</div>
+                  <div>
+                    <select
+                      className="prr-select"
+                      value={criteria.itemGroup}
+                      onChange={(event) => updateCriteria((current) => ({ ...current, itemGroup: event.target.value }))}
+                      disabled={criteria.type === "Service"}
+                    >
+                      {itemGroupOptions.map((option) => (
+                        <option key={option.code} value={option.code}>
+                          {option.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="prr-properties-row">
+                  <button
+                    type="button"
+                    className="prr-button"
+                    onClick={() => setPropertiesOpen(true)}
+                    disabled={criteria.type === "Service"}
+                  >
+                    Properties
+                  </button>
+                  <div className="prr-properties-summary">{criteria.type === "Service" ? "Not used for service requests" : propertySummary}</div>
+                </div>
+
+                <div className="prr-requesters">
+                  <div className="prr-requesters-box">
+                    <div className="prr-requesters-title">Requesters</div>
+
+                    <div className="prr-requester-row">
+                      <div>
+                        <label className="prr-radio-line">
+                          <input
+                            type="radio"
+                            name="requesterType"
+                            checked={criteria.requesterType === "users"}
+                            onChange={() => updateCriteria((current) => ({ ...current, requesterType: "users" }))}
+                          />
+                          <span>Users</span>
+                        </label>
+                        {criteria.requesterUser.code ? (
+                          <div className="prr-selected-note">Selected: {formatSelectorSummary(criteria.requesterUser)}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "requesterUser", rangeKey: "from" })}
+                        title="Choose requester user"
+                      >
+                        ...
+                      </button>
+                    </div>
+
+                    <div className="prr-requester-row">
+                      <div>
+                        <label className="prr-radio-line">
+                          <input
+                            type="radio"
+                            name="requesterType"
+                            checked={criteria.requesterType === "employees"}
+                            onChange={() => updateCriteria((current) => ({ ...current, requesterType: "employees" }))}
+                          />
+                          <span>Employees</span>
+                        </label>
+                        {criteria.requesterEmployee.code ? (
+                          <div className="prr-selected-note">Selected: {formatSelectorSummary(criteria.requesterEmployee)}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "requesterEmployee", rangeKey: "from" })}
+                        title="Choose requester employee"
+                      >
+                        ...
+                      </button>
+                    </div>
+
+                    <div className="prr-requester-row" style={{ marginBottom: 0 }}>
+                      <label className="prr-radio-line">
+                        <input
+                          type="radio"
+                          name="requesterType"
+                          checked={criteria.requesterType === "usersAndEmployees"}
+                          onChange={() => updateCriteria((current) => ({ ...current, requesterType: "usersAndEmployees" }))}
+                        />
+                        <span>Users and Employees</span>
+                      </label>
+                      <span />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="prr-selector-row">
+                      <div>
+                        <label className="prr-checkbox-line">
+                          <input
+                            type="checkbox"
+                            checked={criteria.branch.enabled}
+                            onChange={(event) => updateSelector("branch", { enabled: event.target.checked })}
+                          />
+                          <span>Branch</span>
+                        </label>
+                        {criteria.branch.code ? (
+                          <div className="prr-selected-note">{formatSelectorSummary(criteria.branch)}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "branch", rangeKey: "from" })}
+                        title="Choose branch"
+                      >
+                        ...
+                      </button>
+                    </div>
+
+                    <div className="prr-selector-row">
+                      <div>
+                        <label className="prr-checkbox-line">
+                          <input
+                            type="checkbox"
+                            checked={criteria.department.enabled}
+                            onChange={(event) => updateSelector("department", { enabled: event.target.checked })}
+                          />
+                          <span>Department</span>
+                        </label>
+                        {criteria.department.code ? (
+                          <div className="prr-selected-note">{formatSelectorSummary(criteria.department)}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "department", rangeKey: "from" })}
+                        title="Choose department"
+                      >
+                        ...
+                      </button>
+                    </div>
+
+                    <div className="prr-selector-row" style={{ marginBottom: 0 }}>
+                      <div>
+                        <label className="prr-checkbox-line">
+                          <input
+                            type="checkbox"
+                            checked={criteria.project.enabled}
+                            onChange={(event) => updateSelector("project", { enabled: event.target.checked })}
+                          />
+                          <span>Project</span>
+                        </label>
+                        {criteria.project.code ? (
+                          <div className="prr-selected-note">{formatSelectorSummary(criteria.project)}</div>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="prr-button prr-chooser-btn"
+                        onClick={() => setLookupState({ open: true, type: "project", rangeKey: "from" })}
+                        title="Choose project"
+                      >
+                        ...
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="prr-date-grid">
+                  <div className="prr-label">Document No.</div>
+                  <div className="prr-inline-range prr-range-no-button">
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.documentNumberRange.from}
+                      onChange={(event) => updateCodeRange("documentNumberRange", "from", event.target.value)}
+                    />
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      className="prr-input"
+                      value={criteria.documentNumberRange.to}
+                      onChange={(event) => updateCodeRange("documentNumberRange", "to", event.target.value)}
+                    />
+                  </div>
+
+                  <div className="prr-label">Posting Date</div>
+                  <div className="prr-inline-range prr-range-no-button">
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.postingDateRange.from}
+                      onChange={(event) => updateCodeRange("postingDateRange", "from", event.target.value)}
+                    />
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.postingDateRange.to}
+                      onChange={(event) => updateCodeRange("postingDateRange", "to", event.target.value)}
+                    />
+                  </div>
+
+                  <div className="prr-label">Valid Until</div>
+                  <div className="prr-inline-range prr-range-no-button">
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.validUntilRange.from}
+                      onChange={(event) => updateCodeRange("validUntilRange", "from", event.target.value)}
+                    />
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.validUntilRange.to}
+                      onChange={(event) => updateCodeRange("validUntilRange", "to", event.target.value)}
+                    />
+                  </div>
+
+                  <div className="prr-label">Document Date</div>
+                  <div className="prr-inline-range prr-range-no-button">
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.documentDateRange.from}
+                      onChange={(event) => updateCodeRange("documentDateRange", "from", event.target.value)}
+                    />
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.documentDateRange.to}
+                      onChange={(event) => updateCodeRange("documentDateRange", "to", event.target.value)}
+                    />
+                  </div>
+
+                  <div className="prr-label">Required Date</div>
+                  <div className="prr-inline-range prr-range-no-button">
+                    <span className="prr-sub-label">From</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.requiredDateRange.from}
+                      onChange={(event) => updateCodeRange("requiredDateRange", "from", event.target.value)}
+                    />
+                    <span className="prr-sub-label">To</span>
+                    <input
+                      type="date"
+                      className="prr-input"
+                      value={criteria.requiredDateRange.to}
+                      onChange={(event) => updateCodeRange("requiredDateRange", "to", event.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="prr-checks">
+                  <label className="prr-checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={criteria.displayOpenOnly}
+                      onChange={(event) => updateCriteria((current) => ({ ...current, displayOpenOnly: event.target.checked }))}
+                    />
+                    <span>Display Open Purchase Requests Only</span>
+                  </label>
+
+                  <label className="prr-checkbox-line">
+                    <input
+                      type="checkbox"
+                      checked={criteria.displayMrpOnly}
+                      onChange={(event) => updateCriteria((current) => ({ ...current, displayMrpOnly: event.target.checked }))}
+                    />
+                    <span>Display Purchase Requests from MRP Only</span>
+                  </label>
+                </div>
+
+                <div className="prr-actions">
+                  <button
+                    type="button"
+                    className="prr-button"
+                    onClick={handleRunReport}
+                    disabled={pageState.loadingLookups || pageState.loadingReport}
+                  >
+                    {pageState.loadingReport ? "Running..." : "OK"}
+                  </button>
+                  <button
+                    type="button"
+                    className="prr-button"
+                    onClick={handleReset}
+                    disabled={pageState.loadingReport}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="prr-accent" />
+      ) : null}
 
-        <div className="prr-body">
-          {pageState.error ? <div className="prr-error">{pageState.error}</div> : null}
-          {pageState.loadingLookups ? <div className="prr-loading">Loading report criteria...</div> : null}
-
-          <div style={{ display: isShowingResults ? "none" : undefined }}>
-            <div className="prr-grid">
-            <div className="prr-label">Type</div>
-            <div>
-              <select
-                className="prr-select"
-                value={criteria.type}
-                onChange={(event) => updateCriteria((current) => ({ ...current, type: event.target.value }))}
-              >
-                <option value="Item">Item</option>
-                <option value="Service">Service</option>
-              </select>
-            </div>
-
-            <div className="prr-label">Code</div>
-            <div className={`prr-inline-range${criteria.type === "Service" ? " prr-range-no-button" : " prr-inline-range--dual-lookup"}`}>
-              <span className="prr-sub-label">From</span>
-              <input
-                className="prr-input"
-                value={criteria.codeRange.from}
-                onChange={(event) => updateCodeRange("codeRange", "from", event.target.value)}
+      {isShowingResults ? (
+        <div
+          className={`prr-window${reportWindow.isMinimized ? " is-minimized" : ""}${reportWindow.isMaximized ? " is-maximized" : ""}`}
+          {...reportWindow.windowProps}
+          style={reportWindowStyle}
+        >
+          <div className="prr-titlebar" {...reportWindow.titleBarProps}>
+            <span>Purchase Request Report</span>
+            <div className="prr-titlebar-actions">
+              <button
+                type="button"
+                aria-label={reportWindow.isMinimized ? "Restore" : "Minimize"}
+                className="prr-titlebar-btn"
+                onClick={handleMinimizeReport}
               />
-              {criteria.type === "Item" ? (
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "item", rangeKey: "from" })}
-                  title="Choose item code from SAP"
-                >
-                  ...
-                </button>
-              ) : null}
-              <span className="prr-sub-label">To</span>
-              <input
-                className="prr-input"
-                value={criteria.codeRange.to}
-                onChange={(event) => updateCodeRange("codeRange", "to", event.target.value)}
+              <button
+                type="button"
+                aria-label={reportWindow.isMaximized ? "Restore Down" : "Maximize"}
+                className="prr-titlebar-btn"
+                onClick={reportWindow.toggleMaximize}
               />
-              {criteria.type === "Item" ? (
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "item", rangeKey: "to" })}
-                  title="Choose item code to SAP"
-                >
-                  ...
-                </button>
-              ) : null}
-            </div>
-
-            <div className="prr-label">Preferred Vendor</div>
-            <div className={`prr-inline-range${criteria.type === "Service" ? " prr-range-no-button" : " prr-inline-range--dual-lookup"}`}>
-              <span className="prr-sub-label">From</span>
-              <input
-                className="prr-input"
-                value={criteria.preferredVendorRange.from}
-                onChange={(event) => updateCodeRange("preferredVendorRange", "from", event.target.value)}
-                disabled={criteria.type === "Service"}
-              />
-              {criteria.type === "Item" ? (
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "vendor", rangeKey: "from" })}
-                  title="Choose preferred vendor from SAP"
-                >
-                  ...
-                </button>
-              ) : null}
-              <span className="prr-sub-label">To</span>
-              <input
-                className="prr-input"
-                value={criteria.preferredVendorRange.to}
-                onChange={(event) => updateCodeRange("preferredVendorRange", "to", event.target.value)}
-                disabled={criteria.type === "Service"}
-              />
-              {criteria.type === "Item" ? (
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "vendor", rangeKey: "to" })}
-                  title="Choose preferred vendor to SAP"
-                >
-                  ...
-                </button>
-              ) : null}
-            </div>
-
-            <div className="prr-label">Item Group</div>
-            <div>
-              <select
-                className="prr-select"
-                value={criteria.itemGroup}
-                onChange={(event) => updateCriteria((current) => ({ ...current, itemGroup: event.target.value }))}
-                disabled={criteria.type === "Service"}
-              >
-                {itemGroupOptions.map((option) => (
-                  <option key={option.code} value={option.code}>
-                    {option.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="prr-properties-row">
-            <button
-              type="button"
-              className="prr-button"
-              onClick={() => setPropertiesOpen(true)}
-              disabled={criteria.type === "Service"}
-            >
-              Properties
-            </button>
-            <div className="prr-properties-summary">{criteria.type === "Service" ? "Not used for service requests" : propertySummary}</div>
-          </div>
-
-          <div className="prr-requesters">
-            <div className="prr-requesters-box">
-              <div className="prr-requesters-title">Requesters</div>
-
-              <div className="prr-requester-row">
-                <div>
-                  <label className="prr-radio-line">
-                    <input
-                      type="radio"
-                      name="requesterType"
-                      checked={criteria.requesterType === "users"}
-                      onChange={() => updateCriteria((current) => ({ ...current, requesterType: "users" }))}
-                    />
-                    <span>Users</span>
-                  </label>
-                  {criteria.requesterUser.code ? (
-                    <div className="prr-selected-note">Selected: {formatSelectorSummary(criteria.requesterUser)}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "requesterUser", rangeKey: "from" })}
-                  title="Choose requester user"
-                >
-                  ...
-                </button>
-              </div>
-
-              <div className="prr-requester-row">
-                <div>
-                  <label className="prr-radio-line">
-                    <input
-                      type="radio"
-                      name="requesterType"
-                      checked={criteria.requesterType === "employees"}
-                      onChange={() => updateCriteria((current) => ({ ...current, requesterType: "employees" }))}
-                    />
-                    <span>Employees</span>
-                  </label>
-                  {criteria.requesterEmployee.code ? (
-                    <div className="prr-selected-note">Selected: {formatSelectorSummary(criteria.requesterEmployee)}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "requesterEmployee", rangeKey: "from" })}
-                  title="Choose requester employee"
-                >
-                  ...
-                </button>
-              </div>
-
-              <div className="prr-requester-row" style={{ marginBottom: 0 }}>
-                <label className="prr-radio-line">
-                  <input
-                    type="radio"
-                    name="requesterType"
-                    checked={criteria.requesterType === "usersAndEmployees"}
-                    onChange={() => updateCriteria((current) => ({ ...current, requesterType: "usersAndEmployees" }))}
-                  />
-                  <span>Users and Employees</span>
-                </label>
-                <span />
-              </div>
-            </div>
-
-            <div>
-              <div className="prr-selector-row">
-                <div>
-                  <label className="prr-checkbox-line">
-                    <input
-                      type="checkbox"
-                      checked={criteria.branch.enabled}
-                      onChange={(event) => updateSelector("branch", { enabled: event.target.checked })}
-                    />
-                    <span>Branch</span>
-                  </label>
-                  {criteria.branch.code ? (
-                    <div className="prr-selected-note">{formatSelectorSummary(criteria.branch)}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "branch", rangeKey: "from" })}
-                  title="Choose branch"
-                >
-                  ...
-                </button>
-              </div>
-
-              <div className="prr-selector-row">
-                <div>
-                  <label className="prr-checkbox-line">
-                    <input
-                      type="checkbox"
-                      checked={criteria.department.enabled}
-                      onChange={(event) => updateSelector("department", { enabled: event.target.checked })}
-                    />
-                    <span>Department</span>
-                  </label>
-                  {criteria.department.code ? (
-                    <div className="prr-selected-note">{formatSelectorSummary(criteria.department)}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "department", rangeKey: "from" })}
-                  title="Choose department"
-                >
-                  ...
-                </button>
-              </div>
-
-              <div className="prr-selector-row" style={{ marginBottom: 0 }}>
-                <div>
-                  <label className="prr-checkbox-line">
-                    <input
-                      type="checkbox"
-                      checked={criteria.project.enabled}
-                      onChange={(event) => updateSelector("project", { enabled: event.target.checked })}
-                    />
-                    <span>Project</span>
-                  </label>
-                  {criteria.project.code ? (
-                    <div className="prr-selected-note">{formatSelectorSummary(criteria.project)}</div>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  className="prr-button prr-chooser-btn"
-                  onClick={() => setLookupState({ open: true, type: "project", rangeKey: "from" })}
-                  title="Choose project"
-                >
-                  ...
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="prr-date-grid">
-            <div className="prr-label">Document No.</div>
-            <div className="prr-inline-range prr-range-no-button">
-              <span className="prr-sub-label">From</span>
-              <input
-                className="prr-input"
-                value={criteria.documentNumberRange.from}
-                onChange={(event) => updateCodeRange("documentNumberRange", "from", event.target.value)}
-              />
-              <span className="prr-sub-label">To</span>
-              <input
-                className="prr-input"
-                value={criteria.documentNumberRange.to}
-                onChange={(event) => updateCodeRange("documentNumberRange", "to", event.target.value)}
-              />
-            </div>
-
-            <div className="prr-label">Posting Date</div>
-            <div className="prr-inline-range prr-range-no-button">
-              <span className="prr-sub-label">From</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.postingDateRange.from}
-                onChange={(event) => updateCodeRange("postingDateRange", "from", event.target.value)}
-              />
-              <span className="prr-sub-label">To</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.postingDateRange.to}
-                onChange={(event) => updateCodeRange("postingDateRange", "to", event.target.value)}
-              />
-            </div>
-
-            <div className="prr-label">Valid Until</div>
-            <div className="prr-inline-range prr-range-no-button">
-              <span className="prr-sub-label">From</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.validUntilRange.from}
-                onChange={(event) => updateCodeRange("validUntilRange", "from", event.target.value)}
-              />
-              <span className="prr-sub-label">To</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.validUntilRange.to}
-                onChange={(event) => updateCodeRange("validUntilRange", "to", event.target.value)}
-              />
-            </div>
-
-            <div className="prr-label">Document Date</div>
-            <div className="prr-inline-range prr-range-no-button">
-              <span className="prr-sub-label">From</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.documentDateRange.from}
-                onChange={(event) => updateCodeRange("documentDateRange", "from", event.target.value)}
-              />
-              <span className="prr-sub-label">To</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.documentDateRange.to}
-                onChange={(event) => updateCodeRange("documentDateRange", "to", event.target.value)}
-              />
-            </div>
-
-            <div className="prr-label">Required Date</div>
-            <div className="prr-inline-range prr-range-no-button">
-              <span className="prr-sub-label">From</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.requiredDateRange.from}
-                onChange={(event) => updateCodeRange("requiredDateRange", "from", event.target.value)}
-              />
-              <span className="prr-sub-label">To</span>
-              <input
-                type="date"
-                className="prr-input"
-                value={criteria.requiredDateRange.to}
-                onChange={(event) => updateCodeRange("requiredDateRange", "to", event.target.value)}
+              <button
+                type="button"
+                aria-label="Close"
+                className="prr-titlebar-btn"
+                onClick={handleCloseReportWindow}
               />
             </div>
           </div>
+          <div className="prr-accent" />
 
-          <div className="prr-checks">
-            <label className="prr-checkbox-line">
-              <input
-                type="checkbox"
-                checked={criteria.displayOpenOnly}
-                onChange={(event) => updateCriteria((current) => ({ ...current, displayOpenOnly: event.target.checked }))}
-              />
-              <span>Display Open Purchase Requests Only</span>
-            </label>
-
-            <label className="prr-checkbox-line">
-              <input
-                type="checkbox"
-                checked={criteria.displayMrpOnly}
-                onChange={(event) => updateCriteria((current) => ({ ...current, displayMrpOnly: event.target.checked }))}
-              />
-              <span>Display Purchase Requests from MRP Only</span>
-            </label>
-          </div>
-
-            <div className="prr-actions">
-            <button
-              type="button"
-              className="prr-button"
-              onClick={handleRunReport}
-              disabled={pageState.loadingLookups || pageState.loadingReport}
-            >
-              {pageState.loadingReport ? "Running..." : "OK"}
-            </button>
-            <button
-              type="button"
-              className="prr-button"
-              onClick={handleReset}
-              disabled={pageState.loadingReport}
-            >
-              Cancel
-            </button>
-            </div>
-          </div>
-
-          {isShowingResults ? (
+          {!reportWindow.isMinimized && (
+            <div className="prr-body">
             <div className="prr-results">
               <div className="prr-results-header">
                 <div>
@@ -695,6 +818,14 @@ function PurchaseRequestReportPage() {
                   </div>
                 </div>
                 <div className="prr-results-actions">
+                  <button
+                    type="button"
+                    className="sales-analysis-report__back-btn"
+                    onClick={handleBackToCriteria}
+                    aria-label="Back to criteria"
+                  >
+                    &lt;
+                  </button>
                   <button type="button" className="prr-button" onClick={handleBackToCriteria}>
                     Selection Criteria
                   </button>
@@ -762,9 +893,10 @@ function PurchaseRequestReportPage() {
                 <div className="prr-empty">No matching purchase requests found for the selected criteria.</div>
               )}
             </div>
-          ) : null}
+            </div>
+          )}
         </div>
-      </div>
+      ) : null}
 
       <SapLookupModal
         open={lookupState.open}
@@ -789,3 +921,5 @@ function PurchaseRequestReportPage() {
 }
 
 export default PurchaseRequestReportPage;
+
+

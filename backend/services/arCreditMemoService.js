@@ -255,6 +255,11 @@ const submitARCreditMemo = async (payload) => {
 
     console.log("🔥 [ARCreditMemoService] SAP AR CREDIT MEMO PAYLOAD:", JSON.stringify(sapPayload, null, 2));
 
+    // Add header UDFs if any
+    if (payload.header_udfs && Object.keys(payload.header_udfs).length > 0) {
+      Object.assign(sapPayload, payload.header_udfs);
+    }
+
     // Use Service Layer for POST operations - Credit Memos endpoint
     const response = await sapService.request({
       method: 'post',
@@ -328,6 +333,11 @@ const updateARCreditMemo = async (docEntry, payload) => {
         BaseLine: l.baseLine !== undefined ? Number(l.baseLine) : undefined,
       }))
     };
+
+    // Add header UDFs if any
+    if (payload.header_udfs && Object.keys(payload.header_udfs).length > 0) {
+      Object.assign(sapPayload, payload.header_udfs);
+    }
 
     // Use Service Layer for PATCH operations
     const response = await sapService.request({

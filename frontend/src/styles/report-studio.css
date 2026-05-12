@@ -426,7 +426,7 @@
   justify-content: center;
   padding: 18px;
   background: rgba(12, 25, 42, 0.42);
-  z-index: 1000;
+  z-index: 1600;
 }
 
 .rs-modal {

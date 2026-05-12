@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
+import { API_BASE_URL } from '../config/appConfig';
 
 
 const getTodayDate = () => new Date().toISOString().split('T')[0];
@@ -246,7 +247,7 @@ function PurchaseOrderPage() {
     const loadReferenceData = async () => {
       setPageState((prev) => ({ ...prev, loading: true, error: '', success: '' }));
       try {
-        const response = await axios.get('http://localhost:5001/purchase-order/reference-data', {
+        const response = await axios.get(`${API_BASE_URL}/purchase-order/reference-data`, {
          params: { company_id: PURCHASE_ORDER_COMPANY_ID },
         });
         if (!ignore) {
@@ -694,7 +695,7 @@ function PurchaseOrderPage() {
     setPageState((prev) => ({ ...prev, posting: true, error: '', success: '' }));
 
     try {
-      const response = await axios.post('http://localhost:5001/purchase-order/submit', {
+      const response = await axios.post(`${API_BASE_URL}/purchase-order/submit`, {
         company_id: PURCHASE_ORDER_COMPANY_ID,
         header,
         lines,

@@ -104,6 +104,132 @@ const humanizeParameterName = (value) =>
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ');
 
+const normalizeLookupColumnKey = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9]+/g, '');
+
+const buildParameterOption = (entry, paramType) => {
+  if (entry == null || entry === '') {
+    return null;
+  }
+
+  if (typeof entry === 'object') {
+    const valueCandidate =
+      entry.value ??
+      entry.Value ??
+      entry.code ??
+      entry.Code ??
+      entry.key ??
+      entry.Key ??
+      entry.name ??
+      entry.Name ??
+      entry.description ??
+      entry.Description;
+
+    if (valueCandidate == null || valueCandidate === '') {
+      return null;
+    }
+
+    const labelCandidate =
+      entry.label ??
+      entry.Label ??
+      entry.description ??
+      entry.Description ??
+      entry.name ??
+      entry.Name ??
+      valueCandidate;
+
+    return {
+      value: paramType === 'number' ? String(Number(valueCandidate)) : String(valueCandidate),
+      label: String(labelCandidate),
+    };
+  }
+
+  return {
+    value: paramType === 'number' ? String(Number(entry)) : String(entry),
+    label: String(entry),
+  };
+};
+
+const extractParameterOptions = (row, paramType, defaultValue, displayName) => {
+  if (paramType !== 'string') {
+    return [];
+  }
+
+  const sources = [
+    row?.validValues,
+    row?.ValidValues,
+    row?.values,
+    row?.Values,
+    row?.listOfValues,
+    row?.ListOfValues,
+    row?.lovValues,
+    row?.LovValues,
+    row?.initialValues,
+    row?.InitialValues,
+  ].filter(Array.isArray);
+
+  const optionMap = new Map();
+
+  sources.forEach((source) => {
+    source.forEach((entry) => {
+      const option = buildParameterOption(entry, paramType);
+      if (!option || !option.value) {
+        return;
+      }
+
+      const key = option.value.toLowerCase();
+      if (!optionMap.has(key)) {
+        optionMap.set(key, option);
+      }
+    });
+  });
+
+  if (!optionMap.size && /report type/i.test(String(displayName || '')) && defaultValue) {
+    optionMap.set(String(defaultValue).toLowerCase(), {
+      value: String(defaultValue),
+      label: String(defaultValue),
+    });
+  }
+
+  return [...optionMap.values()];
+};
+
+const parseLookupSpec = (value) => {
+  const text = String(value || '').trim();
+  const match = text.match(/^(.+?)@select\s+(.+?)\s+from\s+([A-Za-z0-9_]+)$/i);
+
+  if (!match) {
+    return null;
+  }
+
+  const label = String(match[1] || '').trim();
+  const table = String(match[3] || '').trim().toUpperCase();
+  const columns = String(match[2] || '')
+    .split(',')
+    .map((column) => String(column || '').trim())
+    .filter(Boolean)
+    .map((column) => ({
+      key: normalizeLookupColumnKey(column),
+      label: column,
+    }))
+    .filter((column) => column.key);
+
+  if (!table || !columns.length) {
+    return null;
+  }
+
+  return {
+    type: 'sql-lookup',
+    title: label ? `Select ${label}` : 'Select Value',
+    table,
+    columns,
+    valueKey: columns[0].key,
+    displayKey: columns[1]?.key || columns[0].key,
+  };
+};
+
 const mapCrParameterType = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
 
@@ -168,14 +294,24 @@ const normalizeCrParameter = (row, index) => {
   const sortOrder = Number(row?.sortOrder ?? row?.SortOrder);
   const isOptionalPrompt = normalizeBoolean(row?.isOptionalPrompt);
   const allowNullValue = normalizeBoolean(row?.allowNullValue);
+  const defaultValue = extractParameterDefaultValue(row, paramType);
+  const lookup =
+    parseLookupSpec(displayNameRaw) ||
+    parseLookupSpec(paramName);
+  const displayName = lookup
+    ? humanizeParameterName(String(displayNameRaw.split(/@select/i)[0] || paramName).trim()) || paramName
+    : humanizeParameterName(displayNameRaw || paramName) || paramName;
+  const options = extractParameterOptions(row, paramType, defaultValue, displayName);
 
   return {
     paramName,
-    displayName: humanizeParameterName(displayNameRaw || paramName) || paramName,
+    displayName,
     paramType,
     isRequired: !isOptionalPrompt || !allowNullValue,
     sortOrder: Number.isFinite(sortOrder) ? sortOrder : index,
-    defaultValue: extractParameterDefaultValue(row, paramType),
+    defaultValue,
+    options,
+    lookup,
   };
 };
 

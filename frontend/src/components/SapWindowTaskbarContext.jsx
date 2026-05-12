@@ -1,10 +1,26 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 const SapWindowTaskbarContext = createContext(null);
+const TASKBAR_STORAGE_KEY = "sap-window-taskbar/tasks";
+const WINDOW_STATE_STORAGE_PREFIX = "sap-window-state:";
+
+const readStoredTasks = () => {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const rawValue = window.sessionStorage.getItem(TASKBAR_STORAGE_KEY);
+    if (!rawValue) return [];
+
+    const parsedValue = JSON.parse(rawValue);
+    return Array.isArray(parsedValue) ? parsedValue : [];
+  } catch (_error) {
+    return [];
+  }
+};
 
 export function SapWindowTaskbarProvider({ children }) {
-  const [tasks, setTasks] = useState([]);
+  const [tasks, setTasks] = useState(readStoredTasks);
 
   const upsertTask = useCallback((task) => {
     if (!task?.id) return;
@@ -36,8 +52,16 @@ export function SapWindowTaskbarProvider({ children }) {
   }, []);
 
   const removeTask = useCallback((taskId) => {
-    setTasks((current) => current.filter((task) => task.id !== taskId));
+    setTasks((current) => {
+      const next = current.filter((task) => task.id !== taskId);
+      return next.length === current.length ? current : next;
+    });
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(TASKBAR_STORAGE_KEY, JSON.stringify(tasks));
+  }, [tasks]);
 
   const value = useMemo(
     () => ({
@@ -68,7 +92,15 @@ export function useSapWindowTaskbarActions() {
     if (minimizeActive) {
       window.dispatchEvent(new CustomEvent("sap-window-minimize-active", { detail: { excludeId: task.id } }));
     }
-    taskbar.removeTask(task.id);
+    if (typeof window !== "undefined") {
+      const storageKey = `${WINDOW_STATE_STORAGE_PREFIX}${task.id}`;
+      const nextState = {
+        isMaximized: false,
+        isMinimized: false,
+      };
+      window.sessionStorage.setItem(storageKey, JSON.stringify(nextState));
+    }
+    taskbar?.removeTask(task.id);
     window.dispatchEvent(new CustomEvent("sap-window-restore", { detail: { id: task.id } }));
 
     if (task.path && task.path !== window.location.pathname) {
@@ -85,7 +117,9 @@ export function useSapWindowTaskbarActions() {
 
   return {
     closeActiveAndRestorePrevious,
+    removeTask: taskbar?.removeTask,
     restoreTask,
+    upsertTask: taskbar?.upsertTask,
     taskCount: taskbar?.tasks?.length || 0,
   };
 }

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import "../../modules/item-master/styles/itemMaster.css";
 import "../../modules/sales-order/styles/salesOrder.css";
 import "../../styles/salesAnalysis.css";
+import "../../styles/sales-analysis-report.css";
 import SapLookupModal from "../../components/common/SapLookupModal";
 import SalesAnalysisPropertiesModal from "../../components/reports/SalesAnalysisPropertiesModal";
 import useFloatingWindow from "../../components/reports/useFloatingWindow";
@@ -221,6 +222,16 @@ export default function PurchaseAnalysisReport() {
   const handleCloseReportWindow = () => {
     setSummaryResult(null);
     setDetailResult(null);
+  };
+
+  const handleMinimizeCriteriaWindow = () => {
+    criteriaWindow.toggleMinimize();
+    navigate("/dashboard");
+  };
+
+  const handleMinimizeReportWindow = () => {
+    reportWindow.toggleMinimize();
+    navigate("/dashboard");
   };
 
   const handleRun = async () => {
@@ -827,7 +838,6 @@ export default function PurchaseAnalysisReport() {
 
     const reportStyle = {
       ...(reportWindow.windowProps?.style || {}),
-      ...(reportWindow.isMinimized ? { top: 'auto', bottom: 0, left: 'auto', right: criteriaWindow.isMinimized ? 360 : 0, transform: 'none', width: 350 } : {})
     };
 
     return (
@@ -844,7 +854,7 @@ export default function PurchaseAnalysisReport() {
             <button
               type="button"
               aria-label={reportWindow.isMinimized ? 'Restore' : 'Minimize'}
-              onClick={reportWindow.toggleMinimize}
+              onClick={handleMinimizeReportWindow}
             >
               {reportWindow.isMinimized ? '□' : '-'}
             </button>
@@ -883,7 +893,6 @@ export default function PurchaseAnalysisReport() {
         {...criteriaWindow.windowProps}
         style={{
           ...(criteriaWindow.windowProps?.style || {}),
-          ...(criteriaWindow.isMinimized ? { top: 'auto', bottom: 0, left: 'auto', right: 0, transform: 'none', width: 350 } : {})
         }}
       >
         <div className="sales-analysis-window__titlebar" {...criteriaWindow.titleBarProps}>
@@ -892,7 +901,7 @@ export default function PurchaseAnalysisReport() {
             <button
               type="button"
               aria-label={criteriaWindow.isMinimized ? 'Restore' : 'Minimize'}
-              onClick={criteriaWindow.toggleMinimize}
+              onClick={handleMinimizeCriteriaWindow}
             >
               {criteriaWindow.isMinimized ? '□' : '-'}
             </button>

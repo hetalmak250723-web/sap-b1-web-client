@@ -124,7 +124,9 @@ function App() {
               <Route path="/sales-order/find" element={<SalesOrderList />} />
               <Route path="/sales-quotation" element={<SalesQuotation />} />
               <Route path="/sales-quotation/find" element={<SalesQuotationList />} />
-              <Route path="/reports" element={<ReportsStudioPage />} />
+              <Route path="/reportlayoutmanager" element={<ReportsStudioPage />} />
+              <Route path="/reportlayoutmanager/menu/:menuId" element={<ReportsStudioPage />} />
+              <Route path="/reportlayoutmanager/report/:reportId" element={<ReportsStudioPage />} />
               <Route path="/reports/sales/analysis" element={<SalesAnalysisReportPage />} />
               <Route path="/reports/purchasing/analysis" element={<PurchaseAnalysisReport />} />
               <Route path="/reports/purchase-analysis" element={<PurchaseAnalysisReport />} />

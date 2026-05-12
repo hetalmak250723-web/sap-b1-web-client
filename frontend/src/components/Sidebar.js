@@ -5,7 +5,6 @@ import { normalizePath } from '../auth/routeUtils';
 import '../styles/sidebar.css';
 
 const DASHBOARD_PATH = '/dashboard';
-const REPORT_LAYOUT_MANAGER_PATH = '/reports';
 const STATIC_DASHBOARD_MENU = {
   menuId: 'dashboard-static',
   menuName: 'Dashboard',
@@ -41,11 +40,9 @@ const buildShortLabel = (label, fallback = 'MN') => {
   return `${words[0][0]}${words[1][0]}`.toUpperCase();
 };
 
-const LEGACY_REPORT_LAYOUT_MANAGER_NAME = 'report layout manager';
 const REPORT_STUDIO_NAME = 'report studio';
 const MASTER_MENU_NAME = 'master';
 const ALLOWED_MASTER_CHILDREN = new Set(['item master', 'business partner']);
-
 const getDisplayMenuName = (menu) => {
   const normalized = String(menu?.menuName || '').trim().toLowerCase();
   if (normalized === 'sales' && !menu?.parentId) {
@@ -117,6 +114,14 @@ const sortTopLevelMenus = (menus = []) =>
     return String(a.menuId).localeCompare(String(b.menuId), undefined, { numeric: true });
   });
 
+const sortMenuChildren = (menus = []) =>
+  [...menus].sort((a, b) => {
+    if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
+      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
+    }
+
+    return String(a.menuName || '').localeCompare(String(b.menuName || ''));
+  });
 const buildSidebarMenus = (menus = []) => {
   const { dashboardMenu, remainingMenus } = extractDashboardMenu(menus);
 
@@ -132,13 +137,6 @@ const buildSidebarMenus = (menus = []) => {
             ),
           )
         : children;
-
-      if (
-        menuPath === REPORT_LAYOUT_MANAGER_PATH
-        || normalizeMenuPriorityName(item.menuName) === LEGACY_REPORT_LAYOUT_MANAGER_NAME
-      ) {
-        return nextItems;
-      }
 
       if (!menuPath && !filteredChildren.length) {
         return nextItems;
@@ -163,25 +161,32 @@ const hasActiveChild = (menu, pathname) => {
   return menu.children?.some((child) => hasActiveChild(child, pathname));
 };
 
-const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname }) => {
+const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname, depth = 0 }) => {
   const hasChildren = Boolean(menu.children?.length);
   const menuPath = menu.menuPath ? normalizePath(menu.menuPath) : '';
   const isOpen = openState[menu.menuId] ?? hasActiveChild(menu, pathname);
   const displayMenuName = getDisplayMenuName(menu);
   const shortLabel = buildShortLabel(displayMenuName, buildShortLabel(menu.icon, 'MN'));
+  const isNested = depth > 0;
 
   if (hasChildren) {
     return (
       <div className="sidebar__section">
         <button
           type="button"
-          className={`sidebar__section-toggle${isOpen ? ' is-open' : ''}`}
+          className={`sidebar__section-toggle${isOpen ? ' is-open' : ''}${isNested ? ' sidebar__section-toggle--nested' : ''}`}
           onClick={() => setOpenState((current) => ({ ...current, [menu.menuId]: !isOpen }))}
           title={collapsed ? displayMenuName : undefined}
         >
+          <span className="sidebar__section-icon" aria-hidden="true">{shortLabel}</span>
           <span className="sidebar__section-title">
             {collapsed ? shortLabel : displayMenuName}
           </span>
+          {!collapsed ? (
+            <span className={`sidebar__section-caret${isOpen ? ' is-open' : ''}`} aria-hidden="true">
+              {'>'}
+            </span>
+          ) : null}
         </button>
 
         {isOpen ? (
@@ -194,6 +199,7 @@ const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname })
                 openState={openState}
                 setOpenState={setOpenState}
                 pathname={pathname}
+                depth={depth + 1}
               />
             ))}
           </div>
@@ -211,7 +217,7 @@ const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname })
       to={menuPath}
       end={menuPath === DASHBOARD_PATH}
       className={({ isActive }) =>
-        `sidebar__link${isActive ? ' sidebar__link--active' : ''}`
+        `sidebar__link${isActive ? ' sidebar__link--active' : ''}${isNested ? ' sidebar__link--nested' : ''}`
       }
       title={collapsed ? displayMenuName : undefined}
     >
@@ -226,7 +232,11 @@ export default function Sidebar() {
   const { menus, company } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [openState, setOpenState] = useState({});
-  const sidebarMenus = useMemo(() => buildSidebarMenus(menus), [menus]);
+
+  const sidebarMenus = useMemo(
+    () => buildSidebarMenus(menus),
+    [menus],
+  );
 
   return (
     <aside className={`sidebar-shell${collapsed ? ' is-collapsed' : ''}`}>
@@ -263,6 +273,7 @@ export default function Sidebar() {
                   openState={openState}
                   setOpenState={setOpenState}
                   pathname={location.pathname}
+                  depth={0}
                 />
               ))
             ) : (

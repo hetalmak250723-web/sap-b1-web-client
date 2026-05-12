@@ -5,6 +5,8 @@
 }
 
 .sar-window {
+  max-width: 920px;
+  width: 920px;
   border: 1px solid #c8d0da;
   background: #fff;
   box-shadow: inset 0 1px 0 #fff;
@@ -51,13 +53,13 @@
 
 .sar-criteria-grid {
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 10px;
   align-items: start;
 }
 
 .sar-criteria-grid--compact {
-  grid-template-columns: 520px minmax(0, 1fr);
+  grid-template-columns: 460px minmax(0, 1fr);
 }
 
 .sar-criteria-left,

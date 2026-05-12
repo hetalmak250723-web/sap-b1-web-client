@@ -6,13 +6,17 @@
 }
 
 .sales-analysis-window {
-  max-width: 1040px;
-  width: min(1040px, calc(100vw - 220px));
+  max-width: 920px;
+  width: min(920px, calc(100vw - 220px));
   max-height: calc(100vh - 170px);
   background: #efefef;
   border: 1px solid #8e8e8e;
   box-shadow: 0 18px 42px rgba(53, 66, 80, 0.2);
   overflow: hidden;
+}
+
+.sales-analysis-window.is-minimized {
+  display: none;
 }
 
 .sales-analysis-window--report {
@@ -141,7 +145,7 @@
   border: 1px solid #a0a0a0;
   padding: 10px 12px 12px;
   min-height: auto;
-  min-width: 980px;
+  min-width: 860px;
 }
 
 .sales-analysis-panel__row {

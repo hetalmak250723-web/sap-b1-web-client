@@ -49,7 +49,7 @@ import {
   ROW_UDF_DEFINITIONS,
   createUdfState,
   readSavedFormSettings,
-} from '../../config/purchaseOrderForm';
+} from '../../config/arCreditMemoForm';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const getErrMsg = (e, fb) => {
@@ -182,7 +182,6 @@ function ARCreditMemo() {
   const [headerUdfs, setHeaderUdfs] = useState(() => createUdfState(HEADER_UDF_DEFINITIONS));
   const [formSettings, setFormSettings] = useState(() => readSavedFormSettings());
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarOrientation, setSidebarOrientation] = useState('vertical');
   const [formSettingsOpen, setFormSettingsOpen] = useState(false);
   const [refData, setRefData] = useState({
     company: '', vendors: [], contacts: [], pay_to_addresses: [], items: [],
@@ -232,6 +231,7 @@ function ARCreditMemo() {
     tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
   };
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+  const hasBuyerCode = Boolean(String(header.vendor || '').trim());
 
   // Continue in next part...
 
@@ -1852,20 +1852,9 @@ function ARCreditMemo() {
         <button
           type="button"
           className="del-btn"
-          onClick={() => {
-            setSidebarOpen(p => !p);
-            if (!sidebarOpen) setSidebarOrientation('horizontal');
-          }}
+          onClick={() => setSidebarOpen(p => !p)}
         >
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
-        </button>
-        <button
-          type="button"
-          className="del-btn"
-          onClick={() => setSidebarOrientation(o => (o === 'vertical' ? 'horizontal' : 'vertical'))}
-          disabled={!sidebarOpen}
-        >
-          Sidebar: {sidebarOrientation === 'vertical' ? 'Vertical' : 'Horizontal'}
         </button>
         <button type="button" className="del-btn" onClick={() => setFormSettingsOpen(p => !p)}>
           Form Settings
@@ -1925,20 +1914,9 @@ function ARCreditMemo() {
         </div>
       )}
 
-      <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div style={{ padding: '0 12px' }}>
-        {sidebarOpen && sidebarOrientation === 'horizontal' && (
-          <HeaderUdfSidebar
-            isOpen={sidebarOpen}
-            fields={visHdrUdfs}
-            formSettings={formSettings}
-            values={headerUdfs}
-            onFieldChange={handleHeaderUdfChange}
-            orientation="horizontal"
-          />
-        )}
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: sidebarOpen && sidebarOrientation === 'vertical' ? '0 0 calc(75% - 6px)' : '1' }}>
+      <fieldset className="del-fieldset" disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+      <div className={`so-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+        <div className="so-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
             <div className="del-header-card">
@@ -2381,18 +2359,21 @@ function ARCreditMemo() {
 
           </div>{/* end main col */}
 
-          {sidebarOpen && sidebarOrientation === 'vertical' && (
+          <fieldset
+            className="del-fieldset"
+            disabled={!hasBuyerCode}
+            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+          >
             <HeaderUdfSidebar
+              className="so-layout__sidebar"
               isOpen={sidebarOpen}
               fields={visHdrUdfs}
               formSettings={formSettings}
               values={headerUdfs}
               onFieldChange={handleHeaderUdfChange}
-              orientation="vertical"
             />
-          )}
+          </fieldset>
         </div>
-      </div>
 
       </fieldset>
 

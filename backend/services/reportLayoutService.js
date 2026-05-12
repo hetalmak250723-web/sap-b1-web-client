@@ -253,7 +253,7 @@ const SAMPLE_LOGO =
 const REPORT_LAYOUT_MENU = {
   menuId: 990001,
   menuName: 'Report Layout Manager',
-  menuPath: '/report-layout-manager',
+  menuPath: '/reportlayoutmanager',
   parentId: null,
   icon: 'RL',
   sortOrder: 990001,

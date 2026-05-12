@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
+import { API_BASE_URL } from "../config/appConfig";
 
 /* ================= COMMON ================= */
 const Input = (props) => (
@@ -58,8 +59,8 @@ export default function PurchaseOrderPage() {
   /* ================= LOAD ================= */
   useEffect(() => {
     const load = async () => {
-      await axios.post("http://localhost:5001/api/login");
-      const res = await axios.get("http://localhost:5001/api/items");
+      await axios.post(`${API_BASE_URL}/login`);
+      const res = await axios.get(`${API_BASE_URL}/items`);
       setItems(res.data);
     };
     load();
@@ -137,7 +138,7 @@ export default function PurchaseOrderPage() {
         }))
     };
 
-    await axios.post("http://localhost:5001/api/purchase-order", payload);
+    await axios.post(`${API_BASE_URL}/purchase-order`, payload);
 
     alert("PO Created");
   };

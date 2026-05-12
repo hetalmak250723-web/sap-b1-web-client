@@ -238,6 +238,11 @@ const submitSalesQuotation = async (payload) => {
       sapPayload.U_PlaceOfSupply = payload.header.placeOfSupply;
     }
 
+    // Add header UDFs if any
+    if (payload.header_udfs && Object.keys(payload.header_udfs).length > 0) {
+      Object.assign(sapPayload, payload.header_udfs);
+    }
+
     console.log('🔥 SAP Quotation Payload:', JSON.stringify(sapPayload, null, 2));
 
     const response = await sapService.request({
@@ -308,6 +313,11 @@ const updateSalesQuotation = async (docEntry, payload) => {
 
     if (payload.header.placeOfSupply) {
       sapPayload.U_PlaceOfSupply = payload.header.placeOfSupply;
+    }
+
+    // Add header UDFs if any
+    if (payload.header_udfs && Object.keys(payload.header_udfs).length > 0) {
+      Object.assign(sapPayload, payload.header_udfs);
     }
 
     await sapService.request({

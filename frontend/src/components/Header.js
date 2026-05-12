@@ -19,7 +19,6 @@ const Header = () => {
 
   const flattenedMenus = flattenMenuTree(menus)
     .filter((menu) => menu?.menuPath)
-    .filter((menu) => String(menu?.menuName || '').trim().toLowerCase() !== 'report layout manager')
     .map((menu) => ({
       menuId: menu.menuId,
       menuName: getDisplayMenuName(menu.menuName),
