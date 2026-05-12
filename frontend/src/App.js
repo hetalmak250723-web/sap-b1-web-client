@@ -59,8 +59,11 @@ import SalesAnalysisReportPage from "./pages/SalesAnalysisReportPage";
 import PurchaseAnalysisReport from "./pages/PurchaseAnalysisReport";
 import PurchaseRequestReportPage from "./pages/PurchaseRequestReportPage";
 import ReportsStudioPage from "./pages/ReportsStudioPage";
+import AdminPanelHome from "./pages/AdminPanelHome";
+import AdminPanelEntity from "./pages/AdminPanelEntity";
 import "./App.css";
 import "./styles/auth.css";
+import "./styles/admin-panel.css";
 
 function App() {
   return (
@@ -132,6 +135,8 @@ function App() {
               <Route path="/reports/purchase-analysis" element={<PurchaseAnalysisReport />} />
               <Route path="/reports/purchase/analysis" element={<PurchaseAnalysisReport />} />
               <Route path="/reports/purchasing/purchase-request-report" element={<PurchaseRequestReportPage />} />
+              <Route path="/admin" element={<AdminPanelHome />} />
+              <Route path="/admin/:entityKey" element={<AdminPanelEntity />} />
               <Route path="/bom" element={<BOM />} />
               <Route path="/production-order" element={<ProductionOrder />} />
               <Route path="/issue-for-production" element={<IssueForProduction />} />

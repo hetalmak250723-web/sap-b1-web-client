@@ -28,6 +28,7 @@ const TOP_LEVEL_MENU_PRIORITY = new Map([
   ['inventory', 5],
   ['reports', 6],
   ['report layout manager', 7],
+  ['admin panel', 8],
 ]);
 
 const buildShortLabel = (label, fallback = 'MN') => {
