@@ -17,6 +17,9 @@ router.get('/reference-data', deliveryController.getReferenceData);
 router.get('/customers/search', deliveryController.getCustomerFilterOptions);
 router.get('/customers/:customerCode', deliveryController.getCustomerDetails);
 
+// Sales employees setup
+router.post('/sales-employees/setup', deliveryController.saveSalesEmployeesSetup);
+
 // Document series
 router.get('/series', deliveryController.getDocumentSeries);
 router.get('/series/:series/next-number', deliveryController.getNextNumber);

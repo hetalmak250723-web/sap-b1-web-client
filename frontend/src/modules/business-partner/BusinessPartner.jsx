@@ -155,6 +155,11 @@ const normalizeBP = (data) => {
   if (!d.BPBankAccounts)   d.BPBankAccounts   = [];
   if (!d.BPWithholdingTaxCollection) d.BPWithholdingTaxCollection = [];
   if (!d.BPFiscalTaxIDCollection) d.BPFiscalTaxIDCollection = [];
+  d.ContactEmployees = d.ContactEmployees.map((contact) => ({
+    ...contact,
+    Address: contact.Address || contact.Department || "",
+    PlaceOfBirth: contact.PlaceOfBirth || contact.CityOfBirth || "",
+  }));
   d.BPBankAccounts = d.BPBankAccounts.map((row, index) => ({
     ...row,
     BankName: row.BankName || (index === 0 ? d.PaymentBankName || "" : ""),
@@ -425,14 +430,40 @@ function buildPayload(form) {
   if (form.ContactEmployees?.length > 0) {
     p.ContactEmployees = form.ContactEmployees
       .filter((c) => c.Name && c.Name !== "Define New")
-      .map((c) => ({
-        Name: c.Name, FirstName: c.FirstName, MiddleName: c.MiddleName, LastName: c.LastName,
-        Title: c.Title, Position: c.Position, Department: c.Department,
-        Phone1: c.Phone1, Phone2: c.Phone2, MobilePhone: c.MobilePhone,
-        Fax: c.Fax, E_Mail: c.E_Mail, Active: c.Active || "tYES",
-        Gender: c.Gender || "gt_NotSpecified",
-        BlockSendingMarketingContent: c.BlockSendingMarketingContent || "tNO",
-      }));
+      .map((c) => {
+        const contact = {
+          Name: c.Name,
+          FirstName: c.FirstName,
+          MiddleName: c.MiddleName,
+          LastName: c.LastName,
+          Title: c.Title,
+          Position: c.Position,
+          Address: c.Address || c.Department,
+          Phone1: c.Phone1,
+          Phone2: c.Phone2,
+          MobilePhone: c.MobilePhone,
+          Fax: c.Fax,
+          E_Mail: c.E_Mail,
+          Pager: c.Pager,
+          Remarks1: c.Remarks1,
+          Remarks2: c.Remarks2,
+          Password: c.Password,
+          DateOfBirth: c.DateOfBirth,
+          Gender: c.Gender || "gt_NotSpecified",
+          Profession: c.Profession,
+          PlaceOfBirth: c.PlaceOfBirth || c.CityOfBirth,
+          Active: c.Active || "tYES",
+          BlockSendingMarketingContent: c.BlockSendingMarketingContent || "tNO",
+        };
+
+        if (opt(c.EmailGroup) && !Number.isNaN(Number(c.EmailGroup))) {
+          contact.EmailGroupCode = Number(c.EmailGroup);
+        }
+
+        return Object.fromEntries(
+          Object.entries(contact).filter(([, value]) => value !== "" && value != null)
+        );
+      });
   }
 
   const bankRows = (form.BPBankAccounts || []).length > 0 ? form.BPBankAccounts : [{
@@ -544,10 +575,31 @@ export default function BusinessPartnerModule() {
   useEffect(() => {
     fetchBPGroups().then(setBpGroups).catch(() => {});
     // Try to load series from SAP — if none found, dropdown stays as Manual only
-    fetchNumberingSeries()
-      .then(setNumberingSeries)
-      .catch(() => setNumberingSeries([]));
   }, []);
+
+  useEffect(() => {
+    if (mode === MODES.UPDATE) return;
+
+    let ignore = false;
+    fetchNumberingSeries(form.CardType)
+      .then((rows) => {
+        if (ignore) return;
+        setNumberingSeries(rows);
+        setForm((prev) => {
+          if (!prev.Series) return prev;
+          const selected = rows.find((row) => String(row.series) === String(prev.Series));
+          if (selected) return prev;
+          return { ...prev, Series: "", CardCode: "" };
+        });
+      })
+      .catch(() => {
+        if (!ignore) setNumberingSeries([]);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [form.CardType, mode]);
 
   useEffect(() => {
     let ignore = false;
@@ -601,7 +653,7 @@ export default function BusinessPartnerModule() {
     // Auto series — fetch next number
     setForm((p) => ({ ...p, Series: val, CardCode: "..." }));
     try {
-      const next = await getNextSeriesNumber(val);
+      const next = await getNextSeriesNumber(val, form.CardType);
       setForm((p) => ({ ...p, Series: val, CardCode: next.formattedCode || "" }));
     } catch {
       setForm((p) => ({ ...p, Series: val, CardCode: "" }));
@@ -617,7 +669,13 @@ export default function BusinessPartnerModule() {
 
   const handleChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
-    setForm((p) => ({ ...p, [name]: type === "checkbox" ? (checked ? "tYES" : "tNO") : value }));
+    setForm((p) => {
+      const nextValue = type === "checkbox" ? (checked ? "tYES" : "tNO") : value;
+      if (name === "CardType" && nextValue !== p.CardType) {
+        return { ...p, CardType: nextValue, Series: "", CardCode: "" };
+      }
+      return { ...p, [name]: nextValue };
+    });
   }, []);
 
   const getFieldBG = (name) => {

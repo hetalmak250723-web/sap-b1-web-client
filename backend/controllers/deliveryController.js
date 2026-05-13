@@ -36,6 +36,16 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+const saveSalesEmployeesSetup = async (req, res) => {
+  try {
+    const data = await deliveryService.saveSalesEmployeesSetup(req.body?.employees || []);
+    res.json(data);
+  } catch (error) {
+    const statusCode = error.statusCode || error.response?.status || 500;
+    res.status(statusCode).json(getErrorPayload(error, 'Failed to save sales employees setup.'));
+  }
+};
+
 const getCustomerFilterOptions = async (req, res) => {
   try {
     const data = await deliveryService.getCustomerFilterOptions({
@@ -182,7 +192,7 @@ const getFreightCharges = async (req, res) => {
 
 const getItemsForModal = async (req, res) => {
   try {
-    const data = await deliveryService.getItemsForModal();
+    const data = await deliveryService.getItemsForModal(req.query.whsCode);
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load items.'));
@@ -242,6 +252,7 @@ module.exports = {
   getDeliveries,
   getDeliveryByDocEntry,
   getCustomerDetails,
+  saveSalesEmployeesSetup,
   getCustomerFilterOptions,
   submitDelivery,
   updateDelivery,

@@ -19,6 +19,151 @@
   overflow: visible;
 }
 
+.sap-setup-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.sap-setup-window {
+  width: min(735px, calc(100vw - 48px));
+  background: #efefef;
+  border: 2px solid #b8b8b8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.sap-setup-titlebar {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 12px;
+  color: #111;
+  background: linear-gradient(#f8f8f8, #d9d9d9);
+  border-bottom: 4px solid #f2b300;
+  font-size: 15px;
+}
+
+.sap-setup-window-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.sap-setup-window-actions button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid #999;
+  background: #ededed;
+  color: #666;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.sap-setup-body {
+  padding: 14px 16px 12px;
+}
+
+.sap-setup-grid-wrap {
+  height: 285px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #c7c7c7;
+}
+
+.sap-setup-grid {
+  width: 100%;
+  min-width: 675px;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.sap-setup-grid th,
+.sap-setup-grid td {
+  height: 20px;
+  border: 1px solid #d2d2d2;
+  padding: 0 4px;
+  background: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sap-setup-grid th {
+  background: #e8edf2;
+  font-weight: 600;
+  text-align: left;
+}
+
+.sap-setup-grid th:first-child,
+.sap-setup-grid td:first-child {
+  width: 28px;
+  text-align: center;
+  background: #e5e5e5;
+}
+
+.sap-setup-grid th:nth-child(2) { width: 130px; }
+.sap-setup-grid th:nth-child(3) { width: 175px; }
+.sap-setup-grid th:nth-child(4) { width: 100px; }
+.sap-setup-grid th:nth-child(5) { width: 90px; }
+.sap-setup-grid th:nth-child(6),
+.sap-setup-grid th:nth-child(7),
+.sap-setup-grid th:nth-child(8) {
+  width: 55px;
+  text-align: center;
+}
+
+.sap-setup-grid input,
+.sap-setup-grid select {
+  width: 100%;
+  height: 19px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  box-sizing: border-box;
+}
+
+.sap-setup-grid input:focus,
+.sap-setup-grid select:focus {
+  outline: 1px solid #f2b300;
+  background: #fff6b9;
+}
+
+.sap-setup-grid input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  display: block;
+  margin: 2px auto;
+}
+
+.sap-setup-num {
+  text-align: right;
+}
+
+.sap-setup-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 18px;
+}
+
+.sap-setup-footer button {
+  min-width: 86px;
+  height: 24px;
+  margin-right: 8px;
+  border: 1px solid #aaa;
+  background: linear-gradient(#f9f9f9, #dedede);
+}
+
+.sap-setup-footer .sap-setup-primary {
+  background: linear-gradient(#ffd55c, #f3ba24);
+}
+
 /* ── Toolbar ── */
 .del-toolbar {
   display: flex;

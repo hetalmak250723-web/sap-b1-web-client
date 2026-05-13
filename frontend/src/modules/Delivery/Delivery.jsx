@@ -55,7 +55,8 @@ import {
   fetchItemManagementType,
   fetchFreightCharges,
   validateDeliveryDocument,
-  createDeliveryLookupValue
+  createDeliveryLookupValue,
+  saveDeliverySalesEmployeesSetup
 } from '../../api/deliveryApi';
 import { fetchHSNCodes, fetchHSNCodeFromItem } from '../../api/hsnCodeApi';
 import { SALES_ORDER_COMPANY_ID } from '../../config/appConfig';
@@ -81,6 +82,7 @@ const today = () => new Date().toISOString().split('T')[0];
 const parseNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const roundTo = (v, d) => { const f = 10 ** Math.max(d, 0); return Math.round((v + Number.EPSILON) * f) / f; };
 const fmtDec = (v, d) => { if (v === '' || v == null) return ''; const n = Number(v); return Number.isNaN(n) ? '' : n.toFixed(Math.max(d, 0)); };
+const calcRoundingAmount = (value, decimals) => roundTo(Math.round(value) - value, decimals);
 const sanitize = (v, d) => {
   const c = String(v ?? '').replace(/[^\d.-]/g, '').replace(/(?!^)-/g, '').replace(/^(-?)\./, '$10.').replace(/(\..*)\./g, '$1');
   if (!c) return '';
@@ -225,7 +227,7 @@ function Delivery() {
     company: '', vendors: [], contacts: [], pay_to_addresses: [], items: [],
     warehouses: [], warehouse_addresses: [], company_address: {}, tax_codes: [],
     payment_terms: [], shipping_types: [], branches: [], uom_groups: [],
-    distribution_rules: [], quality_options: { buyer: [], seller: [] }, price_options: { buyer: [], seller: [] },
+    distribution_rules: [], sales_employees: [], quality_options: { buyer: [], seller: [] }, price_options: { buyer: [], seller: [] },
     decimal_settings: DEC, warnings: [], series: [], states: [],
   });
   const [pageState, setPageState] = useState({ loading: false, vendorLoading: false, posting: false, error: '', success: '', seriesLoading: false });
@@ -248,6 +250,7 @@ function Delivery() {
     allowCreate: true,
   });
   const [freightModal, setFreightModal] = useState({ open: false, freightCharges: [], loading: false });
+  const [salesEmployeeSetup, setSalesEmployeeSetup] = useState({ open: false, rows: [], saving: false });
   const [copyFromModal, setCopyFromModal] = useState(false);
   const [copyFromDocType, setCopyFromDocType] = useState('salesOrder');
   const [copyToModal, setCopyToModal] = useState(false);
@@ -408,6 +411,7 @@ function Delivery() {
             tax_codes: refDataRes.data.tax_codes || [],
             payment_terms: refDataRes.data.payment_terms || [],
             shipping_types: refDataRes.data.shipping_types || [],
+            sales_employees: refDataRes.data.sales_employees || [],
             branches: refDataRes.data.branches || [],
             states: refDataRes.data.states || [],
             uom_groups: refDataRes.data.uom_groups || [],
@@ -640,6 +644,9 @@ function Delivery() {
   const uomGroupMap = (refData.uom_groups || []).reduce((acc, g) => { acc[g.AbsEntry] = g.uomCodes || []; return acc; }, {});
 
   const effectiveTaxCodes = refData.tax_codes.length ? refData.tax_codes : FALLBACK_TAX;
+  const effectiveSalesEmployees = refData.sales_employees.length
+    ? refData.sales_employees
+    : [{ SlpCode: -1, SlpName: 'No Sales Employee / Buyer', Active: 'Y' }];
   const effectiveWarehouses = refData.warehouses.length ? refData.warehouses : FALLBACK_WAREHOUSES;
   const branchFilteredWarehouses = filterWarehousesByBranch(effectiveWarehouses, header.branch);
   const freightTotals = summarizeFreightRows(freightModal.freightCharges, effectiveTaxCodes);
@@ -724,7 +731,21 @@ function Delivery() {
     taxAmt = roundTo(taxAmt, numDec.tax);
     if (taxAmt === 0) { const lt = roundTo(parseNum(header.tax), numDec.tax); if (lt > 0) taxAmt = lt; }
     taxAmt = roundTo(taxAmt + freightTaxAmt, numDec.tax);
-    return { subtotal, discAmt, discSub, freight, freightTaxAmt, taxAmt, total: roundTo(discSub + freight + taxAmt, numDec.totalPaymentDue), taxBreakdown: Array.from(taxMap.values()) };
+    const totalBeforeRounding = roundTo(discSub + freight + taxAmt, numDec.totalPaymentDue);
+    const roundingAmount = header.rounding ? calcRoundingAmount(totalBeforeRounding, numDec.totalPaymentDue) : 0;
+    const total = roundTo(totalBeforeRounding + roundingAmount, numDec.totalPaymentDue);
+    return {
+      subtotal,
+      discAmt,
+      discSub,
+      freight,
+      freightTaxAmt,
+      taxAmt,
+      totalBeforeRounding,
+      roundingAmount,
+      total,
+      taxBreakdown: Array.from(taxMap.values()),
+    };
   };
 
   const totals = calcTotals();
@@ -820,6 +841,94 @@ function Delivery() {
   };
 
   // ── handlers ──────────────────────────────────────────────────────────────
+  const buildSalesEmployeeSetupRows = () => {
+    const rows = effectiveSalesEmployees.map(employee => {
+      const row = {
+        SlpCode: employee.SlpCode,
+        SlpName: employee.SlpName || '',
+        Commission: employee.Commission != null ? String(employee.Commission) : '',
+        Memo: employee.Memo || '',
+        Active: String(employee.Active || 'Y').toUpperCase() !== 'N',
+        Employee: false,
+      };
+
+      return {
+        ...row,
+        __original: {
+          SlpName: row.SlpName,
+          Commission: row.Commission,
+          Memo: row.Memo,
+          Active: row.Active,
+        },
+      };
+    });
+
+    return [
+      ...rows,
+      { SlpCode: '', SlpName: '', Commission: '', Memo: '', Active: true, Employee: false },
+    ];
+  };
+
+  const openSalesEmployeeSetup = () => {
+    setSalesEmployeeSetup({ open: true, rows: buildSalesEmployeeSetupRows(), saving: false });
+  };
+
+  const closeSalesEmployeeSetup = () => {
+    setSalesEmployeeSetup(prev => ({ ...prev, open: false, saving: false }));
+  };
+
+  const updateSalesEmployeeSetupRow = (index, field, value) => {
+    setSalesEmployeeSetup(prev => {
+      const rows = prev.rows.map((row, rowIndex) => (
+        rowIndex === index ? { ...row, [field]: value } : row
+      ));
+      const lastRow = rows[rows.length - 1];
+      if (lastRow && String(lastRow.SlpName || '').trim()) {
+        rows.push({ SlpCode: '', SlpName: '', Commission: '', Memo: '', Active: true, Employee: false });
+      }
+      return { ...prev, rows };
+    });
+  };
+
+  const saveSalesEmployeeSetup = async () => {
+    const hasSalesEmployeeSetupChanged = row => {
+      const original = row.__original;
+      if (!original) return true;
+
+      return (
+        String(row.SlpName || '').trim() !== String(original.SlpName || '').trim() ||
+        String(row.Commission || '').trim() !== String(original.Commission || '').trim() ||
+        String(row.Memo || '').trim() !== String(original.Memo || '').trim() ||
+        Boolean(row.Active) !== Boolean(original.Active)
+      );
+    };
+
+    const rowsToSave = salesEmployeeSetup.rows
+      .map(row => ({
+        SlpCode: row.SlpCode,
+        SlpName: String(row.SlpName || '').trim(),
+        Commission: String(row.Commission || '').trim(),
+        Memo: row.Memo || '',
+        Active: row.Active,
+        Employee: row.Employee,
+        Changed: hasSalesEmployeeSetupChanged(row),
+      }))
+      .filter(row => row.SlpName && String(row.SlpCode) !== '-1' && row.Changed);
+
+    setSalesEmployeeSetup(prev => ({ ...prev, saving: true }));
+    setPageState(p => ({ ...p, error: '', success: '' }));
+
+    try {
+      const response = await saveDeliverySalesEmployeesSetup(rowsToSave);
+      setRefData(prev => ({ ...prev, sales_employees: response.data?.sales_employees || [] }));
+      setSalesEmployeeSetup({ open: false, rows: [], saving: false });
+      setPageState(p => ({ ...p, success: response.data?.message || 'Sales employees setup saved.' }));
+    } catch (error) {
+      setSalesEmployeeSetup(prev => ({ ...prev, saving: false }));
+      setPageState(p => ({ ...p, error: getErrMsg(error, 'Failed to save sales employees setup.') }));
+    }
+  };
+
   const handleHeaderChange = (e) => {
     const { name, value, type, checked } = e.target;
     setValErrors(p => ({ ...p, header: { ...p.header, [name]: '' }, form: '' }));
@@ -829,6 +938,24 @@ function Delivery() {
     
     if (name === 'series') {
       handleSeriesChange(value);
+      return;
+    }
+
+    if (name === 'purchaser') {
+      if (value === '__DEFINE_NEW__') {
+        openSalesEmployeeSetup();
+        return;
+      }
+
+      const selectedEmployee = effectiveSalesEmployees.find(
+        employee => String(employee.SlpName || '') === String(value || '')
+      );
+
+      setHeader(p => ({
+        ...p,
+        purchaser: value,
+        salesEmployee: selectedEmployee ? String(selectedEmployee.SlpCode) : '-1',
+      }));
       return;
     }
     
@@ -1523,7 +1650,8 @@ function Delivery() {
     
     try {
       console.log('📡 Fetching items from API...');
-      const response = await fetchItemsForModal();
+      const selectedWarehouse = lines[lineIndex]?.whse || header.warehouse || '';
+      const response = await fetchItemsForModal(selectedWarehouse);
       console.log('✅ Items received:', response.data);
       console.log('📊 Items count:', response.data.items?.length || 0);
       
@@ -2138,8 +2266,26 @@ function Delivery() {
       }
     } catch (validationError) {
       console.error('Backend validation error:', validationError);
-      // Don't fail submission if backend validation fails, just log it
-      // Frontend validation already passed
+      const backendErrors = validationError.response?.data?.errors || [];
+      if (backendErrors.length > 0) {
+        for (const error of backendErrors) {
+          if (error.includes('Insufficient stock')) {
+            const itemMatch = error.match(/item ([^ ]+) in warehouse/i);
+            const itemCode = itemMatch?.[1];
+            const lineIndex = lines.findIndex(l => String(l.itemNo) === String(itemCode));
+            if (lineIndex >= 0) {
+              e.lines[lineIndex] = { ...(e.lines[lineIndex] || {}), quantity: error };
+            } else {
+              e.form = error;
+            }
+          } else {
+            e.form = error;
+          }
+        }
+        e.form = e.form || 'Please correct the highlighted fields.';
+      } else {
+        e.form = getErrMsg(validationError, 'Delivery validation failed.');
+      }
     }
     
     // Validate GST tax code combinations (after loop)
@@ -2330,6 +2476,8 @@ function Delivery() {
         branch: header.branch,
         contactPerson: header.contactPerson,
         series: header.series ? Number(header.series) : undefined,
+        totalPaymentDue: fmtDec(totals.total, numDec.totalPaymentDue),
+        roundingAmount: fmtDec(totals.roundingAmount, numDec.totalPaymentDue),
       };
       
       const payload = { company_id: SALES_ORDER_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
@@ -2617,7 +2765,7 @@ function Delivery() {
                     <div className="del-field">
                       <label className="del-field__label">Branch</label>
                       <select name="branch" className={`del-field__select${valErrors.header.branch ? ' del-field__select--error' : ''}`} value={header.branch} onChange={handleHeaderChange} disabled={!!currentDocEntry}>
-                        <option value="">Select Branch</option>
+                        <option value="">No Branch</option>
                         {refData.branches.map(b => (
                           <option key={b.BPLId} value={b.BPLId}>
                             {b.BPLName}
@@ -2804,14 +2952,14 @@ function Delivery() {
                     <label className="del-field__label">Sales Employee</label>
                     <select name="purchaser" className="del-field__select" value={header.purchaser || ''} onChange={handleHeaderChange}>
                       <option value="">No Sales Employee / Buyer</option>
-                      <option value="ASM">ASM</option>
-                      <option value="Deepak Kothari">Deepak Kothari</option>
-                      <option value="Dhaval">Dhaval</option>
-                      <option value="Mala Garma">Mala Garma</option>
-                      <option value="OM">OM</option>
-                      <option value="Rajkumar Munjal">Rajkumar Munjal</option>
-                      <option value="Zach Ibarra">Zach Ibarra</option>
-                      <option value="Define New">Define New</option>
+                      {effectiveSalesEmployees
+                        .filter(employee => String(employee.SlpCode) !== '-1')
+                        .map(employee => (
+                          <option key={employee.SlpCode} value={employee.SlpName}>
+                            {employee.SlpName}
+                          </option>
+                        ))}
+                      <option value="__DEFINE_NEW__">Define New</option>
                     </select>
                   </div>
                   <div className="del-field">
@@ -2877,7 +3025,9 @@ function Delivery() {
                         </tr>
                         <tr>
                           <td><input type="checkbox" className="" name="rounding" checked={header.rounding} onChange={handleHeaderChange} style={{ marginRight: 6 }} /><span>Rounding</span></td>
-                          <td></td>
+                          <td className="del-grid__cell--num">
+                            <input className="del-grid__input" value={fmtDec(totals.roundingAmount, numDec.totalPaymentDue)} readOnly />
+                          </td>
                         </tr>
                         <tr>
                           <td>Tax</td>
@@ -3103,6 +3253,99 @@ function Delivery() {
         onFetchDocuments={fetchCopyFromDocuments}
         onFetchDocumentDetails={fetchCopyFromDocumentDetails}
       />
+
+      {salesEmployeeSetup.open && (
+        <div className="sap-setup-overlay" role="dialog" aria-modal="true">
+          <div className="sap-setup-window">
+            <div className="sap-setup-titlebar">
+              <span>Sales Employees/Buyers - Setup</span>
+              <div className="sap-setup-window-actions">
+                <button type="button" aria-label="Minimize">_</button>
+                <button type="button" aria-label="Maximize">□</button>
+                <button type="button" aria-label="Close" onClick={closeSalesEmployeeSetup}>×</button>
+              </div>
+            </div>
+            <div className="sap-setup-body">
+              <div className="sap-setup-grid-wrap">
+                <table className="sap-setup-grid">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Sales Employee Name</th>
+                      <th>Commission Group</th>
+                      <th>Commission %</th>
+                      <th>Remarks</th>
+                      <th>Active</th>
+                      <th>Employee</th>
+                      <th>T...</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {salesEmployeeSetup.rows.map((row, index) => (
+                      <tr key={`${row.SlpCode || 'new'}-${index}`}>
+                        <td>{index + 1}</td>
+                        <td>
+                          <input
+                            value={row.SlpName}
+                            onChange={event => updateSalesEmployeeSetupRow(index, 'SlpName', event.target.value)}
+                            disabled={row.SlpCode === -1}
+                          />
+                        </td>
+                        <td>
+                          <select value="user-defined" disabled={row.SlpCode === -1}>
+                            <option value="user-defined">User-Defined Commission</option>
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            className="sap-setup-num"
+                            value={row.Commission}
+                            onChange={event => updateSalesEmployeeSetupRow(index, 'Commission', sanitize(event.target.value, numDec.discount))}
+                            disabled={row.SlpCode === -1}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            value={row.Memo}
+                            onChange={event => updateSalesEmployeeSetupRow(index, 'Memo', event.target.value)}
+                            disabled={row.SlpCode === -1}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={row.Active}
+                            onChange={event => updateSalesEmployeeSetupRow(index, 'Active', event.target.checked)}
+                            disabled={row.SlpCode === -1}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            type="checkbox"
+                            checked={row.Employee}
+                            onChange={event => updateSalesEmployeeSetupRow(index, 'Employee', event.target.checked)}
+                            disabled={row.SlpCode === -1}
+                          />
+                        </td>
+                        <td></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="sap-setup-footer">
+                <div>
+                  <button type="button" className="sap-setup-primary" onClick={saveSalesEmployeeSetup} disabled={salesEmployeeSetup.saving}>
+                    {salesEmployeeSetup.saving ? 'Saving...' : 'OK'}
+                  </button>
+                  <button type="button" onClick={closeSalesEmployeeSetup} disabled={salesEmployeeSetup.saving}>Cancel</button>
+                </div>
+                <button type="button" disabled>Set as Default</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Freight Selection Modal */}
       <FreightChargesModal

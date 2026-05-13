@@ -3,11 +3,11 @@ import React, { useState } from "react";
 const EMPTY_CONTACT = {
   Name: "Define New",
   FirstName: "", MiddleName: "", LastName: "",
-  Title: "", Position: "", Department: "",
+  Title: "", Position: "", Address: "",
   Phone1: "", Phone2: "", MobilePhone: "", Fax: "", E_Mail: "",
   EmailGroup: "", Pager: "", Remarks1: "", Remarks2: "",
   Password: "", DateOfBirth: "", Gender: "gt_NotSpecified",
-  Profession: "", CityOfBirth: "",
+  Profession: "", PlaceOfBirth: "",
   BlockSendingMarketingContent: "tNO",
   Active: "tYES",
 };
@@ -112,7 +112,7 @@ export default function ContactTab({ form, setForm }) {
               ["Last Name", "LastName"],
               ["Title", "Title"],
               ["Position", "Position"],
-              ["Address", "Department"],
+              ["Address", "Address"],
               ["Telephone 1", "Phone1"],
               ["Telephone 2", "Phone2"],
               ["Mobile Phone", "MobilePhone"],
@@ -148,7 +148,7 @@ export default function ContactTab({ form, setForm }) {
                 {GENDER_OPTIONS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
               </select>
             </div>
-            {[["Profession", "Profession"], ["City of Birth", "CityOfBirth"]].map(([label, name]) => (
+            {[["Profession", "Profession"], ["Place of Birth", "PlaceOfBirth"]].map(([label, name]) => (
               <div className="im-field" key={name} style={{ marginBottom: 3 }}>
                 <label className="im-field__label" style={{ flex: "0 0 160px", textAlign: "right" }}>{label}</label>
                 <input className="im-field__input" name={name} value={current[name] || ""} onChange={saveField} style={{ maxWidth: 280 }} />

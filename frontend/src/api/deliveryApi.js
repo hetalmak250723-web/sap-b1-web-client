@@ -10,6 +10,9 @@ const fetchDeliveryReferenceData = (companyId) =>
 const fetchDeliveryCustomerDetails = (customerCode) =>
   apiClient.get(`/delivery/customers/${encodeURIComponent(customerCode)}`);
 
+const saveDeliverySalesEmployeesSetup = (employees = []) =>
+  apiClient.post('/delivery/sales-employees/setup', { employees });
+
 // ─────────── Documents ───────────
 const fetchDeliveries = (params = {}) =>
   apiClient.get('/delivery/list', { params });
@@ -87,8 +90,10 @@ const fetchItemManagementType = (itemCode) =>
 const fetchFreightCharges = (docEntry) =>
   apiClient.get('/delivery/freight-charges', { params: { docEntry } });
 
-const fetchItemsForModal = () =>
-  apiClient.get('/delivery/items-modal');
+const fetchItemsForModal = (whsCode = '') =>
+  apiClient.get('/delivery/items-modal', {
+    params: whsCode ? { whsCode } : {},
+  });
 
 const createDeliveryLookupValue = (field, value, description = '') =>
   apiClient.post('/delivery/lookup-values', { field, value, description });
@@ -109,6 +114,7 @@ export {
   fetchDeliveries,
   fetchDeliveryCustomerOptions,
   fetchDeliveryCustomerDetails,
+  saveDeliverySalesEmployeesSetup,
   submitDelivery,
   updateDelivery,
   fetchDocumentSeries,

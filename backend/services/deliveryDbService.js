@@ -59,6 +59,14 @@ const getPaymentTerms = () => safe(db.query(`
   ORDER  BY PymntGroup
 `));
 
+const getSalesEmployees = () => safe(db.query(`
+  SELECT SlpCode, SlpName, Memo, Commission, Active
+  FROM   OSLP
+  ORDER  BY
+    CASE WHEN SlpCode = -1 THEN 0 ELSE 1 END,
+    SlpName
+`));
+
 const getShippingTypes = () => safe(db.query(`
   SELECT TrnspCode, TrnspName
   FROM   OSHP
@@ -547,6 +555,8 @@ const getDeliveryForCopyToCreditMemo = async (docEntry) => {
       T0.BPLId AS Branch,
       T0.DocCur AS Currency,
       T0.GroupNum AS PaymentTerms,
+      T0.SlpCode AS SalesEmployeeCode,
+      SLP.SlpName AS SalesEmployeeName,
       T0.Comments AS Remarks,
       T0.JrnlMemo AS JournalRemark,
       T0.DiscPrcnt AS DiscountPercent,
@@ -554,6 +564,7 @@ const getDeliveryForCopyToCreditMemo = async (docEntry) => {
       T0.VatSum AS Tax,
       T0.DocTotal AS TotalPaymentDue
     FROM ODLN T0
+    LEFT JOIN OSLP SLP ON SLP.SlpCode = T0.SlpCode
     WHERE T0.DocEntry = @docEntry
       AND T0.DocStatus = 'O'
   `, { docEntry }));
@@ -795,11 +806,14 @@ const getDelivery = async (docEntry) => {
       T0.BPLId AS Branch,
       T0.DocCur AS Currency,
       T0.GroupNum AS PaymentTerms,
+      T0.SlpCode AS SalesEmployeeCode,
+      SLP.SlpName AS SalesEmployeeName,
       T0.Comments AS Remarks,
       T0.JrnlMemo AS JournalRemark,
       T0.DiscPrcnt AS DiscountPercent,
       T0.TotalExpns AS Freight,
       T0.VatSum AS Tax,
+      T0.RoundDif AS RoundingAmount,
       T0.DocTotal AS TotalPaymentDue,
       CASE T0.DocStatus
         WHEN 'O' THEN 'Open'
@@ -807,6 +821,7 @@ const getDelivery = async (docEntry) => {
         ELSE T0.DocStatus
       END AS DocumentStatus
     FROM ODLN T0
+    LEFT JOIN OSLP SLP ON SLP.SlpCode = T0.SlpCode
     WHERE T0.DocEntry = @docEntry
   `, { docEntry: resolvedDocEntry }));
 
@@ -1018,9 +1033,13 @@ const getDelivery = async (docEntry) => {
         journalRemark: header.JournalRemark || '',
         paymentTerms: header.PaymentTerms ? String(header.PaymentTerms) : '',
         paymentTermsCode: header.PaymentTerms ? String(header.PaymentTerms) : '', // Add alias
+        salesEmployee: header.SalesEmployeeCode != null ? String(header.SalesEmployeeCode) : '',
+        purchaser: header.SalesEmployeeName || '',
         otherInstruction: header.Remarks || '',
         discount: header.DiscountPercent != null ? String(header.DiscountPercent) : '',
         freight: header.Freight != null ? String(header.Freight) : '',
+        rounding: Math.abs(Number(header.RoundingAmount || 0)) > 0,
+        roundingAmount: header.RoundingAmount != null ? String(header.RoundingAmount) : '',
         tax: header.Tax != null ? String(header.Tax) : '',
         totalPaymentDue: header.TotalPaymentDue != null ? String(header.TotalPaymentDue) : '',
       },
@@ -1223,6 +1242,7 @@ const getReferenceData = async () => {
     warehouses,
     paymentTerms,
     shippingTypes,
+    salesEmployees,
     branches,
     distributionRules,
     states,
@@ -1240,6 +1260,7 @@ const getReferenceData = async () => {
     getWarehouses(),
     getPaymentTerms(),
     getShippingTypes(),
+    getSalesEmployees(),
     getBranches(),
     getDistributionRules(),
     getStates(),
@@ -1321,6 +1342,13 @@ const getReferenceData = async () => {
     tax_codes: taxCodes,
     payment_terms: paymentTerms,
     shipping_types: shippingTypes,
+    sales_employees: salesEmployees.map(e => ({
+      SlpCode: e.SlpCode,
+      SlpName: e.SlpName,
+      Memo: e.Memo || '',
+      Commission: e.Commission,
+      Active: e.Active,
+    })),
     branches,
     states,
     uom_groups,
@@ -1400,16 +1428,20 @@ const getFreightCharges = (docEntry) => {
 };
 
 // Enhanced item list for modal with all details
-const getItemsForModal = () => safe(db.query(`
+const getItemsForModal = (whsCode = '') => {
+  const hasWarehouse = String(whsCode || '').trim();
+
+  return safe(db.query(`
   SELECT 
     T0.ItemCode,
     T0.ItemName,
     T0.FrgnName AS ForeignName,
     T0.ItmsGrpCod AS ItemGroupCode,
     T1.ItmsGrpNam AS ItemGroup, 
-    CAST(T0.OnHand AS DECIMAL(19,2)) AS InStock,
-    T0.IsCommited AS Committed,
-    T0.OnOrder AS Ordered,
+    CAST(${hasWarehouse ? 'ISNULL(W.OnHand, 0)' : 'T0.OnHand'} AS DECIMAL(19,2)) AS InStock,
+    ${hasWarehouse ? 'ISNULL(W.IsCommited, 0)' : 'T0.IsCommited'} AS Committed,
+    ${hasWarehouse ? 'ISNULL(W.OnOrder, 0)' : 'T0.OnOrder'} AS Ordered,
+    CAST(${hasWarehouse ? 'ISNULL(W.OnHand, 0) - ISNULL(W.IsCommited, 0)' : 'T0.OnHand - T0.IsCommited'} AS DECIMAL(19,2)) AS Available,
     T0.SalUnitMsr AS SalesUnit,
     T0.InvntryUom AS InventoryUOM,
     T0.SUoMEntry AS UoMGroupEntry,
@@ -1429,10 +1461,12 @@ const getItemsForModal = () => safe(db.query(`
   FROM OITM T0
   LEFT JOIN OITB T1 ON T0.ItmsGrpCod = T1.ItmsGrpCod 
   LEFT JOIN OCHP CHP ON CHP.AbsEntry = T0.ChapterID
+  ${hasWarehouse ? 'LEFT JOIN OITW W ON W.ItemCode = T0.ItemCode AND W.WhsCode = @WhsCode' : ''}
   WHERE T0.SellItem = 'Y'
     AND T0.validFor <> 'N'
   ORDER BY T0.ItemCode
-`));
+`, hasWarehouse ? { WhsCode: hasWarehouse } : {}));
+};
 
 // Get UoM conversion factor for an item
 const getUomConversionFactor = async (itemCode, uomCode) => {
@@ -1793,6 +1827,7 @@ const validateWarehouseBranch = (warehouseCode, branchId) => {
 
 module.exports = {
   getReferenceData,
+  getSalesEmployees,
   getCustomerDetails,
   getDeliveryLineFieldMetadata,
   getLookupValues,

@@ -23,4 +23,5 @@ export const fetchBPHouseBankAccounts = (bankCode = "", country = "") =>
 export const fetchBPWithholdingTaxCodes = (query = "") =>
   apiClient.get(`${BASE}/lookup/withholding-tax-codes`, { params: { query } }).then((r) => r.data);
 export const fetchNumberingSeries = (bpType = "") => apiClient.get(`${BASE}/lookup/series`, { params: { bpType } }).then((r) => r.data);
-export const getNextSeriesNumber = (series) => apiClient.get(`${BASE}/lookup/series/${series}/next`).then((r) => r.data);
+export const getNextSeriesNumber = (series, bpType = "") =>
+  apiClient.get(`${BASE}/lookup/series/${series}/next`, { params: { bpType } }).then((r) => r.data);

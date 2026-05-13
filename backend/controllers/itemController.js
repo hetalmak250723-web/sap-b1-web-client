@@ -54,13 +54,6 @@ const createItem = async (req, res) => {
     return res.status(400).json({ message: "UoM Group is required for inventory items." });
   }
   
-  // Tax Code validations
-  if (data.VatLiable === 'tYES') {
-    if (!data.ArTaxCode || data.ArTaxCode === "") {
-      return res.status(400).json({ message: "AR Tax Code is required when VAT liable." });
-    }
-  }
-  
   // Sales Item validations - ItemPrices collection is used instead of a single PriceListNum field
   // The UI Price List selection is handled via ItemPrices collection
   
@@ -267,13 +260,6 @@ const updateItem = async (req, res) => {
   // UoM Group validation - required for inventory items
   if (data.InventoryItem === 'tYES' && data.UoMGroupEntry !== undefined && data.UoMGroupEntry === "") {
     return res.status(400).json({ message: "UoM Group is required for inventory items." });
-  }
-  
-  // Tax Code validations
-  if (data.VatLiable === 'tYES') {
-    if (data.ArTaxCode !== undefined && data.ArTaxCode === "") {
-      return res.status(400).json({ message: "AR Tax Code is required when VAT liable." });
-    }
   }
   
   // Sales Item validations - ItemPrices collection is used instead of a single PriceListNum field
