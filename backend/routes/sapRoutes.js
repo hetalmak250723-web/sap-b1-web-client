@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const https = require('https');
 const env = require('../config/env');
+const sapService = require('../services/sapService');
 
 const router = express.Router();
 
@@ -30,18 +31,19 @@ const getSapErrorDetail = (err) => {
 // SAP service layer session bootstrap
 router.post('/sap-session/login', async (req, res) => {
   try {
+    const companyDb = await sapService.resolveCompanyDb({ companyDb: req.body?.companyDb });
     const response = await axios.post(
       `${env.sapBaseUrl}/Login`,
       {
         UserName: env.sapUsername,
         Password: env.sapPassword,
-        CompanyDB: env.sapCompanyDb
+        CompanyDB: companyDb,
       },
       { httpsAgent: agent }
     );
 
     sessionCookie = response.headers['set-cookie'];
-     res.json({ message: 'SAP Login Successful' });
+     res.json({ message: 'SAP Login Successful', companyDb });
 
   } catch (err) {
     const detail = getSapErrorDetail(err);

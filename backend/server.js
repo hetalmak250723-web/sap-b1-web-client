@@ -4,6 +4,7 @@ const express = require('express');
 const cors    = require('cors');
 const env     = require('./config/env');
 const { authenticateAccessToken } = require('./middleware/authMiddleware');
+const { runWithRequestContext } = require('./services/requestContextService');
 
 const authRoutes            = require('./routes/authRoutes');
 const menuRoutes            = require('./routes/menuRoutes');
@@ -47,6 +48,7 @@ const purchaseAnalysisRoutes     = require('./routes/reports/purchaseAnalysis.ro
 const purchaseRequestReportRoutes = require('./routes/reports/purchaseRequestReport.routes');
 const reportStudioRoutes         = require('./routes/reportStudioRoutes');
 const reportLookupsRoutes        = require('./routes/reportLookups');
+const adminPanelRoutes           = require('./routes/adminPanelRoutes');
 
 const app = express();
 
@@ -55,7 +57,7 @@ const isAllowedOrigin = (origin) => {
 
   try {
     const { protocol, hostname, port } = new URL(origin);
-    if (protocol !== 'http:' || port !== '3000') {
+    if (protocol !== 'http:' || !['3000', '3001'].includes(port)) {
       return false;
     }
 
@@ -109,6 +111,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use((req, res, next) => runWithRequestContext(req, next));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -178,6 +181,7 @@ app.use('/api/inventory-transfer', inventoryTransferRoutes);
 app.use('/api/reports',            purchaseAnalysisRoutes);
 app.use('/api/reports',            purchaseRequestReportRoutes);
 app.use('/api/lookups',            reportLookupsRoutes);
+app.use('/api/admin-panel',        adminPanelRoutes);
 app.use('/api',                    sapRoutes);
 
 // Health check

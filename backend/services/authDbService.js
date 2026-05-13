@@ -19,12 +19,24 @@ const authDbConfig = {
 };
 
 let authPool = null;
+let authPoolPromise = null;
 
 const getPool = async () => {
   if (authPool && authPool.connected) return authPool;
-  authPool = await new sql.ConnectionPool(authDbConfig).connect();
-  console.log(`[AUTH_DB] SQL Server pool connected to ${env.authDbName}`);
-  return authPool;
+  if (authPoolPromise) {
+    authPool = await authPoolPromise;
+    return authPool;
+  }
+
+  authPoolPromise = new sql.ConnectionPool(authDbConfig).connect();
+
+  try {
+    authPool = await authPoolPromise;
+    console.log(`[AUTH_DB] SQL Server pool connected to ${env.authDbName}`);
+    return authPool;
+  } finally {
+    authPoolPromise = null;
+  }
 };
 
 const bindParams = (request, params = {}) => {
@@ -160,6 +172,12 @@ const getUserRoleForCompany = async (userId, companyId) => queryOne(`
     AND ur.CompanyId = @companyId
 `, { userId, companyId });
 
+const getRoleById = async (roleId) => queryOne(`
+  SELECT RoleId, RoleName
+  FROM dbo.Roles
+  WHERE RoleId = @roleId
+`, { roleId });
+
 const getAllMenus = async () => queryRows(`
   SELECT MenuId, MenuName, MenuPath, ParentId, Icon, SortOrder
   FROM dbo.Menus
@@ -182,6 +200,7 @@ module.exports = {
   getUserCompanies,
   getAssignedCompanyForUser,
   getUserRoleForCompany,
+  getRoleById,
   getAllMenus,
   getRoleRights,
 };

@@ -53,6 +53,7 @@ const TOP_LEVEL_MENU_PRIORITY = new Map([
   ['purchasing', 2],
   ['purchasing a p', 2],
   ['reports', 6],
+  ['admin panel', 7],
 ]);
 
 const normalizeMenuPriorityName = (menuName) =>
@@ -117,7 +118,10 @@ const buildMenuTree = (menus, rightsByMenuId) => {
   return tree;
 };
 
-const buildAuthorizedMenus = async (roleId) => {
+const isAdminRoleName = (roleName) =>
+  String(roleName || '').trim().toLowerCase() === 'admin';
+
+const buildAuthorizedMenus = async (roleId, roleName = '') => {
   const [allMenus, roleRights] = await Promise.all([
     authDbService.getAllMenus(),
     authDbService.getRoleRights(roleId),
@@ -156,6 +160,7 @@ const buildAuthorizedMenus = async (roleId) => {
   return appendVirtualMenus({
     menus: menuTree,
     menuPaths,
+    includeAdminPanel: isAdminRoleName(roleName),
   });
 };
 
@@ -217,7 +222,7 @@ const selectCompany = async (userId, companyId) => {
     throw createHttpError(403, 'No role is assigned for the selected company.');
   }
 
-  const { menus, menuPaths } = await buildAuthorizedMenus(role.RoleId);
+  const { menus, menuPaths } = await buildAuthorizedMenus(role.RoleId, role.RoleName);
   const accessToken = createToken(
     {
       tokenType: 'access',
@@ -240,7 +245,10 @@ const selectCompany = async (userId, companyId) => {
   };
 };
 
-const getMenuForRole = async (roleId) => buildAuthorizedMenus(roleId);
+const getMenuForRole = async (roleId) => {
+  const role = await authDbService.getRoleById(roleId);
+  return buildAuthorizedMenus(roleId, role?.RoleName || '');
+};
 
 module.exports = {
   createHttpError,
