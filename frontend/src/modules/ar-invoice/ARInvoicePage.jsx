@@ -51,7 +51,7 @@ import {
   ROW_UDF_DEFINITIONS,
   createUdfState,
   readSavedFormSettings,
-} from '../../config/arInvoiceForm';
+} from '../../config/ARInvoiceForm';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const getErrMsg = (e, fb) => {

@@ -79,13 +79,6 @@ export const validateItemBusinessRules = (form) => {
     errors.push("UoM Group is required for inventory items.");
   }
   
-  // Tax Code validations
-  if (form.VatLiable === 'tYES') {
-    if (!form.ArTaxCode || form.ArTaxCode === "") {
-      errors.push("AR Tax Code is required when VAT liable.");
-    }
-  }
-  
   // Sales Item validations - ItemPrices collection is used instead of a single PriceListNum field
   // The UI Price List selection is handled via ItemPrices collection
   

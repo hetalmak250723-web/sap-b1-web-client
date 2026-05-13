@@ -13,6 +13,10 @@ const formatDateForSAP = (value) => {
 const hasValue = (value) => value !== undefined && value !== null && String(value).trim() !== '';
 
 const toOptionalNumber = (value) => {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    return undefined;
+  }
+
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
@@ -25,6 +29,53 @@ const toRequiredNumber = (value, fallback = 0) => {
 const toRequiredString = (value, fallback = '') => {
   const normalized = value == null ? '' : String(value).trim();
   return normalized || fallback;
+};
+
+const toBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  return ['true', '1', 'yes', 'y'].includes(String(value || '').trim().toLowerCase());
+};
+
+const resolveSalesEmployeeCode = (input, salesEmployees = []) => {
+  if (!hasValue(input) || input === '-1' || input === -1) {
+    return undefined;
+  }
+
+  if (!Number.isNaN(Number(input)) && Number(input) !== -1) {
+    return Number(input);
+  }
+
+  const normalizedName = String(input || '').trim().toLowerCase();
+  const match = salesEmployees.find((employee) => (
+    String(employee.SlpName || '').trim().toLowerCase() === normalizedName
+  ));
+
+  return match ? Number(match.SlpCode) : undefined;
+};
+
+const buildSalesPersonPayload = (employee = {}) => {
+  const name = toRequiredString(employee.SlpName || employee.salesEmployeeName || employee.name, '');
+  if (!name) {
+    const error = new Error('Sales Employee Name is required.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const payload = {
+    SalesEmployeeName: name,
+    Active: toBoolean(employee.Active ?? employee.active ?? true) ? 'tYES' : 'tNO',
+  };
+
+  if (hasValue(employee.Memo ?? employee.remarks)) {
+    payload.Remarks = String(employee.Memo ?? employee.remarks).trim();
+  }
+
+  const commission = toOptionalNumber(employee.Commission ?? employee.commission);
+  if (commission !== undefined) {
+    payload.CommissionForSalesEmployee = commission;
+  }
+
+  return payload;
 };
 
 const NUMBER_DATA_TYPES = new Set([
@@ -231,6 +282,88 @@ const getCustomerDetails = async (customerCode) => {
 
 // ───────── DELIVERY LIST (USING ODBC) ─────────
 
+const saveSalesEmployeesSetup = async (employees = []) => {
+  if (!Array.isArray(employees)) {
+    const error = new Error('Sales employee setup rows must be an array.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const saved = [];
+  const existingSalesEmployees = await deliveryDb.getSalesEmployees().catch(() => []);
+  let nextSalesEmployeeCode = existingSalesEmployees.reduce((maxCode, employee) => {
+    const code = toOptionalNumber(employee.SlpCode);
+    return code !== undefined && code > maxCode ? code : maxCode;
+  }, 0) + 1;
+
+  for (const employee of employees) {
+    if (String(employee?.SlpCode) === '-1') {
+      continue;
+    }
+
+    const name = String(employee?.SlpName || employee?.salesEmployeeName || employee?.name || '').trim();
+    if (!name) {
+      continue;
+    }
+
+    const payload = buildSalesPersonPayload({ ...employee, SlpName: name });
+    const slpCode = toOptionalNumber(employee.SlpCode);
+
+    if (slpCode !== undefined && slpCode !== -1) {
+      if (!toBoolean(employee.Changed ?? employee.changed ?? false)) {
+        continue;
+      }
+
+      await sapService.request({
+        method: 'PATCH',
+        url: `/SalesPersons(${slpCode})`,
+        data: payload,
+      });
+
+      saved.push({ SlpCode: slpCode, SlpName: name, updated: true });
+      continue;
+    }
+
+    const newSalesEmployeeCode = nextSalesEmployeeCode;
+    nextSalesEmployeeCode += 1;
+    payload.SalesEmployeeCode = newSalesEmployeeCode;
+
+    let response;
+    try {
+      response = await sapService.request({
+        method: 'POST',
+        url: '/SalesPersons',
+        data: payload,
+      });
+    } catch (error) {
+      const minimalPayload = {
+        SalesEmployeeCode: newSalesEmployeeCode,
+        SalesEmployeeName: payload.SalesEmployeeName,
+        Active: payload.Active,
+      };
+
+      response = await sapService.request({
+        method: 'POST',
+        url: '/SalesPersons',
+        data: minimalPayload,
+      });
+    }
+
+    saved.push({
+      SlpCode: response.data?.SalesEmployeeCode ?? newSalesEmployeeCode,
+      SlpName: name,
+      created: true,
+    });
+  }
+
+  return {
+    success: true,
+    message: 'Sales employees setup saved.',
+    sales_employees: await deliveryDb.getSalesEmployees(),
+    saved,
+  };
+};
+
 const getCustomerFilterOptions = async ({
   query = '',
   customerCode = '',
@@ -400,6 +533,11 @@ const submitDelivery = async (payload) => {
 console.log("Payload:", payload );
     const documentAdditionalExpenses = buildDocumentAdditionalExpenses(payload.freightCharges);
     const documentLines = await buildDocumentLinesPayload(lines);
+    const salesEmployees = await deliveryDb.getSalesEmployees();
+    const salesPersonCode = resolveSalesEmployeeCode(
+      header.salesEmployee ?? header.purchaser,
+      salesEmployees,
+    );
     // Build SAP Service Layer payload
     const sapPayload = {
       CardCode: customerCode,
@@ -421,6 +559,8 @@ console.log("SAP Payload:", sapPayload);
     if (header.branch) sapPayload.BPL_IDAssignedToInvoice  = parseInt(header.branch);
     if (header.paymentTerms) sapPayload.PaymentGroupCode = parseInt(header.paymentTerms);
     if (header.freight) sapPayload.TotalExpenses = parseFloat(header.freight);
+    sapPayload.Rounding = toBoolean(header.rounding) ? 'tYES' : 'tNO';
+    if (salesPersonCode !== undefined) sapPayload.SalesPersonCode = salesPersonCode;
 
     // Add header UDFs if any
     if (header_udfs && Object.keys(header_udfs).length > 0) {
@@ -508,6 +648,11 @@ const updateDelivery = async (docEntry, payload) => {
     const { header, lines, header_udfs } = payload;
     const documentAdditionalExpenses = buildDocumentAdditionalExpenses(payload.freightCharges);
     const documentLines = await buildDocumentLinesPayload(lines, true);
+    const salesEmployees = await deliveryDb.getSalesEmployees();
+    const salesPersonCode = resolveSalesEmployeeCode(
+      header.salesEmployee ?? header.purchaser,
+      salesEmployees,
+    );
 
     const sapPayload = {
       Comments: header.otherInstruction || '',
@@ -518,6 +663,8 @@ const updateDelivery = async (docEntry, payload) => {
     };
 
     if (header.freight) sapPayload.TotalExpenses = parseFloat(header.freight);
+    sapPayload.Rounding = toBoolean(header.rounding) ? 'tYES' : 'tNO';
+    if (salesPersonCode !== undefined) sapPayload.SalesPersonCode = salesPersonCode;
 
     // Add header UDFs if any
     if (header_udfs && Object.keys(header_udfs).length > 0) {
@@ -573,9 +720,9 @@ const createLookupValue = async ({ field, value, description }) => {
   return { option, options };
 };
 
-const getItemsForModal = async () => {
+const getItemsForModal = async (whsCode = '') => {
   try {
-    const items = await deliveryDb.getItemsForModal();
+    const items = await deliveryDb.getItemsForModal(whsCode);
     return { items };
   } catch (error) {
     console.error('[Delivery Service] Failed to get items for modal:', error);
@@ -642,10 +789,12 @@ const validateDeliveryDocument = async (payload) => {
     return { isValid: false, errors };
   }
   
-  // 2. Branch validation
-  const branchResult = await deliveryDb.validateBranch(header.branch);
-  if (!branchResult.isValid) {
-    errors.push(...branchResult.errors);
+  // 2. Branch validation is optional for databases without branch setup.
+  if (hasValue(header.branch)) {
+    const branchResult = await deliveryDb.validateBranch(header.branch);
+    if (!branchResult.isValid) {
+      errors.push(...branchResult.errors);
+    }
   }
   
   // 3. Series validation
@@ -691,6 +840,7 @@ const validateDeliveryDocument = async (payload) => {
 module.exports = {
   getReferenceData,
   getCustomerDetails,
+  saveSalesEmployeesSetup,
   getCustomerFilterOptions,
   getDeliveryList,
   getDelivery,
