@@ -79,7 +79,7 @@ process.on('uncaughtException', (error, origin) => {
 });
 
 app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:3002', 'http://localhost:5173', 'http://localhost:5174'],
+  origin: true, // Allow all origins to enable LAN/IP access
   credentials: true,
 }));
 app.use(express.json());
@@ -172,6 +172,16 @@ app.get('/api/debug/production-orders', async (_req, res) => {
   }
 });
 
+// Serve static files from the React frontend build for single-port LAN access
+const path = require('path');
+app.use(express.static(path.join(__dirname, '../frontend/build')));
+
+// Catch-all route to serve the React index.html for frontend routing
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) return next();
+  res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
+});
+
 // Global error handler middleware
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.message);
@@ -183,8 +193,8 @@ app.use((err, req, res, next) => {
   });
 });
 
-const server = app.listen(env.port, () => {
-  console.log(`[Server] Running on http://localhost:${env.port}`);
+const server = app.listen(env.port, '0.0.0.0', () => {
+  console.log(`[Server] Running on http://0.0.0.0:${env.port} (accessible on LAN)`);
 });
 
 server.on('error', (error) => {
