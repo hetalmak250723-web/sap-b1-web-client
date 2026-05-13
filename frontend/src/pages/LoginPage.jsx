@@ -33,16 +33,18 @@ const LoginPage = () => {
         const response = await fetchPublicCompanies();
         if (ignore) return;
 
-        setPublicCompanies(response);
+        const companies = Array.isArray(response) ? response : [];
+        setPublicCompanies(companies);
         const rememberedCompany = getLastSelectedCompanyInfo?.();
         const defaultCompany =
-          response.find((company) => company.companyId === rememberedCompany?.companyId) ||
-          response[0] ||
+          companies.find((company) => company.companyId === rememberedCompany?.companyId) ||
+          companies[0] ||
           null;
 
         setSelectedCompanyId(defaultCompany?.companyId || null);
       } catch (_loadError) {
         if (ignore) return;
+        setPublicCompanies([]);
         setError('Unable to load company list.');
       } finally {
         if (!ignore) {
@@ -59,13 +61,14 @@ const LoginPage = () => {
   }, [getLastSelectedCompanyInfo]);
 
   const selectedCompany =
-    publicCompanies.find((company) => company.companyId === selectedCompanyId) || null;
+    (Array.isArray(publicCompanies) ? publicCompanies : []).find((company) => company.companyId === selectedCompanyId) || null;
 
   const filteredCompanies = useMemo(() => {
+    const companies = Array.isArray(publicCompanies) ? publicCompanies : [];
     const term = chooserSearch.trim().toLowerCase();
-    if (!term) return publicCompanies;
+    if (!term) return companies;
 
-    return publicCompanies.filter((company) =>
+    return companies.filter((company) =>
       [company.companyName, company.dbName, company.serverName]
         .filter(Boolean)
         .some((value) => value.toLowerCase().includes(term)),

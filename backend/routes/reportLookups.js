@@ -11,6 +11,7 @@ const {
 } = require("../controllers/itemController");
 const purchaseController = require("../controllers/reports/purchaseAnalysis.controller");
 const purchaseRequestReportController = require("../controllers/reports/purchaseRequestReport.controller");
+const reportParameterLookupService = require("../services/reportParameterLookupService");
 
 const router = express.Router();
 
@@ -55,5 +56,16 @@ router.get("/purchase-request-report/departments", purchaseRequestReportControll
 router.get("/purchase-request-report/projects", purchaseRequestReportController.lookupProjects);
 router.get("/purchase-request-report/users", purchaseRequestReportController.lookupUsers);
 router.get("/purchase-request-report/employees", purchaseRequestReportController.lookupEmployees);
+router.get("/report-parameters/options", async (req, res, next) => {
+  try {
+    const data = await reportParameterLookupService.searchLookupOptions({
+      table: req.query.table,
+      query: req.query.query || "",
+    });
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+});
 
 module.exports = router;

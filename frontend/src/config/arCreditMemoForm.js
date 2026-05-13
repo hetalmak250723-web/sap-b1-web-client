@@ -1,4 +1,4 @@
-const FORM_SETTINGS_STORAGE_KEY = 'sapb1.arInvoice.formSettings.v1';
+const FORM_SETTINGS_STORAGE_KEY = 'sapb1.arCreditMemo.formSettings.v1';
 
 const HEADER_UDF_DEFINITIONS = [
   { key: 'U_SCharge', label: 'SaudaCharge', type: 'text', defaultValue: '' },

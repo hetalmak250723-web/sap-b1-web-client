@@ -23,3 +23,11 @@ export const fetchReportDetail = (reportId) =>
 
 export const runReport = (payload) =>
   apiClient.post('/reports/run', payload).then((response) => response.data);
+
+export const fetchReportParameterLookupOptions = (lookup, query = '') =>
+  apiClient.get('/lookups/report-parameters/options', {
+    params: {
+      table: lookup?.table,
+      query,
+    },
+  }).then((response) => response.data);

@@ -109,6 +109,8 @@ const normalizeParameter = (row) => ({
   isRequired: Boolean(row.IsRequired),
   sortOrder: Number(row.SortOrder || 0),
   defaultValue: row.DefaultValue || '',
+  options: [],
+  lookup: null,
   createdBy: row.CreatedBy,
   createdAt: row.CreatedAt,
   updatedAt: row.UpdatedAt,
@@ -133,7 +135,44 @@ const normalizeFetchedParameter = (parameter, index = 0) => {
     isRequired,
     sortOrder,
     defaultValue,
+    options: Array.isArray(parameter?.options) ? parameter.options : [],
+    lookup: parameter?.lookup && typeof parameter.lookup === 'object' ? parameter.lookup : null,
   };
+};
+
+const mergeStoredAndLiveParameters = (storedRows, liveParameters = []) => {
+  const storedParameters = storedRows.map(normalizeParameter);
+  const storedByName = new Map(
+    storedParameters.map((parameter) => [
+      String(parameter.paramName || '').trim().toLowerCase(),
+      parameter,
+    ]),
+  );
+
+  const mergedParameters = liveParameters.map((parameter) => {
+    const stored = storedByName.get(String(parameter.paramName || '').trim().toLowerCase());
+
+    return {
+      ...stored,
+      ...parameter,
+      parameterId: stored?.parameterId ?? null,
+      reportId: stored?.reportId ?? null,
+      createdBy: stored?.createdBy ?? null,
+      createdAt: stored?.createdAt ?? null,
+      updatedAt: stored?.updatedAt ?? null,
+    };
+  });
+
+  const liveNames = new Set(
+    mergedParameters.map((parameter) => String(parameter.paramName || '').trim().toLowerCase()),
+  );
+
+  return [
+    ...mergedParameters,
+    ...storedParameters.filter(
+      (parameter) => !liveNames.has(String(parameter.paramName || '').trim().toLowerCase()),
+    ),
+  ];
 };
 
 const getDraftParametersForReport = async (payload, reportCode) => {
@@ -774,18 +813,26 @@ const getReportById = async (reportId, auth) => {
   }
 
   let parameterRows = await loadStoredReportParameters(reportId);
+  let liveParameters = null;
+  const normalizedReportCode = normalizeText(reportRow.ReportCode);
 
-  if (isSapReportServiceApiUrl(reportRow.ApiUrl) && normalizeText(reportRow.ReportCode)) {
+  if (normalizedReportCode) {
     try {
-      parameterRows = await syncSapReportParameters(reportRow);
+      if (isSapReportServiceApiUrl(reportRow.ApiUrl)) {
+        parameterRows = await syncSapReportParameters(reportRow);
+      }
+
+      liveParameters = await reportService.loadReportParameters(normalizedReportCode);
     } catch (_error) {
-      // Fall back to the stored metadata if the SAP parameter sync fails.
+      // Fall back to the stored metadata if the SAP parameter load fails.
     }
   }
 
   return {
     report: normalizeVisibleReport(reportRow),
-    parameters: parameterRows.map(normalizeParameter),
+    parameters: Array.isArray(liveParameters) && liveParameters.length
+      ? mergeStoredAndLiveParameters(parameterRows, liveParameters)
+      : parameterRows.map(normalizeParameter),
   };
 };
 

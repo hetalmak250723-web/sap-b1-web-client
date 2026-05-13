@@ -45,7 +45,7 @@ import {
   ROW_UDF_DEFINITIONS,
   createUdfState,
   readSavedFormSettings,
-} from '../../config/purchaseOrderForm';
+} from '../../config/salesQuotationForm';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 const getErrMsg = (e, fb) => {
@@ -185,6 +185,7 @@ function SalesQuotation() {
     tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
   };
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+  const hasBuyerCode = Boolean(String(header.vendor || '').trim());
 
   // Continue in next part...
 
@@ -1755,10 +1756,9 @@ function SalesQuotation() {
         </div>
       )}
 
-      <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div style={{ padding: '0 12px' }}>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: sidebarOpen ? '0 0 calc(75% - 6px)' : '1' }}>
+      <fieldset className="so-fieldset" disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+      <div className={`so-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+        <div className="so-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
             <div className="so-header-card">
@@ -2227,16 +2227,21 @@ function SalesQuotation() {
 
           </div>{/* end main col */}
 
-          <HeaderUdfSidebar
-            isOpen={sidebarOpen}
-            fields={visHdrUdfs}
-            formSettings={formSettings}
-            values={headerUdfs}
-            onFieldChange={handleHeaderUdfChange}
-            style={{ flex: sidebarOpen ? '0 0 calc(25% - 6px)' : '0' }}
-          />
+          <fieldset
+            className="so-fieldset"
+            disabled={!hasBuyerCode}
+            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+          >
+            <HeaderUdfSidebar
+              className="so-layout__sidebar"
+              isOpen={sidebarOpen}
+              fields={visHdrUdfs}
+              formSettings={formSettings}
+              values={headerUdfs}
+              onFieldChange={handleHeaderUdfChange}
+            />
+          </fieldset>
         </div>
-      </div>
 
       </fieldset>
 

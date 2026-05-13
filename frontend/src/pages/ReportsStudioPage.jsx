@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import {
   createReport,
   createReportMenu,
@@ -74,7 +75,32 @@ const isToDateParameter = (parameter) => {
   return lookup.includes('to date') || lookup.includes('todate') || lookup.includes('dateto') || lookup.includes('end date');
 };
 
+const buildInitialRunValues = (parameters = []) => {
+  const today = new Date();
+  const todayValue = formatDateForInput(today);
+  const fromDateValue = formatDateForInput(shiftMonthsClamped(today, -1));
+  const nextValues = {};
+
+  parameters.forEach((parameter) => {
+    if (parameter.paramType === 'date' && isToDateParameter(parameter)) {
+      nextValues[parameter.paramName] = todayValue;
+      return;
+    }
+
+    if (parameter.paramType === 'date' && isFromDateParameter(parameter)) {
+      nextValues[parameter.paramName] = fromDateValue;
+      return;
+    }
+
+    nextValues[parameter.paramName] = parameter.defaultValue || '';
+  });
+
+  return nextValues;
+};
+
 function ReportsStudioPage() {
+  const { menuId: routeMenuId, reportId: routeReportId } = useParams();
+  const autoOpenedSidebarReportRef = useRef(null);
   const [catalog, setCatalog] = useState({ menus: [], flatMenus: [] });
   const [expandedMenus, setExpandedMenus] = useState({});
   const [selectedMenuId, setSelectedMenuId] = useState(null);
@@ -170,6 +196,72 @@ function ReportsStudioPage() {
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
+
+  useEffect(() => {
+    const nextReportId = Number(routeReportId);
+    if (Number.isInteger(nextReportId) && nextReportId > 0) {
+      if (selectedReportId !== nextReportId) {
+        loadReport(nextReportId);
+      }
+      return;
+    }
+
+    const nextMenuId = Number(routeMenuId);
+    if (!Number.isInteger(nextMenuId) || nextMenuId <= 0) {
+      return;
+    }
+
+    if (selectedMenuId === nextMenuId) {
+      return;
+    }
+
+    const targetMenu = (catalog.flatMenus || []).find((menu) => Number(menu.menuId) === nextMenuId);
+    if (!targetMenu) {
+      return;
+    }
+
+    clearPdfPreview();
+    setSelectedMenuId(nextMenuId);
+    setSelectedReportId(null);
+    setReportDetail(null);
+    setMenuForm((current) => ({
+      ...current,
+      parentId: String(nextMenuId),
+    }));
+    setReportForm((current) => ({
+      ...current,
+      reportMenuId: String(nextMenuId),
+    }));
+  }, [
+    catalog.flatMenus,
+    clearPdfPreview,
+    loadReport,
+    routeMenuId,
+    routeReportId,
+    selectedMenuId,
+    selectedReportId,
+  ]);
+
+  useEffect(() => {
+    const nextReportId = Number(routeReportId);
+
+    if (!Number.isInteger(nextReportId) || nextReportId <= 0) {
+      autoOpenedSidebarReportRef.current = null;
+      return;
+    }
+
+    if (loading.detail || !selectedReport || Number(selectedReport.reportId) !== nextReportId) {
+      return;
+    }
+
+    if (autoOpenedSidebarReportRef.current === nextReportId) {
+      return;
+    }
+
+    setRunValues(buildInitialRunValues(parameters));
+    setIsRunModalOpen(true);
+    autoOpenedSidebarReportRef.current = nextReportId;
+  }, [loading.detail, parameters, routeReportId, selectedReport]);
 
   const handleMenuSelection = (menu) => {
     clearPdfPreview();
@@ -301,26 +393,7 @@ function ReportsStudioPage() {
       return;
     }
 
-    const today = new Date();
-    const todayValue = formatDateForInput(today);
-    const fromDateValue = formatDateForInput(shiftMonthsClamped(today, -1));
-    const nextValues = {};
-
-    parameters.forEach((parameter) => {
-      if (parameter.paramType === 'date' && isToDateParameter(parameter)) {
-        nextValues[parameter.paramName] = todayValue;
-        return;
-      }
-
-      if (parameter.paramType === 'date' && isFromDateParameter(parameter)) {
-        nextValues[parameter.paramName] = fromDateValue;
-        return;
-      }
-
-      nextValues[parameter.paramName] = parameter.defaultValue || '';
-    });
-
-    setRunValues(nextValues);
+    setRunValues(buildInitialRunValues(parameters));
     setIsRunModalOpen(true);
   };
 

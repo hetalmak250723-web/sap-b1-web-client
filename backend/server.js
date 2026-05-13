@@ -50,6 +50,25 @@ const reportLookupsRoutes        = require('./routes/reportLookups');
 
 const app = express();
 
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true;
+
+  try {
+    const { protocol, hostname, port } = new URL(origin);
+    if (protocol !== 'http:' || port !== '3000') {
+      return false;
+    }
+
+    return (
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      /^192\.168\.1\.\d+$/.test(hostname)
+    );
+  } catch (_error) {
+    return false;
+  }
+};
+
 
 const redactSensitiveFields = (value) => {
   if (!value || typeof value !== 'object') return value;
@@ -79,7 +98,14 @@ process.on('uncaughtException', (error, origin) => {
 });
 
 app.use(cors({
-  origin: true, // Allow all origins to enable LAN/IP access
+  origin(origin, callback) {
+    if (isAllowedOrigin(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
 }));
 app.use(express.json());
@@ -155,7 +181,13 @@ app.use('/api/lookups',            reportLookupsRoutes);
 app.use('/api',                    sapRoutes);
 
 // Health check
-app.get('/health', (_req, res) => res.json({ status: 'ok', port: env.port }));
+app.get('/health', (_req, res) =>
+  res.json({
+    status: 'ok',
+    message: 'Backend is running',
+    host: '0.0.0.0',
+    port: env.port,
+  }));
 
 // SAP connection debug — remove in production
 app.get('/api/debug/production-orders', async (_req, res) => {
@@ -177,7 +209,7 @@ const path = require('path');
 app.use(express.static(path.join(__dirname, '../frontend/build')));
 
 // Catch-all route to serve the React index.html for frontend routing
-app.get('*', (req, res, next) => {
+app.use((req, res, next) => {
   if (req.path.startsWith('/api')) return next();
   res.sendFile(path.join(__dirname, '../frontend/build', 'index.html'));
 });
