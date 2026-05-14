@@ -561,13 +561,19 @@ const lookupWarehouseLocations = async () => {
 
 const lookupBusinessPlaces = async () => {
   const rows = await queryRows(`
-    SELECT BPLId, BPLName
+    SELECT BPLId, BPLName, VATRegNum, TaxIdNum
     FROM OBPL
     WHERE Disabled <> 'Y'
     ORDER BY BPLId
   `);
 
-  return rows.map((row) => ({ code: String(row.BPLId), name: row.BPLName || "" }));
+  return rows.map((row) => ({
+    code: String(row.BPLId),
+    name: row.BPLName || "",
+    vatRegNum: row.VATRegNum || "",
+    taxIdNum: row.TaxIdNum || "",
+    branchRegNo: row.VATRegNum || row.TaxIdNum || "",
+  }));
 };
 
 const lookupGLAccounts = async (query = "", top = 100) => {

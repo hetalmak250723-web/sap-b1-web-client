@@ -26,6 +26,8 @@ module.exports = {
   reportServiceUsername: process.env.SAP_REPORT_SERVICE_USERNAME || process.env.SAP_USERNAME || '',
   reportServicePassword: process.env.SAP_REPORT_SERVICE_PASSWORD || process.env.SAP_PASSWORD || '',
   reportServiceCompanyDb: process.env.SAP_REPORT_SERVICE_COMPANY_DB || process.env.SAP_COMPANY_DB || '',
+  incomingPaymentCashAccount: process.env.INCOMING_PAYMENT_CASH_ACCOUNT || '',
+  outgoingPaymentCashAccount: process.env.OUTGOING_PAYMENT_CASH_ACCOUNT || '',
   // Direct SQL Server
   dbServer:    process.env.DB_SERVER    || '',
   dbInstance:  process.env.DB_INSTANCE  || '',

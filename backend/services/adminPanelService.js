@@ -1,5 +1,6 @@
 const bcrypt = require('bcryptjs');
 const authDbService = require('./authDbService');
+const { syncApplicationSidebarMenus } = require('./applicationMenuSyncService');
 const {
   deleteReportMenuSidebarMenu,
   syncAllReportMenuSidebarMenus,
@@ -344,6 +345,7 @@ const getEntityCount = async (tableName) => {
 
 const getEntityList = async () => {
   await authDbService.transaction(async (db) => {
+    await syncApplicationSidebarMenus(db);
     await syncAllReportMenuSidebarMenus(db);
   });
 
@@ -362,8 +364,9 @@ const getEntityList = async () => {
 };
 
 const getEntityBootstrap = async (entityKey) => {
-  if (entityKey === 'report-menus') {
+  if (['menus', 'role-rights', 'report-menus'].includes(entityKey)) {
     await authDbService.transaction(async (db) => {
+      await syncApplicationSidebarMenus(db);
       await syncAllReportMenuSidebarMenus(db);
     });
   }
