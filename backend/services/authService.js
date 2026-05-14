@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const authDbService = require('./authDbService');
+const { syncApplicationSidebarMenus } = require('./applicationMenuSyncService');
 const { appendVirtualMenus } = require('./virtualMenuService');
 
 const createHttpError = (statusCode, message) => {
@@ -150,6 +151,10 @@ const getAllowedReportMenuIdsForCompany = async (companyId) => {
 };
 
 const buildAuthorizedMenus = async (roleId, roleName = '', companyId = null) => {
+  await authDbService.transaction(async (db) => {
+    await syncApplicationSidebarMenus(db);
+  });
+
   const [allMenus, roleRights] = await Promise.all([
     authDbService.getAllMenus(),
     authDbService.getRoleRights(roleId),

@@ -53,6 +53,8 @@ import APCreditMemo from "./pages/APCreditMemo";
 import APCreditMemoList from "./pages/APCreditMemoList";
 import ARCreditMemo from "./pages/ARCreditMemo";
 import ARCreditMemoList from "./pages/ARCreditMemoList";
+import IncomingPayments from "./pages/IncomingPayments";
+import OutgoingPayments from "./pages/OutgoingPayments";
 import SalesQuotation from "./pages/SalesQuotation";
 import SalesQuotationList from "./pages/SalesQuotationList";
 import SalesAnalysisReportPage from "./pages/SalesAnalysisReportPage";
@@ -151,6 +153,8 @@ function App() {
               <Route path="/ar-credit-memo/find" element={<ARCreditMemoList />} />
               <Route path="/ap-credit-memo" element={<APCreditMemo />} />
               <Route path="/ap-credit-memo/find" element={<APCreditMemoList />} />
+              <Route path="/incoming-payments" element={<IncomingPayments />} />
+              <Route path="/outgoing-payments" element={<OutgoingPayments />} />
             </Route>
           </Route>
 

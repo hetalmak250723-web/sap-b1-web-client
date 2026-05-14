@@ -26,9 +26,10 @@ const TOP_LEVEL_MENU_PRIORITY = new Map([
   ['master', 3],
   ['production', 4],
   ['inventory', 5],
-  ['reports', 6],
-  ['report layout manager', 7],
-  ['admin panel', 8],
+  ['banking', 6],
+  ['reports', 7],
+  ['report layout manager', 8],
+  ['admin panel', 9],
 ]);
 
 const buildShortLabel = (label, fallback = 'MN') => {
@@ -42,8 +43,6 @@ const buildShortLabel = (label, fallback = 'MN') => {
 };
 
 const REPORT_STUDIO_NAME = 'report studio';
-const MASTER_MENU_NAME = 'master';
-const ALLOWED_MASTER_CHILDREN = new Set(['item master', 'business partner']);
 const isAdminMenuPath = (menuPath = '') => normalizePath(menuPath).startsWith('/admin');
 const getDisplayMenuName = (menu) => {
   const normalized = String(menu?.menuName || '').trim().toLowerCase();
@@ -116,29 +115,13 @@ const sortTopLevelMenus = (menus = []) =>
     return String(a.menuId).localeCompare(String(b.menuId), undefined, { numeric: true });
   });
 
-const sortMenuChildren = (menus = []) =>
-  [...menus].sort((a, b) => {
-    if ((a.sortOrder ?? 0) !== (b.sortOrder ?? 0)) {
-      return (a.sortOrder ?? 0) - (b.sortOrder ?? 0);
-    }
-
-    return String(a.menuName || '').localeCompare(String(b.menuName || ''));
-  });
 const buildSidebarMenus = (menus = []) => {
   const { dashboardMenu, remainingMenus } = extractDashboardMenu(menus);
 
   const removeHiddenSidebarItems = (items = []) =>
     items.reduce((nextItems, item) => {
       const menuPath = item?.menuPath ? normalizePath(item.menuPath) : '';
-      const isMasterMenu = normalizeMenuPriorityName(item.menuName) === MASTER_MENU_NAME;
-      const children = removeHiddenSidebarItems(item.children || []);
-      const filteredChildren = isMasterMenu
-        ? removeHiddenSidebarItems(
-            (item.children || []).filter((child) =>
-              ALLOWED_MASTER_CHILDREN.has(normalizeMenuPriorityName(child.menuName)),
-            ),
-          )
-        : children;
+      const filteredChildren = removeHiddenSidebarItems(item.children || []);
 
       if (!menuPath && !filteredChildren.length) {
         return nextItems;
@@ -151,7 +134,12 @@ const buildSidebarMenus = (menus = []) => {
       return nextItems;
     }, []);
 
-  return [dashboardMenu, ...sortTopLevelMenus(removeHiddenSidebarItems(remainingMenus))];
+  const visibleMenus = removeHiddenSidebarItems(remainingMenus);
+
+  return [
+    dashboardMenu,
+    ...sortTopLevelMenus(visibleMenus),
+  ];
 };
 
 const hasActiveChild = (menu, pathname) => {
