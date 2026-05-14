@@ -3,6 +3,7 @@ const https = require('https');
 const env = require('../config/env');
 const authDbService = require('./authDbService');
 const reportService = require('./reportService');
+const { syncReportMenuSidebarMenuById } = require('./reportMenuSidebarSyncService');
 
 const VALID_PARAM_TYPES = new Set(['date', 'string', 'number']);
 const VALID_REPORT_TYPES = new Set(['GET', 'POST', 'API', 'API_GET', 'API_POST']);
@@ -330,6 +331,33 @@ const buildMenuTree = (menus = [], reports = []) => {
     .map(sortNode);
 };
 
+const findSingleReportMenuTarget = (menus = [], targetMenuId) => {
+  const normalizedTargetMenuId = toInt(targetMenuId);
+  if (!normalizedTargetMenuId) {
+    return null;
+  }
+
+  for (const menu of menus) {
+    if (Number(menu.menuId) === normalizedTargetMenuId) {
+      const childCount = Array.isArray(menu.children) ? menu.children.length : 0;
+      const reportCount = Array.isArray(menu.reports) ? menu.reports.length : 0;
+
+      if (childCount === 0 && reportCount === 1) {
+        return menu.reports[0];
+      }
+
+      return null;
+    }
+
+    const nestedMatch = findSingleReportMenuTarget(menu.children || [], normalizedTargetMenuId);
+    if (nestedMatch) {
+      return nestedMatch;
+    }
+  }
+
+  return null;
+};
+
 const appendAncestorMenus = (visibleMenus, allMenus) => {
   const menuMap = new Map(allMenus.map((menu) => [menu.MenuId, menu]));
   const resultMap = new Map(visibleMenus.map((menu) => [menu.MenuId, menu]));
@@ -346,6 +374,42 @@ const appendAncestorMenus = (visibleMenus, allMenus) => {
   });
 
   return [...resultMap.values()];
+};
+
+const loadMenusAndReportsForCompany = async (companyId) => {
+  const [menus, reports] = await Promise.all([
+    authDbService.queryRows(`
+      SELECT ReportMenuId AS MenuId, MenuName, ParentId, SortOrder, CreatedBy, CompanyId
+      FROM dbo.ReportMenus
+      WHERE CompanyId = @companyId
+      ORDER BY SortOrder ASC, MenuName ASC, ReportMenuId ASC
+    `, { companyId }),
+    authDbService.queryRows(`
+      SELECT ReportId, ReportName, ReportCode, ReportMenuId, ApiUrl, ReportType, CompanyId, CreatedBy, IsPublic, CreatedAt, UpdatedAt
+      FROM dbo.Reports
+      WHERE CompanyId = @companyId
+      ORDER BY ReportName ASC, ReportId ASC
+    `, { companyId }),
+  ]);
+
+  return { menus, reports };
+};
+
+const loadSharedMenusAndReports = async () => {
+  const [menus, reports] = await Promise.all([
+    authDbService.queryRows(`
+      SELECT ReportMenuId AS MenuId, MenuName, ParentId, SortOrder, CreatedBy, CompanyId
+      FROM dbo.ReportMenus
+      ORDER BY CompanyId ASC, SortOrder ASC, MenuName ASC, ReportMenuId ASC
+    `),
+    authDbService.queryRows(`
+      SELECT ReportId, ReportName, ReportCode, ReportMenuId, ApiUrl, ReportType, CompanyId, CreatedBy, IsPublic, CreatedAt, UpdatedAt
+      FROM dbo.Reports
+      ORDER BY CompanyId ASC, ReportName ASC, ReportId ASC
+    `),
+  ]);
+
+  return { menus, reports };
 };
 
 const ensureSchema = async () => {
@@ -468,35 +532,12 @@ const ensureSchema = async () => {
 const getVisibleMenusAndReports = async ({ userId, companyId }) => {
   await ensureSchema();
 
-  const [allMenus, visibleReports] = await Promise.all([
-    authDbService.queryRows(`
-      SELECT ReportMenuId AS MenuId, MenuName, ParentId, SortOrder, CreatedBy, CompanyId
-      FROM dbo.ReportMenus
-      WHERE CompanyId = @companyId
-      ORDER BY SortOrder ASC, MenuName ASC, ReportMenuId ASC
-    `, { companyId }),
-    authDbService.queryRows(`
-      SELECT ReportId, ReportName, ReportCode, ReportMenuId, ApiUrl, ReportType, CompanyId, CreatedBy, IsPublic, CreatedAt, UpdatedAt
-      FROM dbo.Reports
-      WHERE CompanyId = @companyId
-        AND (CreatedBy = @userId OR IsPublic = 1)
-      ORDER BY ReportName ASC, ReportId ASC
-    `, { companyId, userId }),
-  ]);
-
-  const ownedMenus = allMenus.filter((menu) => Number(menu.CreatedBy) === Number(userId));
-  const visibleMenuIds = new Set(ownedMenus.map((menu) => menu.MenuId));
-  visibleReports.forEach((report) => {
-    if (report.ReportMenuId) {
-      visibleMenuIds.add(report.ReportMenuId);
-    }
-  });
-
-  const directlyVisibleMenus = allMenus.filter((menu) => visibleMenuIds.has(menu.MenuId));
-  const completeVisibleMenus = appendAncestorMenus(directlyVisibleMenus, allMenus);
+  const { menus: allMenus, reports: visibleReports } = await loadMenusAndReportsForCompany(companyId);
+  const completeVisibleMenus = appendAncestorMenus(allMenus, allMenus);
+  const menuTree = buildMenuTree(completeVisibleMenus, visibleReports);
 
   return {
-    menus: buildMenuTree(completeVisibleMenus, visibleReports),
+    menus: menuTree,
     flatMenus: completeVisibleMenus
       .map((menu) => ({
         menuId: menu.MenuId,
@@ -510,6 +551,14 @@ const getVisibleMenusAndReports = async ({ userId, companyId }) => {
           return Number(left.sortOrder || 0) - Number(right.sortOrder || 0);
         }
         return String(left.menuName || '').localeCompare(String(right.menuName || ''));
+      }),
+    singleReportMenuTargets: menuTree
+      .flatMap(function collectMenuTargets(menu) {
+        const currentTarget = findSingleReportMenuTarget([menu], menu.menuId);
+        const childTargets = (menu.children || []).flatMap(collectMenuTargets);
+        return currentTarget
+          ? [{ menuId: menu.menuId, reportId: currentTarget.reportId }, ...childTargets]
+          : childTargets;
       }),
   };
 };
@@ -565,6 +614,7 @@ const createReportMenu = async (payload, auth) => {
 
   const menuName = normalizeText(payload?.menuName || payload?.MenuName);
   const parentId = toInt(payload?.parentId ?? payload?.ParentId);
+  const icon = normalizeText(payload?.icon || payload?.Icon) || null;
   const sortOrder = toInt(payload?.sortOrder ?? payload?.SortOrder) ?? 0;
 
   if (!menuName) {
@@ -583,36 +633,50 @@ const createReportMenu = async (payload, auth) => {
     }
   }
 
-  const inserted = await authDbService.query(`
-    INSERT INTO dbo.ReportMenus (
-      MenuName,
-      ParentId,
-      SortOrder,
-      CreatedBy,
-      CompanyId,
-      CreatedAt
-    )
-    OUTPUT INSERTED.ReportMenuId AS MenuId
-    VALUES (
-      @menuName,
-      @parentId,
-      @sortOrder,
-      @createdBy,
-      @companyId,
-      SYSUTCDATETIME()
-    )
-  `, {
-    menuName,
-    parentId,
-    sortOrder,
-    createdBy: userId,
-    companyId,
+  const inserted = await authDbService.transaction(async (db) => {
+    const result = await db.query(`
+      INSERT INTO dbo.ReportMenus (
+        MenuName,
+        ParentId,
+        Icon,
+        SortOrder,
+        CreatedBy,
+        CompanyId,
+        CreatedAt
+      )
+      OUTPUT INSERTED.ReportMenuId AS MenuId
+      VALUES (
+        @menuName,
+        @parentId,
+        @icon,
+        @sortOrder,
+        @createdBy,
+        @companyId,
+        SYSUTCDATETIME()
+      )
+    `, {
+      menuName,
+      parentId,
+      icon,
+      sortOrder,
+      createdBy: userId,
+      companyId,
+    });
+
+    const insertedMenuId = result.recordset?.[0]?.MenuId;
+    if (!insertedMenuId) {
+      throw createHttpError(500, 'Failed to create report menu.');
+    }
+
+    await syncReportMenuSidebarMenuById(db, insertedMenuId);
+    return result;
   });
 
   return {
     menuId: inserted.recordset?.[0]?.MenuId,
     menuName,
     parentId,
+    icon,
     sortOrder,
     createdBy: userId,
     companyId,
@@ -805,7 +869,6 @@ const getReportById = async (reportId, auth) => {
     FROM dbo.Reports
     WHERE ReportId = @reportId
       AND CompanyId = @companyId
-      AND (CreatedBy = @userId OR IsPublic = 1)
   `, { reportId, companyId, userId });
 
   if (!reportRow) {

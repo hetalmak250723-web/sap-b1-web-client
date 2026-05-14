@@ -16,11 +16,14 @@ import StateSelectionModal from '../sales-order/components/StateSelectionModal';
 import HSNCodeModal from './components/HSNCodeModal';
 import ItemSelectionModal from './components/ItemSelectionModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
+import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { summarizeFreightRows } from '../../components/freight/freightUtils';
 import CopyFromModal from './components/CopyFromModal';
 import { determineTaxCode, recalculateAllTaxCodes, getGSTTypeLabel } from '../../utils/taxEngine';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
+import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
 import {
   fetchARInvoiceReferenceData,
   fetchARInvoiceCustomerDetails,
@@ -50,6 +53,7 @@ import {
   HEADER_UDF_DEFINITIONS,
   ROW_UDF_DEFINITIONS,
   createUdfState,
+  normalizeUdfState,
   readSavedFormSettings,
 } from '../../config/arInvoiceForm';
 
@@ -127,7 +131,7 @@ const INIT_HEADER = {
   branchRegNo: '', shipTo: '', shipToCode: '', payTo: '', payToCode: '',
   shippingType: '', confirmed: false, journalRemark: '', paymentTerms: '',
   paymentMethod: '', otherInstruction: '', discount: '', freight: '', tax: '',
-  totalPaymentDue: '', rounding: false, owner: '', purchaser: '',
+  totalPaymentDue: '', rounding: false, owner: '', purchaser: '', salesEmployee: '',
   placeOfSupply: '', currency: 'INR', useBillToForTax: false,
   billToAddress: '', billToCode: '', shipToAddress: '',
 };
@@ -147,7 +151,7 @@ function ARInvoicePage() {
   const [lines, setLines] = useState([createLine()]);
   const [attachments] = useState(INIT_ATTACH);
   const [activeTab, setActiveTab] = useState('Contents');
-  const [headerUdfs, setHeaderUdfs] = useState(() => createUdfState(HEADER_UDF_DEFINITIONS));
+  const [headerUdfs, setHeaderUdfs] = useState(() => normalizeUdfState(HEADER_UDF_DEFINITIONS));
   const [formSettings, setFormSettings] = useState(() => readSavedFormSettings());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [formSettingsOpen, setFormSettingsOpen] = useState(false);
@@ -159,6 +163,9 @@ function ARInvoicePage() {
   });
   const [pageState, setPageState] = useState({ loading: false, vendorLoading: false, posting: false, error: '', success: '', seriesLoading: false });
   const [valErrors, setValErrors] = useState({ header: {}, lines: {}, form: '' });
+  const [loadedSnapshot, setLoadedSnapshot] = useState('');
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [addressModal, setAddressModal] = useState(null);
   const [taxInfoModal, setTaxInfoModal] = useState(false);
   const [bpModal, setBpModal] = useState(false);
@@ -177,6 +184,18 @@ function ARInvoicePage() {
     lstVatNo: '', cstNo: '', tanNo: '', serviceTaxNo: '', companyType: '', natureOfBusiness: '',
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
+
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
 
   useEffect(() => { localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings)); }, [formSettings]);
 
@@ -199,8 +218,46 @@ function ARInvoicePage() {
     discount: Number(dec.PercentDec), freight: Number(dec.SumDec),
     tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
   };
+  const {
+    effectiveSalesEmployees,
+    salesEmployeeSetup,
+    openSalesEmployeeSetup,
+    closeSalesEmployeeSetup,
+    updateSalesEmployeeSetupRow,
+    saveSalesEmployeeSetup,
+    resolveSalesEmployeeByName,
+  } = useSalesEmployeeSetup({
+    employees: refData.sales_employees || [],
+    onEmployeesChange: (sales_employees) => setRefData((prev) => ({ ...prev, sales_employees })),
+    onError: (message) => setPageState((prev) => ({ ...prev, error: message || '' })),
+    onSuccess: (message) => setPageState((prev) => ({ ...prev, error: '', success: message || '' })),
+    discountDecimals: numDec.discount,
+    getErrMsg,
+  });
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
   const hasBuyerCode = Boolean(String(header.vendor || '').trim());
+  const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+  const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const primaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add';
+  const secondaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add & New';
+
+  useEffect(() => {
+    if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+    setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+    setSnapshotPending(false);
+  }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+
+  const markDirty = useCallback(() => {
+    if (currentDocEntry) setIsDirty(true);
+  }, [currentDocEntry]);
 
   // Continue in next part...
 
@@ -229,6 +286,7 @@ function ARInvoicePage() {
             tax_codes: refDataRes.data.tax_codes || [],
             payment_terms: refDataRes.data.payment_terms || [],
             shipping_types: refDataRes.data.shipping_types || [],
+            sales_employees: refDataRes.data.sales_employees || [],
             branches: refDataRes.data.branches || [],
             states: refDataRes.data.states || [],
             uom_groups: refDataRes.data.uom_groups || [],
@@ -283,7 +341,10 @@ function ARInvoicePage() {
             ? so.lines.map(l => ({ ...createLine(), ...l, udf: { ...createUdfState(ROW_UDF_DEFINITIONS), ...(l.udf || {}) } }))
             : [createLine()]
         );
-        setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(so.header_udfs || {}) });
+        setHeaderUdfs(normalizeUdfState(HEADER_UDF_DEFINITIONS, so.header_udfs || {}));
+        setLoadedSnapshot('');
+        setSnapshotPending(true);
+        setIsDirty(false);
         if (so.header?.customerCode || so.header?.customer) {
           loadVendorDetails(so.header?.customerCode || so.header?.customer);
         }
@@ -618,6 +679,20 @@ function ARInvoicePage() {
       loadVendorDetails(value);
       return;
     }
+    if (name === 'purchaser') {
+      if (value === '__DEFINE_NEW__') {
+        openSalesEmployeeSetup();
+        return;
+      }
+
+      const selectedEmployee = resolveSalesEmployeeByName(value);
+      setHeader((prev) => ({
+        ...prev,
+        purchaser: value,
+        salesEmployee: selectedEmployee ? String(selectedEmployee.SlpCode) : '-1',
+      }));
+      return;
+    }
     if (numDec[name] !== undefined && type !== 'checkbox') {
       setHeader(p => ({ ...p, [name]: sanitize(value, numDec[name]) }));
       return;
@@ -923,6 +998,7 @@ function ARInvoicePage() {
     // Clear errors and add new line with current header values
     setValErrors(p => ({ ...p, form: '' }));
     setPageState(p => ({ ...p, error: '' }));
+    markDirty();
     setLines(p => [...p, { 
       ...createLine(), 
       branch: header.branch || '', 
@@ -933,16 +1009,19 @@ function ARInvoicePage() {
 
   const removeLine = (i) => {
     if (!isDocumentEditable) return;
+    markDirty();
     setValErrors(p => { const nl = { ...p.lines }; delete nl[i]; return { ...p, lines: nl, form: '' }; });
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
   const handleHeaderUdfChange = (k, v) => {
     if (!isDocumentEditable) return;
+    markDirty();
     setHeaderUdfs(p => ({ ...p, [k]: v }));
   };
   const handleRowUdfChange = (i, k, v) => {
     if (!isDocumentEditable) return;
+    markDirty();
     setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
@@ -1019,7 +1098,7 @@ function ARInvoicePage() {
 
   const handleStateSelect = (state) => {
     if (!isDocumentEditable) return;
-    setHeader(p => ({ ...p, placeOfSupply: state.Name || state.Code || '' }));
+    setHeader(p => ({ ...p, placeOfSupply: getStateCodeValue(state, refData.states) }));
   };
 
   // ── BP Modal handlers ─────────────────────────────────────────────────────
@@ -1594,6 +1673,7 @@ function ARInvoicePage() {
       setPageState(p => ({ ...p, error: 'Closed A/R Invoices cannot be edited.', success: '' }));
       return;
     }
+    if (currentDocEntry && !hasUnsavedChanges) return;
     const e = validate();
     if (e.form || Object.values(e.header).some(Boolean) || Object.values(e.lines).some(le => Object.values(le || {}).some(Boolean))) {
       setValErrors(e);
@@ -1619,9 +1699,21 @@ function ARInvoicePage() {
       console.log('🔍 [Frontend] Submitting AR Invoice with header:', prep);
       console.log('🔍 [Frontend] Lines:', lines);
       
-      const payload = { company_id: AR_INVOICE_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
+      const payload = {
+        company_id: AR_INVOICE_COMPANY_ID,
+        header: prep,
+        lines: lines.map((line) => ({
+          ...line,
+          udf: normalizeUdfState(ROW_UDF_DEFINITIONS, line.udf || {}),
+        })),
+        freightCharges: freightModal.freightCharges,
+        header_udfs: normalizeUdfState(HEADER_UDF_DEFINITIONS, headerUdfs),
+      };
       const r = currentDocEntry ? await updateARInvoice(currentDocEntry, payload) : await submitARInvoice(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
+      setLoadedSnapshot('');
+      setSnapshotPending(false);
+      setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
       setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
@@ -1641,6 +1733,9 @@ function ARInvoicePage() {
   };
 
   const resetForm = () => {
+    setLoadedSnapshot('');
+    setSnapshotPending(false);
+    setIsDirty(false);
     setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
     setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
     setValErrors({ header: {}, lines: {}, form: '' });
@@ -1653,13 +1748,13 @@ function ARInvoicePage() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="del-page" onSubmit={handleSubmit}>
+    <form className="del-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="del-toolbar">
         <span className="del-toolbar__title">A/R Invoice{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable}>
-          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+          {primaryActionLabel}
         </button>
         <button type="button" className="del-btn" disabled={pageState.posting || !isDocumentEditable}>
           Add Draft & New
@@ -1810,7 +1905,7 @@ function ARInvoicePage() {
                         <input
                           name="placeOfSupply"
                           className={`so-field__input${valErrors.header.placeOfSupply ? ' so-field__input--error' : ''}`}
-                          value={header.placeOfSupply || ''}
+                          value={getStateDisplayName(header.placeOfSupply, refData.states)}
                           onChange={handleHeaderChange}
                           placeholder="State code"
                           style={{ flex: 1 }}
@@ -2032,14 +2127,12 @@ function ARInvoicePage() {
                     <label className="del-field__label">Sales Employee</label>
                     <select name="purchaser" className="del-field__select" value={header.purchaser || ''} onChange={handleHeaderChange} disabled={!isDocumentEditable}>
                       <option value="">No Sales Employee / Buyer</option>
-                      <option value="ASM">ASM</option>
-                      <option value="Deepak Kothari">Deepak Kothari</option>
-                      <option value="Dhaval">Dhaval</option>
-                      <option value="Mala Garma">Mala Garma</option>
-                      <option value="OM">OM</option>
-                      <option value="Rajkumar Munjal">Rajkumar Munjal</option>
-                      <option value="Zach Ibarra">Zach Ibarra</option>
-                      <option value="Define New">Define New</option>
+                      {effectiveSalesEmployees.map((employee) => (
+                        <option key={employee.SlpCode ?? employee.SlpName} value={employee.SlpName || ''}>
+                          {employee.SlpName || ''}
+                        </option>
+                      ))}
+                      <option value="__DEFINE_NEW__">Define New</option>
                     </select>
                   </div>
                   <div className="del-field">
@@ -2129,7 +2222,7 @@ function ARInvoicePage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable}>
-                  {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add & New'}
+                  {secondaryActionLabel}
                 </button>
                 <button type="button" className="del-btn" disabled={pageState.posting || !isDocumentEditable}>
                   Add Draft & New
@@ -2283,6 +2376,15 @@ function ARInvoicePage() {
         documentType={copyFromDocType}
         onFetchDocuments={fetchCopyFromDocuments}
         onFetchDocumentDetails={fetchCopyFromDocumentDetails}
+      />
+
+      <SalesEmployeeSetupModal
+        isOpen={salesEmployeeSetup.open}
+        rows={salesEmployeeSetup.rows}
+        saving={salesEmployeeSetup.saving}
+        onClose={closeSalesEmployeeSetup}
+        onSave={saveSalesEmployeeSetup}
+        onUpdateRow={updateSalesEmployeeSetupRow}
       />
 
       {/* Freight Selection Modal */}

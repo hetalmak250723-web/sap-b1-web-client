@@ -26,6 +26,9 @@ import { summarizeFreightRows } from '../../components/freight/freightUtils';
 import { determineTaxCode, recalculateAllTaxCodes, getGSTTypeLabel } from '../../utils/taxEngine';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
+import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
+import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import {
     fetchSalesOrderByDocEntry,
     fetchSalesOrderCustomerDetails,
@@ -52,6 +55,7 @@ import {
     ROW_UDF_DEFINITIONS,
     BASE_MATRIX_COLUMNS,
     createUdfState,
+    normalizeUdfState,
     readSavedFormSettings,
 } from '../../config/salesOrderForm';
 
@@ -171,7 +175,7 @@ function SalesOrder() {
     const [lines, setLines] = useState([createLine()]);
     const [attachments] = useState(INIT_ATTACH);
     const [activeTab, setActiveTab] = useState('Contents');
-    const [headerUdfs, setHeaderUdfs] = useState(() => createUdfState(HEADER_UDF_DEFINITIONS));
+    const [headerUdfs, setHeaderUdfs] = useState(() => normalizeUdfState(HEADER_UDF_DEFINITIONS));
     const [formSettings, setFormSettings] = useState(() => readSavedFormSettings());
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [formSettingsOpen, setFormSettingsOpen] = useState(false);
@@ -184,6 +188,9 @@ function SalesOrder() {
     });
     const [pageState, setPageState] = useState({ loading: false, vendorLoading: false, posting: false, error: '', success: '', seriesLoading: false });
     const [valErrors, setValErrors] = useState({ header: {}, lines: {}, form: '' });
+    const [loadedSnapshot, setLoadedSnapshot] = useState('');
+    const [snapshotPending, setSnapshotPending] = useState(false);
+    const [isDirty, setIsDirty] = useState(false);
     const [addressModal, setAddressModal] = useState(null);
     const [eWayBillModal, setEWayBillModal] = useState(false);
     const [eWayBillData, setEWayBillData] = useState({});
@@ -216,6 +223,18 @@ function SalesOrder() {
         lstVatNo: '', cstNo: '', tanNo: '', serviceTaxNo: '', companyType: '', natureOfBusiness: '',
         assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
     });
+
+    useEffect(() => {
+        if (!refData.states?.length || !header.placeOfSupply) return;
+        const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+        if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+            setHeader(prev => (
+                prev.placeOfSupply === header.placeOfSupply
+                    ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+                    : prev
+            ));
+        }
+    }, [header.placeOfSupply, refData.states]);
 
     const resolvePreferredSeries = (seriesList, postingDateValue, selectedSeries = '') => {
         if (!Array.isArray(seriesList) || !seriesList.length) return null;
@@ -254,14 +273,52 @@ function SalesOrder() {
         discount: Number(dec.PercentDec), freight: Number(dec.SumDec),
         tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
     };
+    const {
+        effectiveSalesEmployees,
+        salesEmployeeSetup,
+        openSalesEmployeeSetup,
+        closeSalesEmployeeSetup,
+        updateSalesEmployeeSetupRow,
+        saveSalesEmployeeSetup,
+        resolveSalesEmployeeByName,
+    } = useSalesEmployeeSetup({
+        employees: refData.sales_employees || [],
+        onEmployeesChange: (sales_employees) => setRefData((prev) => ({ ...prev, sales_employees })),
+        onError: (message) => setPageState((prev) => ({ ...prev, error: message || '' })),
+        onSuccess: (message) => setPageState((prev) => ({ ...prev, error: '', success: message || '' })),
+        discountDecimals: numDec.discount,
+        getErrMsg,
+    });
     const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
     const hasBuyerCode = Boolean(String(header.vendor || '').trim());
     const isUpdateMode = Boolean(currentDocEntry);
+    const currentDocumentSnapshot = currentDocEntry
+        ? JSON.stringify({ header, lines, headerUdfs })
+        : '';
+    const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+    const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
     const primaryActionLabel = pageState.posting
         ? 'Saving...'
         : isUpdateMode
-            ? 'Update (Alt+U)'
+            ? (hasUnsavedChanges ? 'Update (Alt+U)' : 'OK')
             : 'Add (Alt+A)';
+    const secondaryActionLabel = pageState.posting
+        ? 'Saving…'
+        : currentDocEntry
+            ? updateActionLabel
+            : 'Add & New';
+
+    useEffect(() => {
+        if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+        setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+        setSnapshotPending(false);
+    }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+
+    const markDirty = useCallback(() => {
+        if (currentDocEntry) {
+            setIsDirty(true);
+        }
+    }, [currentDocEntry]);
 
     // Continue in next part...
 
@@ -517,7 +574,10 @@ function SalesOrder() {
                         })
                         : [createLine()]
                 );
-                setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(so.header_udfs || {}) });
+                setHeaderUdfs(normalizeUdfState(HEADER_UDF_DEFINITIONS, so.header_udfs || {}));
+                setLoadedSnapshot('');
+                setSnapshotPending(true);
+                setIsDirty(false);
 
                 if (so.header?.customerCode) {
                     loadVendorDetails(so.header.customerCode);
@@ -1039,10 +1099,12 @@ function SalesOrder() {
 
         // ✅ FIX: When purchaser (Sales Employee name) changes, update salesEmployee (code) too
         if (name === 'purchaser') {
+            if (value === '__DEFINE_NEW__') {
+                openSalesEmployeeSetup();
+                return;
+            }
             // Find the SlpCode for the selected name
-            const selectedEmployee = (refData.sales_employees || []).find(
-                emp => emp.SlpName === value
-            );
+            const selectedEmployee = resolveSalesEmployeeByName(value);
 
             setHeader(p => ({
                 ...p,
@@ -1059,13 +1121,16 @@ function SalesOrder() {
         }
 
         if (numDec[name] !== undefined && type !== 'checkbox') {
+            markDirty();
             setHeader(p => ({ ...p, [name]: sanitize(value, numDec[name]) }));
             return;
         }
+        markDirty();
         setHeader(p => ({ ...p, [name]: type === 'checkbox' ? checked : value }));
     };
 
     const handleShipToChange = (addressCode) => {
+        markDirty();
         if (!addressCode || !header.vendor) {
             setHeader(p => ({ ...p, shipToCode: addressCode, shipToAddress: '', placeOfSupply: '' }));
             return;
@@ -1084,6 +1149,7 @@ function SalesOrder() {
     };
 
     const handleBillToChange = (addressCode) => {
+        markDirty();
         if (!addressCode || !header.vendor) {
             setHeader(p => ({ ...p, billToCode: addressCode, billToAddress: '' }));
             return;
@@ -1120,6 +1186,7 @@ function SalesOrder() {
 
     const handleLineChange = async (i, e) => {
         const { name, value } = e.target;
+        markDirty();
         setValErrors(p => ({ ...p, lines: { ...p.lines, [i]: { ...(p.lines[i] || {}), [name]: '' } }, form: '' }));
         setPageState(p => ({ ...p, error: '', success: '' }));
 
@@ -1253,6 +1320,7 @@ function SalesOrder() {
     };
 
     const addLine = () => {
+        markDirty();
         // 🚨 SKIP ALL VALIDATION DURING COPY MODE
         if (copyFromMode) {
             setLines(p => [...p, {
@@ -1415,7 +1483,7 @@ function SalesOrder() {
     };
 
     const handleStateSelect = (state) => {
-        setHeader(p => ({ ...p, placeOfSupply: state.Name || state.Code || '' }));
+        setHeader(p => ({ ...p, placeOfSupply: getStateCodeValue(state, refData.states) }));
     };
 
     // ── Business Partner Modal handlers ───────────────────────────────────────
@@ -2031,6 +2099,7 @@ function SalesOrder() {
             setPageState(p => ({ ...p, error: 'This document is closed and cannot be edited.', success: '' }));
             return;
         }
+        if (currentDocEntry && !hasUnsavedChanges) return;
         if (copyFromMode) {
             console.log('⚠️ Submit blocked in Copy Mode');
             return;
@@ -2112,10 +2181,16 @@ function SalesOrder() {
                 baseEntry: line.baseEntry,
                 baseType: line.baseType,
                 baseLine: line.baseLine,
-                udf: line.udf,
+                udf: normalizeUdfState(ROW_UDF_DEFINITIONS, line.udf || {}),
             }));
 
-            const payload = { company_id: SALES_ORDER_COMPANY_ID, header: prep, lines: cleanedLines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
+            const payload = {
+                company_id: SALES_ORDER_COMPANY_ID,
+                header: prep,
+                lines: cleanedLines,
+                freightCharges: freightModal.freightCharges,
+                header_udfs: normalizeUdfState(HEADER_UDF_DEFINITIONS, headerUdfs),
+            };
 
             // ═══ LOGGING: Payload Before Submit ═══
             console.log('═══════════════════════════════════════════════════');
@@ -2128,6 +2203,9 @@ function SalesOrder() {
             const r = currentDocEntry ? await updateSalesOrder(currentDocEntry, payload) : await submitSalesOrder(payload);
             const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
             const resetHeader = createInitialHeader();
+            setLoadedSnapshot('');
+            setSnapshotPending(false);
+            setIsDirty(false);
             setCurrentDocEntry(null); setHeader(resetHeader); setLines([createLine()]);
             setFreightModal({ open: false, freightCharges: [], loading: false });
             setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
@@ -2151,6 +2229,9 @@ function SalesOrder() {
 
     const resetForm = () => {
         const resetHeader = createInitialHeader();
+        setLoadedSnapshot('');
+        setSnapshotPending(false);
+        setIsDirty(false);
         setCurrentDocEntry(null); setHeader(resetHeader); setLines([createLine()]);
         setFreightModal({ open: false, freightCharges: [], loading: false });
         setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
@@ -2424,7 +2505,7 @@ function SalesOrder() {
                                                 <input
                                                     name="placeOfSupply"
                                                     className={`so-field__input${valErrors.header.placeOfSupply ? ' so-field__input--error' : ''}`}
-                                                    value={header.placeOfSupply || ''}
+                                                    value={getStateDisplayName(header.placeOfSupply, refData.states)}
                                                     onChange={handleHeaderChange}
                                                     placeholder="State code"
                                                     style={{ flex: 1 }}
@@ -2688,18 +2769,19 @@ function SalesOrder() {
                                             disabled={!refData.sales_employees || refData.sales_employees.length === 0}
                                         >
                                             <option value="">No Sales Employee / Buyer</option>
-                                            {(refData.sales_employees || []).map(emp => (
+                                            {effectiveSalesEmployees.map(emp => (
                                                 <option key={emp.SlpCode} value={emp.SlpName}>
                                                     {emp.SlpName}
                                                 </option>
                                             ))}
+                                            <option value="__DEFINE_NEW__">Define New</option>
                                         </select>
                                         {/* Debug info */}
                                         <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
                                             {header.purchaser ? (
-                                                <span>Selected: {header.purchaser} | Available: {(refData.sales_employees || []).length} employees</span>
+                                                <span>Selected: {header.purchaser} | Available: {effectiveSalesEmployees.length} employees</span>
                                             ) : (
-                                                <span>No selection | Available: {(refData.sales_employees || []).length} employees</span>
+                                                <span>No selection | Available: {effectiveSalesEmployees.length} employees</span>
                                             )}
                                         </div>
                                     </div>
@@ -2805,7 +2887,7 @@ function SalesOrder() {
                         <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
                             <div style={{ display: 'flex', gap: '8px' }}>
                                 <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
-                                    {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add & New'}
+                                    {secondaryActionLabel}
                                 </button>
                                 <button type="button" className="so-btn" disabled={pageState.posting}>
                                     Add Draft & New
@@ -3025,6 +3107,15 @@ function SalesOrder() {
                 searchPlaceholder={qualityModal.searchPlaceholder}
                 emptyMessage={qualityModal.emptyMessage}
                 allowCreate={qualityModal.allowCreate}
+            />
+
+            <SalesEmployeeSetupModal
+                isOpen={salesEmployeeSetup.open}
+                rows={salesEmployeeSetup.rows}
+                saving={salesEmployeeSetup.saving}
+                onClose={closeSalesEmployeeSetup}
+                onSave={saveSalesEmployeeSetup}
+                onUpdateRow={updateSalesEmployeeSetupRow}
             />
 
             {/* Freight Charges Modal */}

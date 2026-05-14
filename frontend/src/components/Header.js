@@ -11,6 +11,8 @@ const getDisplayMenuName = (menuName) => {
   return menuName;
 };
 
+const isAdminSearchPath = (menuPath = '') => normalizePath(menuPath).startsWith('/admin');
+
 const Header = () => {
   const navigate = useNavigate();
   const { user, company, roleName, logout, menus } = useAuth();
@@ -45,7 +47,12 @@ const Header = () => {
 
   const openSearchResult = (menuPath) => {
     if (!menuPath) return;
-    navigate(normalizePath(menuPath));
+    const normalizedPath = normalizePath(menuPath);
+    if (isAdminSearchPath(normalizedPath)) {
+      window.open(normalizedPath, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(normalizedPath);
+    }
     setSearchQuery('');
     setSearchOpen(false);
   };

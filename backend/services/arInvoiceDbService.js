@@ -114,8 +114,9 @@ const getUomGroups = () => safe(db.query(`
 const getSalesEmployees = () => safe(db.query(`
   SELECT SlpCode, SlpName, Memo, Commission, Active
   FROM   OSLP
-  WHERE  Active = 'Y'
-  ORDER  BY SlpName
+  ORDER  BY
+    CASE WHEN SlpCode = -1 THEN 0 ELSE 1 END,
+    SlpName
 `));
 
 // ── Document Series (ObjectCode = '18' for A/R Invoice) ───────────────────────────────────────────────────────────
@@ -353,6 +354,13 @@ const getReferenceData = async () => {
     branches,
     states,
     tax_codes: taxCodes,
+    sales_employees: salesEmployees.map((e) => ({
+      SlpCode: e.SlpCode,
+      SlpName: e.SlpName,
+      Memo: e.Memo || '',
+      Commission: e.Commission,
+      Active: e.Active,
+    })),
     uom_groups: processedUomGroups,
     base_documents: {
       sales_orders: openSalesOrders,

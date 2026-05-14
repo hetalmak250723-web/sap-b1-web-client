@@ -208,6 +208,12 @@ const submitARCreditMemo = async (payload) => {
       TaxDate: payload.header.documentDate || payload.header.postingDate,
 
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
+      SalesPersonCode:
+        payload.header.salesEmployee != null &&
+        String(payload.header.salesEmployee).trim() !== '' &&
+        String(payload.header.salesEmployee) !== '-1'
+          ? Number(payload.header.salesEmployee)
+          : undefined,
 
       // Branch mapping
       BPLId: normalizeBranchId(payload.header.branch),
@@ -315,6 +321,12 @@ const updateARCreditMemo = async (docEntry, payload) => {
       DocDueDate: payload.header.deliveryDate || payload.header.dueDate,
       TaxDate: payload.header.documentDate || payload.header.postingDate,
       ContactPersonCode: payload.header.contactPerson ? Number(payload.header.contactPerson) : undefined,
+      SalesPersonCode:
+        payload.header.salesEmployee != null &&
+        String(payload.header.salesEmployee).trim() !== '' &&
+        String(payload.header.salesEmployee) !== '-1'
+          ? Number(payload.header.salesEmployee)
+          : undefined,
       PaymentGroupCode: payload.header.paymentTerms ? Number(payload.header.paymentTerms) : undefined,
       NumAtCard: payload.header.salesContractNo || payload.header.customerRefNo || undefined,
       Comments: payload.header.otherInstruction || payload.header.comments || undefined,

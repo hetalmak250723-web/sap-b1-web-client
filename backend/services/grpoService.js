@@ -276,6 +276,7 @@ const submitGRPO = async (payload) => {
     if (header.series) sapPayload.Series = parseInt(header.series);
     if (header.branch) sapPayload.BPLId = parseInt(header.branch);
     if (header.paymentTerms) sapPayload.PaymentGroupCode = parseInt(header.paymentTerms);
+    if (header.salesEmployee !== '' && header.salesEmployee != null) sapPayload.SalesPersonCode = parseInt(header.salesEmployee, 10);
     if (header.freight) sapPayload.TotalExpenses = parseFloat(header.freight);
 
     // Add header UDFs if any

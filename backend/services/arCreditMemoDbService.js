@@ -67,8 +67,9 @@ const getShippingTypes = () => safe(db.query(`
 const getSalesEmployees = () => safe(db.query(`
   SELECT SlpCode, SlpName, Memo, Commission, Active
   FROM   OSLP
-  WHERE  Active = 'Y'
-  ORDER  BY SlpName
+  ORDER  BY
+    CASE WHEN SlpCode = -1 THEN 0 ELSE 1 END,
+    SlpName
 `));
 
 const getBranches = () => safe(db.query(`
@@ -756,7 +757,13 @@ const getReferenceData = async () => {
     tax_codes: taxCodes,
     payment_terms: paymentTerms,
     shipping_types: shippingTypes,
-    sales_employees: salesEmployees.map(e => ({ SlpCode: e.SlpCode, SlpName: e.SlpName })),
+    sales_employees: salesEmployees.map(e => ({
+      SlpCode: e.SlpCode,
+      SlpName: e.SlpName,
+      Memo: e.Memo || '',
+      Commission: e.Commission,
+      Active: e.Active,
+    })),
     branches,
     states,
     uom_groups,

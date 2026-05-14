@@ -19,6 +19,7 @@ import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import { determineTaxCode, recalculateAllTaxCodes, getGSTTypeLabel } from '../../utils/taxEngine';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
 import {
   fetchPurchaseRequestByDocEntry,
   fetchPurchaseRequestReferenceData,
@@ -245,6 +246,18 @@ function PurchaseRequest() {
     lstVatNo: '', cstNo: '', tanNo: '', serviceTaxNo: '', companyType: '', natureOfBusiness: '',
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
+
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
 
   useEffect(() => {
     localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings));
@@ -1075,7 +1088,7 @@ function PurchaseRequest() {
   };
 
   const handleStateSelect = (state) => {
-    setHeader(prev => ({ ...prev, placeOfSupply: state.Name || state.State || state.Code || state }));
+    setHeader(prev => ({ ...prev, placeOfSupply: getStateCodeValue(state, refData.states) }));
     closeStateModal();
   };
 
@@ -1345,7 +1358,7 @@ function PurchaseRequest() {
                         <input
                           name="placeOfSupply"
                           className={`po-field__input${valErrors.header.placeOfSupply ? ' po-field__input--error' : ''}`}
-                          value={header.placeOfSupply || ''}
+                          value={getStateDisplayName(header.placeOfSupply, refData.states)}
                           onChange={handleHeaderChange}
                           placeholder="State code"
                           style={{ flex: 1 }}

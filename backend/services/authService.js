@@ -121,15 +121,55 @@ const buildMenuTree = (menus, rightsByMenuId) => {
 const isAdminRoleName = (roleName) =>
   String(roleName || '').trim().toLowerCase() === 'admin';
 
-const buildAuthorizedMenus = async (roleId, roleName = '') => {
+const REPORT_MENU_PATH_PATTERN = /^\/reportlayoutmanager\/menu\/(\d+)\/?$/i;
+
+const extractReportMenuIdFromPath = (menuPath = '') => {
+  const match = String(menuPath || '').trim().match(REPORT_MENU_PATH_PATTERN);
+  if (!match) return null;
+
+  const parsed = Number(match[1]);
+  return Number.isInteger(parsed) ? parsed : null;
+};
+
+const getAllowedReportMenuIdsForCompany = async (companyId) => {
+  if (!Number.isInteger(Number(companyId))) {
+    return null;
+  }
+
+  const rows = await authDbService.queryRows(`
+    SELECT ReportMenuId
+    FROM dbo.ReportMenus
+    WHERE CompanyId = @companyId
+  `, { companyId: Number(companyId) });
+
+  return new Set(
+    rows
+      .map((row) => Number(row.ReportMenuId))
+      .filter((value) => Number.isInteger(value)),
+  );
+};
+
+const buildAuthorizedMenus = async (roleId, roleName = '', companyId = null) => {
   const [allMenus, roleRights] = await Promise.all([
     authDbService.getAllMenus(),
     authDbService.getRoleRights(roleId),
   ]);
 
+  const allowedReportMenuIds = await getAllowedReportMenuIdsForCompany(companyId);
+  const filteredMenus = allowedReportMenuIds
+    ? allMenus.filter((menu) => {
+        const reportMenuId = extractReportMenuIdFromPath(menu.MenuPath);
+        if (!reportMenuId) {
+          return true;
+        }
+
+        return allowedReportMenuIds.has(reportMenuId);
+      })
+    : allMenus;
+
   const visibleRights = roleRights.filter((right) => Boolean(right.CanView));
   const visibleIds = new Set(visibleRights.map((right) => right.MenuId));
-  const menuLookup = new Map(allMenus.map((menu) => [menu.MenuId, menu]));
+  const menuLookup = new Map(filteredMenus.map((menu) => [menu.MenuId, menu]));
 
   for (const right of visibleRights) {
     let current = menuLookup.get(right.MenuId);
@@ -151,7 +191,7 @@ const buildAuthorizedMenus = async (roleId, roleName = '') => {
     ]),
   );
 
-  const visibleMenus = allMenus.filter((menu) => visibleIds.has(menu.MenuId));
+  const visibleMenus = filteredMenus.filter((menu) => visibleIds.has(menu.MenuId));
   const menuTree = buildMenuTree(visibleMenus, rightsByMenuId);
   const menuPaths = visibleMenus
     .map((menu) => String(menu.MenuPath || '').trim())
@@ -222,7 +262,7 @@ const selectCompany = async (userId, companyId) => {
     throw createHttpError(403, 'No role is assigned for the selected company.');
   }
 
-  const { menus, menuPaths } = await buildAuthorizedMenus(role.RoleId, role.RoleName);
+  const { menus, menuPaths } = await buildAuthorizedMenus(role.RoleId, role.RoleName, companyId);
   const accessToken = createToken(
     {
       tokenType: 'access',
@@ -245,9 +285,9 @@ const selectCompany = async (userId, companyId) => {
   };
 };
 
-const getMenuForRole = async (roleId) => {
+const getMenuForRole = async (roleId, companyId = null) => {
   const role = await authDbService.getRoleById(roleId);
-  return buildAuthorizedMenus(roleId, role?.RoleName || '');
+  return buildAuthorizedMenus(roleId, role?.RoleName || '', companyId);
 };
 
 module.exports = {

@@ -16,8 +16,11 @@ import BusinessPartnerModal from './components/BusinessPartnerModal';
 import HSNCodeModal from './components/HSNCodeModal';
 import CopyFromModal from '../purchase-order/components/CopyFromModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
+import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
+import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
 import {
   fetchPurchaseQuotationByDocEntry,
   fetchPurchaseQuotationReferenceData,
@@ -191,6 +194,7 @@ const INIT_HEADER = {
   totalImportedDocument: '',
   dateReceived: '',
   purchaser: '',
+  salesEmployee: '',
   owner: '',
   agentCode: '',
   agentName: '',
@@ -273,6 +277,9 @@ function PurchaseOrder() {
     lines: {},
     form: '',
   });
+  const [loadedSnapshot, setLoadedSnapshot] = useState('');
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [addressModal, setAddressModal] = useState(null);
   const [taxInfoModal, setTaxInfoModal] = useState(false);
   const [stateModal, setStateModal] = useState(false);
@@ -290,6 +297,18 @@ function PurchaseOrder() {
     lstVatNo: '', cstNo: '', tanNo: '', serviceTaxNo: '', companyType: '', natureOfBusiness: '',
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
+
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
 
   useEffect(() => {
     localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings));
@@ -321,7 +340,45 @@ function PurchaseOrder() {
     advanceAmt: Number(dec.SumDec),
     withinDays: 0,
   };
+  const {
+    effectiveSalesEmployees,
+    salesEmployeeSetup,
+    openSalesEmployeeSetup,
+    closeSalesEmployeeSetup,
+    updateSalesEmployeeSetupRow,
+    saveSalesEmployeeSetup,
+    resolveSalesEmployeeByName,
+  } = useSalesEmployeeSetup({
+    employees: refData.sales_employees || [],
+    onEmployeesChange: (sales_employees) => setRefData((prev) => ({ ...prev, sales_employees })),
+    onError: (message) => setPageState((prev) => ({ ...prev, error: message || '' })),
+    onSuccess: (message) => setPageState((prev) => ({ ...prev, error: '', success: message || '' })),
+    discountDecimals: numDec.discount,
+    getErrMsg,
+  });
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+  const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+  const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const primaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add';
+  const secondaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add & New';
+
+  useEffect(() => {
+    if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+    setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+    setSnapshotPending(false);
+  }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+
+  const markDirty = useCallback(() => {
+    if (currentDocEntry) setIsDirty(true);
+  }, [currentDocEntry]);
 
   // ── load reference data ───────────────────────────────────────────────────
   useEffect(() => {
@@ -329,9 +386,8 @@ function PurchaseOrder() {
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
-        const [refDataRes, seriesRes, hsnRes] = await Promise.all([
+        const [refDataRes, hsnRes] = await Promise.all([
           fetchPurchaseQuotationReferenceData(PURCHASE_ORDER_COMPANY_ID),
-          fetchDocumentSeries(),
           fetchHSNCodes(),
         ]);
 
@@ -348,6 +404,7 @@ function PurchaseOrder() {
             company_address: refDataRes.data.company_address || {},
             tax_codes: refDataRes.data.tax_codes || [],
             hsn_codes: hsnRes.data || [],
+            sales_employees: refDataRes.data.sales_employees || [],
             payment_terms: refDataRes.data.payment_terms || [],
             shipping_types: refDataRes.data.shipping_types || [],
             branches: refDataRes.data.branches || [],
@@ -355,15 +412,10 @@ function PurchaseOrder() {
             uom_groups: refDataRes.data.uom_groups || [],
             decimal_settings: { ...DEC, ...(refDataRes.data.decimal_settings || {}) },
             warnings: refDataRes.data.warnings || [],
-            series: seriesRes.data.series || [],
+            series: [],
           });
 
-          if (seriesRes.data.series && seriesRes.data.series.length > 0 && !currentDocEntry) {
-            const defaultSeries = getDefaultSeriesForCurrentYear(seriesRes.data.series);
-            if (defaultSeries?.Series != null) {
-              handleSeriesChange(defaultSeries.Series);
-            }
-          }
+          await loadSeriesOptions('', header.postingDate || today(), '');
         }
         console.log("FULL REF DATA:", refDataRes.data);
       } catch (e) {
@@ -400,6 +452,9 @@ function PurchaseOrder() {
             : [createLine()]
         );
         setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(quotation.header_udfs || {}) });
+        setLoadedSnapshot('');
+        setSnapshotPending(true);
+        setIsDirty(false);
         if (quotation.header?.vendor) {
           loadVendorDetails(quotation.header.vendor);
         }
@@ -810,6 +865,14 @@ function PurchaseOrder() {
       handleSeriesChange(value);
       return;
     }
+
+    if (name === 'branch') {
+      setHeader((prev) => ({ ...prev, branch: value }));
+      if (!currentDocEntry) {
+        loadSeriesOptions(value, header.postingDate || today(), '');
+      }
+      return;
+    }
     
     if (name === 'shipToCode') {
       handleShipToChange(value);
@@ -824,6 +887,19 @@ function PurchaseOrder() {
         return nextHeader;
       });
       loadVendorDetails(value);
+      return;
+    }
+    if (name === 'purchaser') {
+      if (value === '__DEFINE_NEW__') {
+        openSalesEmployeeSetup();
+        return;
+      }
+      const selectedEmployee = resolveSalesEmployeeByName(value);
+      setHeader((prev) => ({
+        ...prev,
+        purchaser: value,
+        salesEmployee: selectedEmployee ? String(selectedEmployee.SlpCode) : '-1',
+      }));
       return;
     }
     if (numDec[name] !== undefined && type !== 'checkbox') {
@@ -966,6 +1042,7 @@ function PurchaseOrder() {
     
     setValErrors(p => ({ ...p, form: '' }));
     setPageState(p => ({ ...p, error: '', success: '' }));
+    markDirty();
     setLines(p => [...p, { 
       ...createLine(), 
       branch: header.branch || '', 
@@ -975,12 +1052,19 @@ function PurchaseOrder() {
   };
 
   const removeLine = (i) => {
+    markDirty();
     setValErrors(p => { const nl = { ...p.lines }; delete nl[i]; return { ...p, lines: nl, form: '' }; });
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
-  const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
-  const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  const handleHeaderUdfChange = (k, v) => {
+    markDirty();
+    setHeaderUdfs(p => ({ ...p, [k]: v }));
+  };
+  const handleRowUdfChange = (i, k, v) => {
+    markDirty();
+    setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
 
   // ── Series and Auto-Numbering handlers ────────────────────────────────────
@@ -999,6 +1083,38 @@ function PurchaseOrder() {
     } finally {
       setPageState(p => ({ ...p, seriesLoading: false }));
     }
+  };
+
+  const loadSeriesOptions = async (branchValue, targetDate, preferredSeries = '') => {
+    const seriesRes = await fetchDocumentSeries({
+      branch: branchValue || undefined,
+      targetDate: targetDate || undefined,
+    });
+    const seriesList = seriesRes.data.series || [];
+
+    setRefData((prev) => ({ ...prev, series: seriesList }));
+
+    if (currentDocEntry) {
+      return seriesList;
+    }
+
+    const keepSeries = preferredSeries || header.series;
+    if (keepSeries && seriesList.some((series) => String(series.Series) === String(keepSeries))) {
+      if (String(header.series || '') !== String(keepSeries)) {
+        setHeader((prev) => ({ ...prev, series: String(keepSeries) }));
+      }
+      await handleSeriesChange(keepSeries);
+      return seriesList;
+    }
+
+    const defaultSeries = getDefaultSeriesForCurrentYear(seriesList);
+    if (defaultSeries?.Series != null) {
+      await handleSeriesChange(defaultSeries.Series);
+    } else {
+      setHeader((prev) => ({ ...prev, series: '', nextNumber: '' }));
+    }
+
+    return seriesList;
   };
 
   const handleShipToChange = (addressCode) => {
@@ -1119,7 +1235,7 @@ function PurchaseOrder() {
   };
 
   const handleStateSelect = (state) => {
-    setHeader(prev => ({ ...prev, placeOfSupply: state.Name || state.State || state.Code || state }));
+    setHeader(prev => ({ ...prev, placeOfSupply: getStateCodeValue(state, refData.states) }));
     closeStateModal();
   };
 
@@ -1291,6 +1407,7 @@ function PurchaseOrder() {
       setPageState(p => ({ ...p, error: 'This document is closed and cannot be edited.', success: '' }));
       return;
     }
+    if (currentDocEntry && !hasUnsavedChanges) return;
     const e = validate();
     if (e.form || Object.values(e.header).some(Boolean) || Object.values(e.lines).some(le => Object.values(le || {}).some(Boolean))) {
       setValErrors(e);
@@ -1303,20 +1420,22 @@ function PurchaseOrder() {
       const prep = {
         ...header,
         deliveryDate: header.deliveryDate || header.postingDate || header.documentDate,
+        requiredDate: header.requiredDate || header.deliveryDate || header.postingDate || header.documentDate,
         series: header.series ? Number(header.series) : undefined,
       };
 
       const payload = { company_id: PURCHASE_ORDER_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
       const r = currentDocEntry ? await updatePurchaseQuotation(currentDocEntry, payload) : await submitPurchaseQuotation(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
+      setLoadedSnapshot('');
+      setSnapshotPending(false);
+      setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
       setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
       setValErrors({ header: {}, lines: {}, form: '' });
 
-      if (refData.series.length > 0) {
-        handleSeriesChange(refData.series[0].Series);
-      }
+      await loadSeriesOptions(prep.branch || '', prep.postingDate || today(), '');
 
       setPageState(p => ({ ...p, success: `${r.data.message || 'Purchase quotation saved.'}${dn}` }));
     } catch (e) {
@@ -1327,6 +1446,9 @@ function PurchaseOrder() {
   };
 
   const resetForm = () => {
+    setLoadedSnapshot('');
+    setSnapshotPending(false);
+    setIsDirty(false);
     setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
     setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
     setValErrors({ header: {}, lines: {}, form: '' });
@@ -1340,13 +1462,13 @@ function PurchaseOrder() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page" onSubmit={handleSubmit}>
+    <form className="po-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="po-toolbar">
         <span className="po-toolbar__title">Purchase Quotation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+          {primaryActionLabel}
         </button>
         <button type="button" className="po-btn" disabled={pageState.posting}>
           Add Draft & New
@@ -1438,9 +1560,8 @@ function PurchaseOrder() {
       )}
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div style={{ padding: '0 12px' }}>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: sidebarOpen ? '0 0 calc(75% - 6px)' : '1' }}>
+        <div className={`po-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+          <div className="po-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
             <div className="po-header-card">
@@ -1513,7 +1634,7 @@ function PurchaseOrder() {
                         <input
                           name="placeOfSupply"
                           className={`po-field__input${valErrors.header.placeOfSupply ? ' po-field__input--error' : ''}`}
-                          value={header.placeOfSupply || ''}
+                          value={getStateDisplayName(header.placeOfSupply, refData.states)}
                           onChange={handleHeaderChange}
                           placeholder="State code"
                           style={{ flex: 1 }}
@@ -1748,8 +1869,12 @@ function PurchaseOrder() {
                     <label className="po-field__label">Purchaser</label>
                     <select name="purchaser" className="po-field__select" value={header.purchaser || ''} onChange={handleHeaderChange}>
                       <option value="">No Purchaser</option>
-                      <option value="Buyer 1">Buyer 1</option>
-                      <option value="Buyer 2">Buyer 2</option>
+                      {effectiveSalesEmployees.map((employee) => (
+                        <option key={employee.SlpCode ?? employee.SlpName} value={employee.SlpName || ''}>
+                          {employee.SlpName || ''}
+                        </option>
+                      ))}
+                      <option value="__DEFINE_NEW__">Define New</option>
                     </select>
                   </div>
                   <div className="po-field">
@@ -1818,7 +1943,7 @@ function PurchaseOrder() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-                  {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add & New'}
+                  {secondaryActionLabel}
                 </button>
                 <button type="button" className="po-btn" disabled={pageState.posting}>
                   Add Draft & New
@@ -1895,6 +2020,7 @@ function PurchaseOrder() {
           </div>{/* end main col */}
 
           <HeaderUdfSidebar
+            className="po-layout__sidebar"
             isOpen={sidebarOpen}
             fields={visHdrUdfs}
             formSettings={formSettings}
@@ -1902,7 +2028,6 @@ function PurchaseOrder() {
             onFieldChange={handleHeaderUdfChange}
           />
         </div>
-      </div>
 
       </fieldset>
 
@@ -1943,6 +2068,15 @@ function PurchaseOrder() {
         documentType={copyFromDocType}
         onFetchDocuments={fetchCopyFromDocuments}
         onFetchDocumentDetails={fetchCopyFromDocumentDetails}
+      />
+
+      <SalesEmployeeSetupModal
+        isOpen={salesEmployeeSetup.open}
+        rows={salesEmployeeSetup.rows}
+        saving={salesEmployeeSetup.saving}
+        onClose={closeSalesEmployeeSetup}
+        onSave={saveSalesEmployeeSetup}
+        onUpdateRow={updateSalesEmployeeSetupRow}
       />
 
       {/* HSN Code Modal */}

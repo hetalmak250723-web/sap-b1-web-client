@@ -3,8 +3,8 @@ import React from 'react';
 export default function LogisticsTab({
   header,
   onHeaderChange,
-  effectiveWhseAddrs,
-  vendorPayToAddresses,
+  vendorShipToAddresses,
+  vendorBillToAddresses,
   shipTypeOpts,
   onOpenAddressModal,
 }) {
@@ -20,15 +20,15 @@ export default function LogisticsTab({
           <div className="del-field">
             <label className="del-field__label">Ship To Code</label>
             <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-start' }}>
-               <select
+              <select
                 className="del-field__select"
-                name="payToCode"
-                value={header.payToCode}
+                name="shipToCode"
+                value={header.shipToCode || ''}
                 onChange={onHeaderChange}
                 style={{ flex: 1 }}
               >
                 <option value="">Select</option>
-                {vendorPayToAddresses.map(a => (
+                {vendorShipToAddresses.map(a => (
                   <option key={a.Address} value={a.Address}>
                     {a.Address}
                   </option>
@@ -51,8 +51,8 @@ export default function LogisticsTab({
             <textarea
               className="del-textarea"
               rows={4}
-              name="shipTo"
-              value={header.payTo}
+              name="shipToAddress"
+              value={header.shipToAddress || header.shipTo || ''}
               onChange={onHeaderChange}
               style={{ flex: 1 }}
             />
@@ -64,13 +64,13 @@ export default function LogisticsTab({
             <div style={{ display: 'flex', gap: '4px', alignItems: 'flex-start' }}>
               <select
                 className="del-field__select"
-                name="payToCode"
-                value={header.payToCode}
+                name="billToCode"
+                value={header.billToCode || ''}
                 onChange={onHeaderChange}
                 style={{ flex: 1 }}
               >
                 <option value="">Select</option>
-                {vendorPayToAddresses.map(a => (
+                {vendorBillToAddresses.map(a => (
                   <option key={a.Address} value={a.Address}>
                     {a.Address}
                   </option>
@@ -93,8 +93,8 @@ export default function LogisticsTab({
             <textarea
               className="del-textarea"
               rows={4}
-              name="payTo"
-              value={header.payTo}
+              name="billToAddress"
+              value={header.billToAddress || header.payTo || ''}
               onChange={onHeaderChange}
               style={{ flex: 1 }}
             />
@@ -105,6 +105,9 @@ export default function LogisticsTab({
             <input
               type="checkbox"
               id="useBillToAddress"
+              name="useBillToForTax"
+              checked={!!header.useBillToForTax}
+              onChange={onHeaderChange}
               style={{ cursor: 'pointer', width: '16px', height: '16px' }}
             />
             <label htmlFor="useBillToAddress" style={{ cursor: 'pointer', margin: 0, fontSize: '12px', color: '#333' }}>

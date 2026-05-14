@@ -6,6 +6,17 @@
   background: #f0f2f5;
   min-height: 100vh;
   box-sizing: border-box;
+  overflow-x: auto !important;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.po-page fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  overflow: visible;
 }
 
 /* ── Toolbar ── */
@@ -124,6 +135,140 @@
   border: 1px solid #c8d0da;
   border-radius: 3px;
   padding: 10px 14px;
+}
+
+.po-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  padding: 0 12px;
+  min-width: 0;
+  align-items: start;
+}
+
+.po-layout.is-sidebar-open {
+  grid-template-columns: minmax(0, 1fr) minmax(250px, 320px);
+}
+
+.po-layout__main,
+.po-layout__sidebar {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.po-layout__main {
+  overflow: visible;
+}
+
+.po-layout__sidebar {
+  width: 100%;
+  min-height: 0;
+  overflow: visible;
+}
+
+.po-layout__sidebar.col-xl-3,
+.po-layout__sidebar.col-lg-4 {
+  flex: none;
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card {
+  position: sticky;
+  top: 12px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  padding: 12px !important;
+  background: #fff;
+  border: 1px solid #c8d0da;
+  border-radius: 3px;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.po-layout__sidebar .po-udf-sidebar-body {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #003366;
+  margin-bottom: 0;
+  white-space: normal;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .form-control,
+.po-layout__sidebar .po-udf-sidebar-card .form-control-sm {
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  font-size: 11px;
+  padding: 4px 6px;
+  border: 1px solid #a0aab4;
+  border-radius: 2px;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field {
+  display: grid;
+  grid-template-columns: minmax(120px, 145px) minmax(0, 1fr);
+  align-items: center;
+  column-gap: 16px;
+  row-gap: 0;
+  margin-bottom: 10px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field .form-label {
+  text-align: left;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea {
+  align-items: start;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea .form-control,
+.po-layout__sidebar .po-udf-sidebar-card .po-udf-sidebar-field--textarea .form-control-sm {
+  min-height: 64px;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card h6 {
+  font-size: 13px;
+  font-weight: 700;
+  color: #003366;
+  margin-bottom: 4px;
+  white-space: normal;
+  word-wrap: break-word;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card small {
+  font-size: 10px;
+  color: #666;
+  white-space: normal;
+  word-wrap: break-word;
+  display: block;
+}
+
+.po-layout__sidebar .po-udf-sidebar-card .border-bottom {
+  border-bottom: 1px solid #e0e6ed !important;
+  padding-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 /* ── Horizontal UDF sidebar mode ── */
@@ -280,18 +425,25 @@
   border-radius: 0 0 3px 3px;
   padding: 14px;
   min-height: 260px;
-  max-height: calc(100vh - 320px);
-  overflow: auto;
+  min-width: 0;
+  max-width: none;
+  overflow: visible;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ── Data grids ── */
 .po-grid-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
   overflow-x: auto;
   max-height: calc(100vh - 420px);
   overflow-y: auto;
   border: 1px solid #dde2e7;
   border-radius: 3px;
-  width: 100%;
+  box-sizing: border-box;
 }
 
 
@@ -348,6 +500,18 @@
   background: #fff;
 }
 .po-grid__input--sm { width: 60px; }
+
+@media (max-width: 1199.98px) {
+  .po-layout.is-sidebar-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .po-layout__sidebar .po-udf-sidebar-card {
+    position: relative;
+    top: auto;
+    max-height: none;
+  }
+}
 
 /* ── Section titles ── */
 .po-section-title {

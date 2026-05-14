@@ -276,6 +276,8 @@ const getCustomerDetails = async (customerCode) => {
     return {
       contacts: [],
       pay_to_addresses: [],
+      ship_to_addresses: [],
+      bill_to_addresses: [],
     };
   }
 };

@@ -23,6 +23,7 @@ export default function LookupField({
   ],
   placeholder = "",
   readOnly = false,
+  allowManualEntry = true,
   style = {},
   onDefineNew, // New prop: callback to open setup modal
 }) {
@@ -88,7 +89,7 @@ export default function LookupField({
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          readOnly={readOnly}
+          readOnly={readOnly || !allowManualEntry}
           style={style}
         />
         {displayValue && (

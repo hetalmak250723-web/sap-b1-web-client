@@ -153,9 +153,14 @@ const getPurchaseQuotation = async (docEntry) => {
 
 // ───────── DOCUMENT SERIES (USING ODBC) ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async ({ branch, targetDate } = {}) => {
   try {
-    const result = await purchaseQuotationDb.getDocumentSeries();
+    const normalizedBranch =
+      branch === '' || branch == null || Number.isNaN(Number(branch))
+        ? null
+        : Number(branch);
+    const normalizedTargetDate = String(targetDate || '').trim() || null;
+    const result = await purchaseQuotationDb.getDocumentSeries(normalizedBranch, normalizedTargetDate);
     return result;
   } catch (error) {
     return { series: [] };
@@ -256,12 +261,15 @@ const buildPurchaseQuotationPayload = ({ header = {}, lines = [], header_udfs = 
     NumAtCard: header.salesContractNo,
     DocDate: header.postingDate || header.documentDate,
     DocDueDate: header.deliveryDate || header.postingDate || header.documentDate,
+    RequriedDate: header.requiredDate || header.deliveryDate || header.postingDate || header.documentDate,
     TaxDate: header.documentDate || header.postingDate,
     // Series for auto-numbering - only include if explicitly provided and valid
     ...(header.series && Number(header.series) > 0 ? { Series: Number(header.series) } : {}),
+    BPLId: header.branch ? Number(header.branch) : undefined,
     BPL_IDAssignedToInvoice: header.branch ? Number(header.branch) : undefined,
     DocCurrency: header.currency || 'INR',
     PaymentGroupCode: header.paymentTerms ? Number(header.paymentTerms) : undefined,
+    SalesPersonCode: header.salesEmployee !== '' && header.salesEmployee != null ? toNumberOrUndefined(header.salesEmployee) : undefined,
     Comments: header.otherInstruction,
     JournalMemo: header.journalRemark,
     Confirmed: header.confirmed ? 'tYES' : 'tNO',

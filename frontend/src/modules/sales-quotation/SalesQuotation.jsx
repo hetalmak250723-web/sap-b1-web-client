@@ -25,6 +25,9 @@ import { summarizeFreightRows } from '../../components/freight/freightUtils';
 import { determineTaxCode, recalculateAllTaxCodes, getGSTTypeLabel } from '../../utils/taxEngine';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
+import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
+import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import {
   fetchSalesQuotationByDocEntry,
   fetchSalesQuotationCustomerDetails,
@@ -44,6 +47,7 @@ import {
   HEADER_UDF_DEFINITIONS,
   ROW_UDF_DEFINITIONS,
   createUdfState,
+  normalizeUdfState,
   readSavedFormSettings,
 } from '../../config/salesQuotationForm';
 
@@ -141,7 +145,7 @@ function SalesQuotation() {
   const [lines, setLines] = useState([createLine()]);
   const [attachments] = useState(INIT_ATTACH);
   const [activeTab, setActiveTab] = useState('Contents');
-  const [headerUdfs, setHeaderUdfs] = useState(() => createUdfState(HEADER_UDF_DEFINITIONS));
+  const [headerUdfs, setHeaderUdfs] = useState(() => normalizeUdfState(HEADER_UDF_DEFINITIONS));
   const [formSettings, setFormSettings] = useState(() => readSavedFormSettings());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [formSettingsOpen, setFormSettingsOpen] = useState(false);
@@ -153,6 +157,9 @@ function SalesQuotation() {
   });
   const [pageState, setPageState] = useState({ loading: false, vendorLoading: false, posting: false, error: '', success: '', seriesLoading: false });
   const [valErrors, setValErrors] = useState({ header: {}, lines: {}, form: '' });
+  const [loadedSnapshot, setLoadedSnapshot] = useState('');
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [addressModal, setAddressModal] = useState(null);
   const [eWayBillModal, setEWayBillModal] = useState(false);
   const [eWayBillData, setEWayBillData] = useState({});
@@ -174,6 +181,18 @@ function SalesQuotation() {
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
 
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
+
   useEffect(() => { localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings)); }, [formSettings]);
 
   // decimal config
@@ -184,8 +203,46 @@ function SalesQuotation() {
     discount: Number(dec.PercentDec), freight: Number(dec.SumDec),
     tax: Number(dec.SumDec), totalPaymentDue: Number(dec.SumDec),
   };
+  const {
+    effectiveSalesEmployees,
+    salesEmployeeSetup,
+    openSalesEmployeeSetup,
+    closeSalesEmployeeSetup,
+    updateSalesEmployeeSetupRow,
+    saveSalesEmployeeSetup,
+    resolveSalesEmployeeByName,
+  } = useSalesEmployeeSetup({
+    employees: refData.sales_employees || [],
+    onEmployeesChange: (sales_employees) => setRefData((prev) => ({ ...prev, sales_employees })),
+    onError: (message) => setPageState((prev) => ({ ...prev, error: message || '' })),
+    onSuccess: (message) => setPageState((prev) => ({ ...prev, error: '', success: message || '' })),
+    discountDecimals: numDec.discount,
+    getErrMsg,
+  });
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
   const hasBuyerCode = Boolean(String(header.vendor || '').trim());
+  const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+  const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const primaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add';
+  const secondaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add & New';
+
+  useEffect(() => {
+    if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+    setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+    setSnapshotPending(false);
+  }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+
+  const markDirty = useCallback(() => {
+    if (currentDocEntry) setIsDirty(true);
+  }, [currentDocEntry]);
 
   // Continue in next part...
 
@@ -370,7 +427,10 @@ function SalesQuotation() {
               })
             : [createLine()]
         );
-        setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(so.header_udfs || {}) });
+        setHeaderUdfs(normalizeUdfState(HEADER_UDF_DEFINITIONS, so.header_udfs || {}));
+        setLoadedSnapshot('');
+        setSnapshotPending(true);
+        setIsDirty(false);
         
         if (so.header?.customerCode) {
           loadVendorDetails(so.header.customerCode);
@@ -874,10 +934,12 @@ function SalesQuotation() {
     
     // ✅ FIX: When purchaser (Sales Employee name) changes, update salesEmployee (code) too
     if (name === 'purchaser') {
+      if (value === '__DEFINE_NEW__') {
+        openSalesEmployeeSetup();
+        return;
+      }
       // Find the SlpCode for the selected name
-      const selectedEmployee = (refData.sales_employees || []).find(
-        emp => emp.SlpName === value
-      );
+      const selectedEmployee = resolveSalesEmployeeByName(value);
       
       setHeader(p => ({
         ...p,
@@ -1126,6 +1188,7 @@ function SalesQuotation() {
     // Clear errors and add new line with current header values
     setValErrors(p => ({ ...p, form: '' }));
     setPageState(p => ({ ...p, error: '' }));
+    markDirty();
     setLines(p => [...p, { 
       ...createLine(), 
       branch: header.branch || '', 
@@ -1135,11 +1198,13 @@ function SalesQuotation() {
   };
 
   const removeLine = (i) => {
+    markDirty();
     setValErrors(p => { const nl = { ...p.lines }; delete nl[i]; return { ...p, lines: nl, form: '' }; });
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
   const handleHeaderUdfChange = (e, val) => {
+    markDirty();
     // Support both direct key-value pairs (from Sidebar) and standard React events (from native inputs)
     if (typeof e === 'string') {
       setHeaderUdfs(p => ({ ...p, [e]: val }));
@@ -1148,7 +1213,10 @@ function SalesQuotation() {
       setHeaderUdfs(p => ({ ...p, [name]: type === 'checkbox' ? checked : value }));
     }
   };
-  const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  const handleRowUdfChange = (i, k, v) => {
+    markDirty();
+    setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
 
   // ── Address Modal handlers ────────────────────────────────────────────────
@@ -1227,7 +1295,7 @@ function SalesQuotation() {
   };
 
   const handleStateSelect = (state) => {
-    setHeader(p => ({ ...p, placeOfSupply: state.Name || state.Code || '' }));
+    setHeader(p => ({ ...p, placeOfSupply: getStateCodeValue(state, refData.states) }));
   };
 
   // ── Business Partner Modal handlers ───────────────────────────────────────
@@ -1637,6 +1705,7 @@ function SalesQuotation() {
       setPageState(p => ({ ...p, error: 'This document is closed and cannot be edited.', success: '' }));
       return;
     }
+    if (currentDocEntry && !hasUnsavedChanges) return;
     const e = validate();
     if (e.form || Object.values(e.header).some(Boolean) || Object.values(e.lines).some(le => Object.values(le || {}).some(Boolean))) {
       setValErrors(e);
@@ -1669,13 +1738,22 @@ function SalesQuotation() {
         whse: line.whse,
         loc: line.loc,
         branch: line.branch,
-        udf: line.udf,
+        udf: normalizeUdfState(ROW_UDF_DEFINITIONS, line.udf || {}),
       }));
       
-      const payload = { company_id: SALES_ORDER_COMPANY_ID, header: prep, lines: cleanedLines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
+      const payload = {
+        company_id: SALES_ORDER_COMPANY_ID,
+        header: prep,
+        lines: cleanedLines,
+        freightCharges: freightModal.freightCharges,
+        header_udfs: normalizeUdfState(HEADER_UDF_DEFINITIONS, headerUdfs),
+      };
       
       const r = currentDocEntry ? await updateSalesQuotation(currentDocEntry, payload) : await submitSalesQuotation(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
+      setLoadedSnapshot('');
+      setSnapshotPending(false);
+      setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
       setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
@@ -1696,6 +1774,9 @@ function SalesQuotation() {
   };
 
   const resetForm = () => {
+    setLoadedSnapshot('');
+    setSnapshotPending(false);
+    setIsDirty(false);
     setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
     setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
     setValErrors({ header: {}, lines: {}, form: '' });
@@ -1708,13 +1789,13 @@ function SalesQuotation() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="so-page" onSubmit={handleSubmit}>
+    <form className="so-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="so-toolbar">
         <span className="so-toolbar__title">Sales Quotation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
-          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+          {primaryActionLabel}
         </button>
         <button type="button" className="so-btn" disabled={pageState.posting}>
           Add Draft & New
@@ -1831,7 +1912,7 @@ function SalesQuotation() {
                         <input
                           name="placeOfSupply"
                           className={`so-field__input${valErrors.header.placeOfSupply ? ' so-field__input--error' : ''}`}
-                          value={header.placeOfSupply || ''}
+                          value={getStateDisplayName(header.placeOfSupply, refData.states)}
                           onChange={handleHeaderChange}
                           placeholder="State code"
                           style={{ flex: 1 }}
@@ -2083,18 +2164,19 @@ function SalesQuotation() {
                       disabled={!refData.sales_employees || refData.sales_employees.length === 0}
                     >
                       <option value="">No Sales Employee / Buyer</option>
-                      {(refData.sales_employees || []).map(emp => (
+                      {effectiveSalesEmployees.map(emp => (
                         <option key={emp.SlpCode} value={emp.SlpName}>
                           {emp.SlpName}
                         </option>
                       ))}
+                      <option value="__DEFINE_NEW__">Define New</option>
                     </select>
                     {/* Debug info */}
                     <div style={{ fontSize: 10, color: '#666', marginTop: 4 }}>
                       {header.purchaser ? (
-                        <span>Selected: {header.purchaser} | Available: {(refData.sales_employees || []).length} employees</span>
+                        <span>Selected: {header.purchaser} | Available: {effectiveSalesEmployees.length} employees</span>
                       ) : (
-                        <span>No selection | Available: {(refData.sales_employees || []).length} employees</span>
+                        <span>No selection | Available: {effectiveSalesEmployees.length} employees</span>
                       )}
                     </div>
                   </div>
@@ -2200,7 +2282,7 @@ function SalesQuotation() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
-                  {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add & New'}
+                  {secondaryActionLabel}
                 </button>
                 <button type="button" className="so-btn" disabled={pageState.posting}>
                   Add Draft & New
@@ -2333,6 +2415,15 @@ function SalesQuotation() {
         onSelect={handleItemSelect}
         items={itemModal.items}
         loading={itemModal.loading}
+      />
+
+      <SalesEmployeeSetupModal
+        isOpen={salesEmployeeSetup.open}
+        rows={salesEmployeeSetup.rows}
+        saving={salesEmployeeSetup.saving}
+        onClose={closeSalesEmployeeSetup}
+        onSave={saveSalesEmployeeSetup}
+        onUpdateRow={updateSalesEmployeeSetupRow}
       />
 
       {/* Freight Selection Modal */}

@@ -25,7 +25,8 @@ const HEADER_UDF_DEFINITIONS = [
     key: 'U_Canceled',
     label: 'Canceled IRN',
     type: 'select',
-    defaultValue: '',
+    required: true,
+    defaultValue: 'N',
     options: [
       { value: '', label: '' },
       { value: 'Y', label: 'Yes' },
@@ -40,7 +41,8 @@ const HEADER_UDF_DEFINITIONS = [
     key: 'U_TrfMode',
     label: 'Transporter Mode',
     type: 'select',
-    defaultValue: '',
+    required: true,
+    defaultValue: '1',
     options: [
       { value: '', label: '' },
       { value: '1', label: 'Road' },
@@ -53,7 +55,8 @@ const HEADER_UDF_DEFINITIONS = [
     key: 'U_TrfVType',
     label: 'Transporter Vehicle Type',
     type: 'select',
-    defaultValue: '',
+    required: true,
+    defaultValue: 'R',
     options: [
       { value: '', label: '' },
       { value: 'R', label: 'Regular' },
@@ -71,7 +74,8 @@ const HEADER_UDF_DEFINITIONS = [
     key: 'U_EWayBCan',
     label: 'Canceled EWayBill',
     type: 'select',
-    defaultValue: '',
+    required: true,
+    defaultValue: 'No',
     options: [
       { value: '', label: '' },
       { value: 'Yes', label: 'Yes' },
@@ -83,13 +87,78 @@ const HEADER_UDF_DEFINITIONS = [
     key: 'U_MultiVeh',
     label: 'Multiple Vehicle',
     type: 'select',
-    defaultValue: '',
+    required: true,
+    defaultValue: 'No',
     options: [
       { value: '', label: '' },
       { value: 'Yes', label: 'Yes' },
       { value: 'No', label: 'No' },
     ],
   },
+  {
+    key: 'U_MultiVehPosted',
+    label: 'Posted Multiple Vehicle',
+    type: 'select',
+    required: true,
+    defaultValue: 'No',
+    options: [
+      { value: '', label: '' },
+      { value: 'Yes', label: 'Yes' },
+      { value: 'No', label: 'No' },
+    ],
+  },
+  {
+    key: 'U_SubSuply',
+    label: 'Sub Supply Type',
+    type: 'select',
+    required: true,
+    defaultValue: '1',
+    options: [
+      { value: '', label: '' },
+      { value: '1', label: 'Supply' },
+      { value: '2', label: 'Import' },
+      { value: '3', label: 'Export' },
+      { value: '4', label: 'Job Work' },
+      { value: '5', label: 'For Own Use' },
+      { value: '6', label: 'Job Work Returns' },
+      { value: '7', label: 'Sales Return' },
+      { value: '8', label: 'Others' },
+      { value: '9', label: 'SKD/CKD/Lots' },
+      { value: '10', label: 'Line Sales' },
+      { value: '11', label: 'Recipient Not Known' },
+      { value: '12', label: 'Exhibition Or Fairs' },
+    ],
+  },
+  {
+    key: 'U_DocType',
+    label: 'Document Type',
+    type: 'select',
+    required: true,
+    defaultValue: 'INV',
+    options: [
+      { value: '', label: '' },
+      { value: 'INV', label: 'Tax Invoice' },
+      { value: 'BIL', label: 'Bill Of Supply' },
+      { value: 'BOE', label: 'Bill Of Entry' },
+      { value: 'CHL', label: 'Delivery Challan' },
+      { value: 'OTH', label: 'Others' },
+    ],
+  },
+  {
+    key: 'U_TraType',
+    label: 'Transaction Type',
+    type: 'select',
+    required: true,
+    defaultValue: '1',
+    options: [
+      { value: '', label: '' },
+      { value: '1', label: 'Regular' },
+      { value: '2', label: 'Bill To-Ship To' },
+      { value: '3', label: 'Bill From-Ship From' },
+      { value: '4', label: 'Combination Of 2 and 3' },
+    ],
+  },
+  { key: 'U_DelRemarks', label: 'Del Remarks', type: 'textarea', defaultValue: '' },
 ];
 
 const ROW_UDF_DEFINITIONS = [
@@ -146,9 +215,35 @@ const BASE_MATRIX_COLUMNS = [
   { key: 'batch', label: 'Batch', visible: true },
 ];
 
+const getOptionValue = (option) => (typeof option === 'string' ? option : option?.value ?? '');
+
+const getDefaultUdfValue = (field) => {
+  if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+    return field.defaultValue;
+  }
+
+  if (field.required && field.type === 'select' && Array.isArray(field.options)) {
+    return field.options.map(getOptionValue).find((value) => String(value || '').trim() !== '') ?? '';
+  }
+
+  return field.defaultValue ?? '';
+};
+
 const createUdfState = (definitions) =>
   definitions.reduce((acc, field) => {
-    acc[field.key] = field.defaultValue;
+    acc[field.key] = getDefaultUdfValue(field);
+    return acc;
+  }, {});
+
+const normalizeUdfState = (definitions, values = {}) =>
+  definitions.reduce((acc, field) => {
+    const currentValue = values[field.key];
+    const shouldApplyDefault =
+      currentValue === undefined ||
+      currentValue === null ||
+      (field.required && String(currentValue) === '');
+
+    acc[field.key] = shouldApplyDefault ? getDefaultUdfValue(field) : currentValue;
     return acc;
   }, {});
 
@@ -192,5 +287,6 @@ export {
   ROW_UDF_DEFINITIONS,
   createDefaultFormSettings,
   createUdfState,
+  normalizeUdfState,
   readSavedFormSettings,
 };

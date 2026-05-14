@@ -13,6 +13,7 @@ import RemarksTab    from "./components/RemarksTab";
 import {
   createBP, getBP, updateBP, searchBP,
   fetchBPGroups, fetchBPPriceLists, fetchPaymentTerms, fetchCurrencies, fetchBPCountries,
+  fetchBPCompanyTypes,
   fetchSalesPersons, fetchNumberingSeries, getNextSeriesNumber,
   fetchBPCreditCards, createBPCreditCard, fetchBPBanks, fetchBPHouseBankAccounts, fetchBPWithholdingTaxCodes,
 } from "../../api/businessPartnerApi";
@@ -21,6 +22,10 @@ import { searchAccounts }      from "../../api/chartOfAccountsApi";
 
 const TABS  = ["General", "Contact Persons", "Addresses", "Payment Terms", "Payment Run", "Accounting", "Properties", "Remarks"];
 const MODES = { ADD: "add", FIND: "find", UPDATE: "update" };
+const DEFAULT_COMPANY_TYPE_OPTIONS = [
+  { code: "cCompany", name: "Company" },
+  { code: "cPrivate", name: "Private" },
+];
 
 const buildInitialProps = () => {
   const p = {};
@@ -46,6 +51,18 @@ const normalizeWithholdingFlag = (value) => {
   if (value === "boYES") return "boYES";
   if (value === "boNone") return "boNone";
   return "boNO";
+};
+
+const normalizeGenderValue = (value) => {
+  if (value === "gt_NotSpecified") return "gt_Undefined";
+  return value || "gt_Undefined";
+};
+
+const getContactPersonName = (contact) => String(contact?.Name || "").trim();
+const getDefaultContactPersonName = (contacts = []) => {
+  const namedContacts = (contacts || []).filter((contact) => getContactPersonName(contact));
+  const defaultContact = namedContacts.find((contact) => contact?.IsDefault === "tYES");
+  return getContactPersonName(defaultContact || namedContacts[0]);
 };
 
 const buildEmptyTaxInfo = () => ({
@@ -159,6 +176,7 @@ const normalizeBP = (data) => {
     ...contact,
     Address: contact.Address || contact.Department || "",
     PlaceOfBirth: contact.PlaceOfBirth || contact.CityOfBirth || "",
+    Gender: normalizeGenderValue(contact.Gender),
   }));
   d.BPBankAccounts = d.BPBankAccounts.map((row, index) => ({
     ...row,
@@ -264,7 +282,7 @@ const EMPTY_FORM = {
   PaymentBankCustomerIdNumber: "", PaymentBankMandateID: "", PaymentBankSignatureDate: "",
   PaymentBankInternalKey: "", PaymentBankSelectedIndex: -1, NoDiscounts: "tNO",
   PartialDelivery: "tNO", BackOrder: "tNO", SinglePayment: "tNO",
-  EndorsableChecksFromBP: "tNO", AcceptsEndorsedChecks: "tNO",
+  EndorsableChecksFromBP: "tYES", AcceptsEndorsedChecks: "tNO",
   // Payment Run
   HouseBankCountry: "", HouseBank: "", HouseBankAccount: "",
   HouseBankBranch: "", HouseBankIBAN: "", HouseBankSwift: "", HouseBankControlKey: "",
@@ -449,7 +467,7 @@ function buildPayload(form) {
           Remarks2: c.Remarks2,
           Password: c.Password,
           DateOfBirth: c.DateOfBirth,
-          Gender: c.Gender || "gt_NotSpecified",
+          Gender: normalizeGenderValue(c.Gender),
           Profession: c.Profession,
           PlaceOfBirth: c.PlaceOfBirth || c.CityOfBirth,
           Active: c.Active || "tYES",
@@ -562,6 +580,7 @@ export default function BusinessPartnerModule() {
   const [alert, setAlert]     = useState(null);
   const [loading, setLoading] = useState(false);
   const [bpGroups, setBpGroups]           = useState([]);
+  const [companyTypeOptions, setCompanyTypeOptions] = useState(DEFAULT_COMPANY_TYPE_OPTIONS);
   const [numberingSeries, setNumberingSeries] = useState([]);
   const [currencyModal, setCurrencyModal] = useState(false);
   const [currencyList, setCurrencyList]   = useState([]);
@@ -574,6 +593,11 @@ export default function BusinessPartnerModule() {
   // Load BP groups once
   useEffect(() => {
     fetchBPGroups().then(setBpGroups).catch(() => {});
+    fetchBPCompanyTypes().then((rows) => {
+      if (Array.isArray(rows) && rows.length > 0) {
+        setCompanyTypeOptions(rows);
+      }
+    }).catch(() => {});
     // Try to load series from SAP — if none found, dropdown stays as Manual only
   }, []);
 
@@ -641,6 +665,41 @@ export default function BusinessPartnerModule() {
       ignore = true;
     };
   }, [location.search]);
+
+  useEffect(() => {
+    const currentContactPerson = String(form.ContactPerson || "").trim();
+    const validContactNames = (form.ContactEmployees || [])
+      .map((contact) => getContactPersonName(contact))
+      .filter(Boolean);
+    const fallbackContactPerson = getDefaultContactPersonName(form.ContactEmployees || []);
+    const resolvedContactPerson = currentContactPerson && validContactNames.includes(currentContactPerson)
+      ? currentContactPerson
+      : fallbackContactPerson;
+
+    if (currentContactPerson === resolvedContactPerson) {
+      return;
+    }
+
+    setForm((prev) => {
+      const prevContactPerson = String(prev.ContactPerson || "").trim();
+      const prevValidContactNames = (prev.ContactEmployees || [])
+        .map((contact) => getContactPersonName(contact))
+        .filter(Boolean);
+      const prevFallbackContactPerson = getDefaultContactPersonName(prev.ContactEmployees || []);
+      const nextContactPerson = prevContactPerson && prevValidContactNames.includes(prevContactPerson)
+        ? prevContactPerson
+        : prevFallbackContactPerson;
+
+      if (prevContactPerson === nextContactPerson) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        ContactPerson: nextContactPerson,
+      };
+    });
+  }, [form.ContactEmployees, form.ContactPerson]);
 
   const handleSeriesChange = async (e) => {
     const val = e.target.value;
@@ -735,9 +794,55 @@ export default function BusinessPartnerModule() {
   const fetchBanksLookup = async (q = "", country = "") => {
     try { return await fetchBPBanks(q, country); } catch { return []; }
   };
-  const fetchCountriesLookup = async (q = "") => {
+  const fetchCountriesLookup = useCallback(async (q = "") => {
     try { return await fetchBPCountries(q); } catch { return []; }
-  };
+  }, []);
+  const normalizeContactBirthCountries = useCallback(async (sourceForm) => {
+    const contacts = sourceForm.ContactEmployees || [];
+    if (!contacts.length) return sourceForm;
+
+    const lookupCache = new Map();
+    let hasChanges = false;
+    const normalizedContacts = await Promise.all(contacts.map(async (contact) => {
+      const rawPlaceOfBirth = String(contact?.PlaceOfBirth || "").trim();
+      if (!rawPlaceOfBirth) return contact;
+
+      const cacheKey = rawPlaceOfBirth.toLowerCase();
+      let exactCountry = lookupCache.get(cacheKey);
+      if (exactCountry === undefined) {
+        const options = await fetchCountriesLookup(rawPlaceOfBirth);
+        exactCountry = options.find((option) => {
+          const optionCode = String(option.code || "").trim().toLowerCase();
+          const optionName = String(option.name || "").trim().toLowerCase();
+          return optionCode === cacheKey || optionName === cacheKey;
+        }) || null;
+        lookupCache.set(cacheKey, exactCountry);
+      }
+
+      if (!exactCountry) {
+        throw new Error(`Contact "${contact.Name || "Define New"}" has an invalid Country/Region of Birth.`);
+      }
+
+      const nextCode = String(exactCountry.code || "").trim();
+      const nextName = String(exactCountry.name || "").trim();
+      if (rawPlaceOfBirth !== nextCode || String(contact.PlaceOfBirthName || "").trim() !== nextName) {
+        hasChanges = true;
+        return {
+          ...contact,
+          PlaceOfBirth: nextCode,
+          PlaceOfBirthName: nextName,
+        };
+      }
+
+      return contact;
+    }));
+
+    if (!hasChanges) return sourceForm;
+    return {
+      ...sourceForm,
+      ContactEmployees: normalizedContacts,
+    };
+  }, [fetchCountriesLookup]);
   const createCreditCardLookup = async (payload) => createBPCreditCard(payload);
 
   const openCurrencyLookup = async () => {
@@ -754,13 +859,15 @@ export default function BusinessPartnerModule() {
     if (!form.CardName.trim()) { showAlert("error", "Card Name is required."); return; }
     setLoading(true);
     try {
-      await createBP(buildPayload(form));
+      const normalizedForm = await normalizeContactBirthCountries(form);
+      if (normalizedForm !== form) setForm(normalizedForm);
+      await createBP(buildPayload(normalizedForm));
       showAlert("success", `Business Partner "${form.CardCode}" created successfully.`);
       setMode(MODES.UPDATE);
     } catch (err) {
       showAlert("error", err.response?.data?.message || err.message || "Failed to create.");
     } finally { setLoading(false); }
-  }, [form]);
+  }, [form, normalizeContactBirthCountries]);
 
   const handleFind = useCallback(async () => {
     const cardCode = form.CardCode.trim();
@@ -816,12 +923,14 @@ export default function BusinessPartnerModule() {
     if (!form.CardCode.trim()) { showAlert("error", "Card Code is required."); return; }
     setLoading(true);
     try {
-      await updateBP(form.CardCode.trim(), buildPayload(form));
+      const normalizedForm = await normalizeContactBirthCountries(form);
+      if (normalizedForm !== form) setForm(normalizedForm);
+      await updateBP(form.CardCode.trim(), buildPayload(normalizedForm));
       showAlert("success", `"${form.CardCode}" updated successfully.`);
     } catch (err) {
       showAlert("error", err.response?.data?.message || err.message || "Failed to update.");
     } finally { setLoading(false); }
-  }, [form]);
+  }, [form, normalizeContactBirthCountries]);
 
   const handleSave = useCallback(() => {
     if (mode === MODES.ADD)    return handleAdd();
@@ -948,8 +1057,9 @@ export default function BusinessPartnerModule() {
       <div className="im-tab-panel" style={{ flex: 1 }}>
         {tab === 0 && <GeneralTab form={form} onChange={handleChange} setForm={setForm}
           fetchShippingTypes={fetchShippingTypesLookup} fetchSalesPersons={fetchSalesPersonsLookup}
+          companyTypeOptions={companyTypeOptions}
           getFieldBackground={getFieldBG} />}
-        {tab === 1 && <ContactTab form={form} setForm={setForm} />}
+        {tab === 1 && <ContactTab form={form} setForm={setForm} fetchCountries={fetchCountriesLookup} />}
         {tab === 2 && <AddressTab form={form} setForm={setForm} />}
         {tab === 3 && <PaymentTab form={form} onChange={handleChange} setForm={setForm}
           fetchBPPriceLists={fetchBPPriceLists}
