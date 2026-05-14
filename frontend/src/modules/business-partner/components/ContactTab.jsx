@@ -1,4 +1,10 @@
 import React, { useState } from "react";
+import LookupField from "../../item-master/components/LookupField";
+
+const normalizeGenderValue = (value) => {
+  if (value === "gt_NotSpecified") return "gt_Undefined";
+  return value || "gt_Undefined";
+};
 
 const EMPTY_CONTACT = {
   Name: "Define New",
@@ -6,19 +12,21 @@ const EMPTY_CONTACT = {
   Title: "", Position: "", Address: "",
   Phone1: "", Phone2: "", MobilePhone: "", Fax: "", E_Mail: "",
   EmailGroup: "", Pager: "", Remarks1: "", Remarks2: "",
-  Password: "", DateOfBirth: "", Gender: "gt_NotSpecified",
+  Password: "", DateOfBirth: "", Gender: "gt_Undefined",
   Profession: "", PlaceOfBirth: "",
   BlockSendingMarketingContent: "tNO",
   Active: "tYES",
 };
 
 const GENDER_OPTIONS = [
-  { value: "gt_NotSpecified", label: "Not Specified" },
+  { value: "gt_Undefined", label: "Not Specified" },
   { value: "gt_Male", label: "Male" },
   { value: "gt_Female", label: "Female" },
+  { value: "gt_Masked", label: "Masked" },
+  { value: "gt_Invalid", label: "Invalid" },
 ];
 
-export default function ContactTab({ form, setForm }) {
+export default function ContactTab({ form, setForm, fetchCountries }) {
   const contacts = form.ContactEmployees || [];
   const [selected, setSelected] = useState(0);
   const [draft, setDraft] = useState(contacts[0] || { ...EMPTY_CONTACT });
@@ -41,18 +49,50 @@ export default function ContactTab({ form, setForm }) {
     const val = type === "checkbox" ? (checked ? "tYES" : "tNO") : value;
     const updated = [...contacts];
     if (updated[selected]) {
-      updated[selected] = { ...updated[selected], [name]: val };
-      setForm((p) => ({ ...p, ContactEmployees: updated }));
+      const previousName = String(updated[selected].Name || "").trim();
+      updated[selected] = {
+        ...updated[selected],
+        [name]: name === "Gender" ? normalizeGenderValue(val) : val,
+      };
+      setForm((p) => {
+        const nextForm = { ...p, ContactEmployees: updated };
+        if (name === "Name" && previousName && String(p.ContactPerson || "").trim() === previousName) {
+          nextForm.ContactPerson = String(val || "").trim();
+        }
+        return nextForm;
+      });
     }
     setDraft((p) => ({ ...p, [name]: val }));
   };
 
   const setDefault = () => {
     const updated = contacts.map((c, i) => ({ ...c, IsDefault: i === selected ? "tYES" : "tNO" }));
-    setForm((p) => ({ ...p, ContactEmployees: updated }));
+    setForm((p) => ({
+      ...p,
+      ContactEmployees: updated,
+      ContactPerson: String(updated[selected]?.Name || "").trim(),
+    }));
   };
 
   const current = contacts[selected] || draft;
+  const updateSelectedContact = (updater) => {
+    if (!contacts[selected]) return;
+
+    const updated = [...contacts];
+    updated[selected] = typeof updater === "function"
+      ? updater(updated[selected])
+      : { ...updated[selected], ...updater };
+
+    setForm((p) => ({
+      ...p,
+      ContactEmployees: updated,
+    }));
+    setDraft({ ...updated[selected] });
+  };
+  const placeOfBirthDisplayValue =
+    current.PlaceOfBirthName && current.PlaceOfBirthName !== current.PlaceOfBirth
+      ? current.PlaceOfBirthName
+      : "";
 
   return (
     <div style={{ display: "flex", gap: 0, height: "100%", minHeight: 340 }}>
@@ -144,16 +184,43 @@ export default function ContactTab({ form, setForm }) {
             </div>
             <div className="im-field" style={{ marginBottom: 3 }}>
               <label className="im-field__label" style={{ flex: "0 0 160px", textAlign: "right" }}>Gender</label>
-              <select className="im-field__select" name="Gender" value={current.Gender || "gt_NotSpecified"} onChange={saveField} style={{ maxWidth: 280 }}>
+              <select
+                className="im-field__select"
+                name="Gender"
+                value={normalizeGenderValue(current.Gender)}
+                onChange={saveField}
+                style={{ maxWidth: 280 }}
+              >
                 {GENDER_OPTIONS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
               </select>
             </div>
-            {[["Profession", "Profession"], ["Place of Birth", "PlaceOfBirth"]].map(([label, name]) => (
+            {[["Profession", "Profession"]].map(([label, name]) => (
               <div className="im-field" key={name} style={{ marginBottom: 3 }}>
                 <label className="im-field__label" style={{ flex: "0 0 160px", textAlign: "right" }}>{label}</label>
                 <input className="im-field__input" name={name} value={current[name] || ""} onChange={saveField} style={{ maxWidth: 280 }} />
               </div>
             ))}
+            <div className="im-field" style={{ marginBottom: 3 }}>
+              <label className="im-field__label" style={{ flex: "0 0 160px", textAlign: "right" }}>Country/Region of Birth</label>
+              <LookupField
+                name="PlaceOfBirth"
+                value={current.PlaceOfBirth || ""}
+                displayValue={placeOfBirthDisplayValue}
+                onChange={() => {}}
+                onSelect={(row) => updateSelectedContact({
+                  PlaceOfBirth: row.code || "",
+                  PlaceOfBirthName: row.name || "",
+                })}
+                fetchOptions={fetchCountries}
+                columns={[
+                  { label: "Code", key: "code" },
+                  { label: "Country/Region", key: "name" },
+                ]}
+                placeholder="Country/Region of Birth"
+                allowManualEntry={false}
+                style={{ maxWidth: 280 }}
+              />
+            </div>
             <div className="im-field" style={{ marginBottom: 3 }}>
               <label className="im-field__label" style={{ flex: "0 0 160px", textAlign: "right" }}></label>
               <label className="im-checkbox-label">

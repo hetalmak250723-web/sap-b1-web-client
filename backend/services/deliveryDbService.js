@@ -555,6 +555,12 @@ const getDeliveryForCopyToCreditMemo = async (docEntry) => {
       T0.BPLId AS Branch,
       T0.DocCur AS Currency,
       T0.GroupNum AS PaymentTerms,
+      T0.ShipToCode,
+      T0.PayToCode,
+      T0.Address,
+      T0.Address2,
+      T0.TrnspCode AS ShippingType,
+      T0.Confirmed,
       T0.SlpCode AS SalesEmployeeCode,
       SLP.SlpName AS SalesEmployeeName,
       T0.Comments AS Remarks,
@@ -1027,12 +1033,18 @@ const getDelivery = async (docEntry) => {
         docNo: header.DocNum ? String(header.DocNum) : '',
         status: header.DocumentStatus || 'Open',
         series: header.Series ? String(header.Series) : '',
+        shipToCode: header.ShipToCode || '',
+        payToCode: header.PayToCode || '',
+        shipTo: header.Address || '',
+        payTo: header.Address2 || '',
         postingDate: header.PostingDate ? header.PostingDate.toISOString().split('T')[0] : '',
         deliveryDate: header.DeliveryDate ? header.DeliveryDate.toISOString().split('T')[0] : '',
         documentDate: header.DocumentDate ? header.DocumentDate.toISOString().split('T')[0] : '',
         journalRemark: header.JournalRemark || '',
         paymentTerms: header.PaymentTerms ? String(header.PaymentTerms) : '',
         paymentTermsCode: header.PaymentTerms ? String(header.PaymentTerms) : '', // Add alias
+        shippingType: header.ShippingType ? String(header.ShippingType) : '',
+        confirmed: String(header.Confirmed || '').toUpperCase() === 'Y',
         salesEmployee: header.SalesEmployeeCode != null ? String(header.SalesEmployeeCode) : '',
         purchaser: header.SalesEmployeeName || '',
         otherInstruction: header.Remarks || '',
@@ -1370,6 +1382,8 @@ const getCustomerDetails = async (customerCode) => {
     return {
       contacts: [],
       pay_to_addresses: [],
+      ship_to_addresses: [],
+      bill_to_addresses: [],
     };
   }
 
@@ -1381,10 +1395,15 @@ const getCustomerDetails = async (customerCode) => {
   const payToAddresses = addresses.filter(a => 
     a.AdresType === 'B' || a.AdresType === 'bo_BillTo'
   );
+  const shipToAddresses = addresses.filter(a =>
+    a.AdresType === 'S' || a.AdresType === 'bo_ShipTo'
+  );
 
   return {
     contacts,
     pay_to_addresses: payToAddresses,
+    ship_to_addresses: shipToAddresses,
+    bill_to_addresses: payToAddresses,
   };
 };
 

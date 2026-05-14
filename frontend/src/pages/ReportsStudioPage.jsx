@@ -26,6 +26,9 @@ const buildMenuChoices = (menus, depth = 0) =>
     ...buildMenuChoices(menu.children || [], depth + 1),
   ]);
 
+const findSingleReportMenuTarget = (targets = [], menuId) =>
+  (targets || []).find((target) => Number(target.menuId) === Number(menuId)) || null;
+
 const normalizeError = (error, fallback) =>
   error?.response?.data?.detail ||
   error?.response?.data?.message ||
@@ -211,12 +214,20 @@ function ReportsStudioPage() {
       return;
     }
 
-    if (selectedMenuId === nextMenuId) {
+    const targetMenu = (catalog.flatMenus || []).find((menu) => Number(menu.menuId) === nextMenuId);
+    const directReportTarget = findSingleReportMenuTarget(catalog.singleReportMenuTargets, nextMenuId);
+    if (!targetMenu && !directReportTarget) {
       return;
     }
 
-    const targetMenu = (catalog.flatMenus || []).find((menu) => Number(menu.menuId) === nextMenuId);
-    if (!targetMenu) {
+    if (directReportTarget) {
+      if (selectedReportId !== Number(directReportTarget.reportId)) {
+        loadReport(directReportTarget.reportId);
+      }
+      return;
+    }
+
+    if (selectedMenuId === nextMenuId) {
       return;
     }
 
@@ -238,30 +249,37 @@ function ReportsStudioPage() {
     loadReport,
     routeMenuId,
     routeReportId,
+    catalog.singleReportMenuTargets,
     selectedMenuId,
     selectedReportId,
   ]);
 
   useEffect(() => {
     const nextReportId = Number(routeReportId);
+    const fallbackRouteReportId = Number(
+      findSingleReportMenuTarget(catalog.singleReportMenuTargets, routeMenuId)?.reportId,
+    );
+    const targetReportId = Number.isInteger(nextReportId) && nextReportId > 0
+      ? nextReportId
+      : (Number.isInteger(fallbackRouteReportId) && fallbackRouteReportId > 0 ? fallbackRouteReportId : null);
 
-    if (!Number.isInteger(nextReportId) || nextReportId <= 0) {
+    if (!targetReportId) {
       autoOpenedSidebarReportRef.current = null;
       return;
     }
 
-    if (loading.detail || !selectedReport || Number(selectedReport.reportId) !== nextReportId) {
+    if (loading.detail || !selectedReport || Number(selectedReport.reportId) !== targetReportId) {
       return;
     }
 
-    if (autoOpenedSidebarReportRef.current === nextReportId) {
+    if (autoOpenedSidebarReportRef.current === targetReportId) {
       return;
     }
 
     setRunValues(buildInitialRunValues(parameters));
     setIsRunModalOpen(true);
-    autoOpenedSidebarReportRef.current = nextReportId;
-  }, [loading.detail, parameters, routeReportId, selectedReport]);
+    autoOpenedSidebarReportRef.current = targetReportId;
+  }, [catalog.singleReportMenuTargets, loading.detail, parameters, routeMenuId, routeReportId, selectedReport]);
 
   const handleMenuSelection = (menu) => {
     clearPdfPreview();

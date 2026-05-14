@@ -18,8 +18,11 @@ import HSNCodeModal from './components/HSNCodeModal';
 import BusinessPartnerModal from './components/BusinessPartnerModal';
 import StateSelectionModal from './components/StateSelectionModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
+import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
+import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
 import {
   BATCH_QTY_TOLERANCE,
   getRequiredBatchQty,
@@ -199,6 +202,7 @@ const INIT_HEADER = {
   totalImportedDocument: '',
   dateReceived: '',
   purchaser: '',
+  salesEmployee: '',
   owner: '',
   agentCode: '',
   agentName: '',
@@ -276,6 +280,9 @@ function GoodsReceiptPO() {
     lines: {},
     form: '',
   });
+  const [loadedSnapshot, setLoadedSnapshot] = useState('');
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [addressModal, setAddressModal] = useState(null);
   const [taxInfoModal, setTaxInfoModal] = useState(false);
   const [copyFromModal, setCopyFromModal] = useState(false);
@@ -294,6 +301,18 @@ function GoodsReceiptPO() {
     lstVatNo: '', cstNo: '', tanNo: '', serviceTaxNo: '', companyType: '', natureOfBusiness: '',
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
+
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
 
   useEffect(() => {
     localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings));
@@ -325,7 +344,45 @@ function GoodsReceiptPO() {
     advanceAmt: Number(dec.SumDec),
     withinDays: 0,
   };
+  const {
+    effectiveSalesEmployees,
+    salesEmployeeSetup,
+    openSalesEmployeeSetup,
+    closeSalesEmployeeSetup,
+    updateSalesEmployeeSetupRow,
+    saveSalesEmployeeSetup,
+    resolveSalesEmployeeByName,
+  } = useSalesEmployeeSetup({
+    employees: refData.sales_employees || [],
+    onEmployeesChange: (sales_employees) => setRefData((prev) => ({ ...prev, sales_employees })),
+    onError: (message) => setPageState((prev) => ({ ...prev, error: message || '' })),
+    onSuccess: (message) => setPageState((prev) => ({ ...prev, error: '', success: message || '' })),
+    discountDecimals: numDec.discount,
+    getErrMsg,
+  });
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
+  const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+  const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const primaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add';
+  const secondaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add & New';
+
+  useEffect(() => {
+    if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+    setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+    setSnapshotPending(false);
+  }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+
+  const markDirty = useCallback(() => {
+    if (currentDocEntry) setIsDirty(true);
+  }, [currentDocEntry]);
 
   // ── load reference data ───────────────────────────────────────────────────
   useEffect(() => {
@@ -354,6 +411,7 @@ function GoodsReceiptPO() {
             tax_codes: refDataRes.data.tax_codes || [],
             payment_terms: refDataRes.data.payment_terms || [],
             shipping_types: refDataRes.data.shipping_types || [],
+            sales_employees: refDataRes.data.sales_employees || [],
             branches: refDataRes.data.branches || [],
             states: refDataRes.data.states || [],
             uom_groups: refDataRes.data.uom_groups || [],
@@ -404,6 +462,9 @@ function GoodsReceiptPO() {
             : [createLine()]
         );
         setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(grpo.header_udfs || {}) });
+        setLoadedSnapshot('');
+        setSnapshotPending(true);
+        setIsDirty(false);
         if (grpo.header?.vendor) {
           loadVendorDetails(grpo.header.vendor);
         }
@@ -820,6 +881,19 @@ function GoodsReceiptPO() {
       loadVendorDetails(value);
       return;
     }
+    if (name === 'purchaser') {
+      if (value === '__DEFINE_NEW__') {
+        openSalesEmployeeSetup();
+        return;
+      }
+      const selectedEmployee = resolveSalesEmployeeByName(value);
+      setHeader((prev) => ({
+        ...prev,
+        purchaser: value,
+        salesEmployee: selectedEmployee ? String(selectedEmployee.SlpCode) : '-1',
+      }));
+      return;
+    }
     if (numDec[name] !== undefined && type !== 'checkbox') {
       setHeader(p => ({ ...p, [name]: sanitize(value, numDec[name]) }));
       return;
@@ -938,17 +1012,25 @@ function GoodsReceiptPO() {
   };
 
   const addLine = () => {
+    markDirty();
     setValErrors(p => ({ ...p, form: '' }));
     setLines(p => [...p, { ...createLine(), whse: header.warehouse || '', branch: header.branch || '', loc: header.branch || '' }]);
   };
 
   const removeLine = (i) => {
+    markDirty();
     setValErrors(p => { const nl = { ...p.lines }; delete nl[i]; return { ...p, lines: nl, form: '' }; });
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
-  const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
-  const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  const handleHeaderUdfChange = (k, v) => {
+    markDirty();
+    setHeaderUdfs(p => ({ ...p, [k]: v }));
+  };
+  const handleRowUdfChange = (i, k, v) => {
+    markDirty();
+    setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
 
   // ── Series and Auto-Numbering handlers ────────────────────────────────────
@@ -1130,7 +1212,7 @@ function GoodsReceiptPO() {
   const closeStateModal = () => setStateModal(false);
 
   const handleStateSelect = (state) => {
-    setHeader(prev => ({ ...prev, placeOfSupply: state.Code || state.Name || state.State || state }));
+    setHeader(prev => ({ ...prev, placeOfSupply: getStateCodeValue(state, refData.states) }));
     closeStateModal();
   };
 
@@ -1363,6 +1445,7 @@ function GoodsReceiptPO() {
       setPageState(p => ({ ...p, error: 'This document is closed and cannot be edited.', success: '' }));
       return;
     }
+    if (currentDocEntry && !hasUnsavedChanges) return;
     const e = validate();
     if (e.form || Object.values(e.header).some(Boolean) || Object.values(e.lines).some(le => Object.values(le || {}).some(Boolean))) {
       setValErrors(e);
@@ -1381,6 +1464,9 @@ function GoodsReceiptPO() {
       const payload = { company_id: PURCHASE_ORDER_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
       const r = currentDocEntry ? await updateGRPO(currentDocEntry, payload) : await submitGRPO(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
+      setLoadedSnapshot('');
+      setSnapshotPending(false);
+      setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
       setRefData(p => ({
@@ -1405,6 +1491,9 @@ function GoodsReceiptPO() {
   };
 
   const resetForm = () => {
+    setLoadedSnapshot('');
+    setSnapshotPending(false);
+    setIsDirty(false);
     setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
     setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
     setValErrors({ header: {}, lines: {}, form: '' });
@@ -1420,13 +1509,13 @@ function GoodsReceiptPO() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page" onSubmit={handleSubmit}>
+    <form className="po-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* ── Toolbar ── */}
       <div className="po-toolbar">
         <span className="po-toolbar__title">Goods Receipt PO{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-          {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}
+          {primaryActionLabel}
         </button>
         <button type="button" className="po-btn" disabled={pageState.posting}>Add Draft & New</button>
         <button type="button" className="po-btn po-btn--danger" onClick={resetForm}>Cancel</button>
@@ -1524,8 +1613,8 @@ function GoodsReceiptPO() {
       )}
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div style={{ display: 'flex' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className={`po-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+          <div className="po-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
             <div className="po-header-card">
@@ -1590,7 +1679,7 @@ function GoodsReceiptPO() {
                       <input 
                         name="placeOfSupply" 
                         className={`po-field__input${valErrors.header.placeOfSupply ? ' po-field__input--error' : ''}`} 
-                        value={header.placeOfSupply} 
+                        value={getStateDisplayName(header.placeOfSupply, refData.states)} 
                         onChange={handleHeaderChange} 
                         style={{ flex: 1 }} 
                         placeholder="Select State"
@@ -1715,8 +1804,12 @@ function GoodsReceiptPO() {
                     <label className="po-field__label">Purchaser</label>
                     <select name="purchaser" className="po-field__select" value={header.purchaser || ''} onChange={handleHeaderChange}>
                       <option value="">No Purchaser</option>
-                      <option value="Buyer 1">Buyer 1</option>
-                      <option value="Buyer 2">Buyer 2</option>
+                      {effectiveSalesEmployees.map((employee) => (
+                        <option key={employee.SlpCode ?? employee.SlpName} value={employee.SlpName || ''}>
+                          {employee.SlpName || ''}
+                        </option>
+                      ))}
+                      <option value="__DEFINE_NEW__">Define New</option>
                     </select>
                   </div>
                   <div className="po-field">
@@ -1792,7 +1885,7 @@ function GoodsReceiptPO() {
             <div className="po-toolbar" style={{ justifyContent: 'space-between', marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
-                  {pageState.posting ? 'Saving…' : 'Add & New'}
+                  {secondaryActionLabel}
                 </button>
                 <button type="button" className="po-btn" disabled={pageState.posting}>Add Draft & New</button>
                 <button type="button" className="po-btn po-btn--danger" onClick={resetForm}>Cancel</button>
@@ -1876,6 +1969,7 @@ function GoodsReceiptPO() {
         </div>{/* end main flex */}
 
           <HeaderUdfSidebar
+            className="po-layout__sidebar"
             isOpen={sidebarOpen}
             fields={visHdrUdfs}
             formSettings={formSettings}
@@ -1883,7 +1977,6 @@ function GoodsReceiptPO() {
             onFieldChange={handleHeaderUdfChange}
           />
         </div>
-      
 
       </fieldset>
 
@@ -1923,6 +2016,15 @@ function GoodsReceiptPO() {
         onClose={() => setCopyFromModal(false)}
         onCopy={handleCopyFrom}
         vendorCode={header.vendor}
+      />
+
+      <SalesEmployeeSetupModal
+        isOpen={salesEmployeeSetup.open}
+        rows={salesEmployeeSetup.rows}
+        saving={salesEmployeeSetup.saving}
+        onClose={closeSalesEmployeeSetup}
+        onSave={saveSalesEmployeeSetup}
+        onUpdateRow={updateSalesEmployeeSetupRow}
       />
 
       <BatchAllocationModal

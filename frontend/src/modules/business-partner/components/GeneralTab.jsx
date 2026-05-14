@@ -1,7 +1,15 @@
 import React from "react";
 import LookupField from "../../item-master/components/LookupField";
 
-export default function GeneralTab({ form, onChange, setForm, fetchShippingTypes, fetchSalesPersons, getFieldBackground }) {
+export default function GeneralTab({
+  form,
+  onChange,
+  setForm,
+  fetchShippingTypes,
+  fetchSalesPersons,
+  companyTypeOptions,
+  getFieldBackground,
+}) {
   const getBG = (name) => getFieldBackground ? getFieldBackground(name) : "#fff";
 
   return (
@@ -61,6 +69,7 @@ export default function GeneralTab({ form, onChange, setForm, fetchShippingTypes
               onSelect={(row) => setForm((p) => ({ ...p, ShippingType: row.code, ShippingTypeName: row.name }))}
               fetchOptions={fetchShippingTypes}
               placeholder="Shipping Type"
+              allowManualEntry={false}
             />
           </div>
 
@@ -74,6 +83,7 @@ export default function GeneralTab({ form, onChange, setForm, fetchShippingTypes
               onSelect={(row) => setForm((p) => ({ ...p, SalesPersonCode: row.code, SalesEmployeeName: row.name }))}
               fetchOptions={fetchSalesPersons}
               placeholder="Sales Employee"
+              allowManualEntry={false}
             />
           </div>
 
@@ -95,8 +105,11 @@ export default function GeneralTab({ form, onChange, setForm, fetchShippingTypes
           <div className="im-field">
             <label className="im-field__label">Type of Business</label>
             <select className="im-field__select" name="CompanyPrivate" value={form.CompanyPrivate || "cCompany"} onChange={onChange}>
-              <option value="cCompany">Company</option>
-              <option value="cPrivate">Private</option>
+              {companyTypeOptions.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.name}
+                </option>
+              ))}
             </select>
           </div>
         </div>
@@ -105,7 +118,13 @@ export default function GeneralTab({ form, onChange, setForm, fetchShippingTypes
         <div className="bp-general-right">
           <div className="im-field">
             <label className="im-field__label">Contact Person</label>
-            <input className="im-field__input" name="ContactPerson" value={form.ContactPerson || ""} onChange={onChange} />
+            <input
+              className="im-field__input"
+              name="ContactPerson"
+              value={form.ContactPerson || ""}
+              readOnly
+              placeholder="Managed from Contact Persons tab"
+            />
           </div>
 
           <div className="im-field" style={{ alignItems: "flex-start" }}>

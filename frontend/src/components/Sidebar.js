@@ -44,6 +44,7 @@ const buildShortLabel = (label, fallback = 'MN') => {
 const REPORT_STUDIO_NAME = 'report studio';
 const MASTER_MENU_NAME = 'master';
 const ALLOWED_MASTER_CHILDREN = new Set(['item master', 'business partner']);
+const isAdminMenuPath = (menuPath = '') => normalizePath(menuPath).startsWith('/admin');
 const getDisplayMenuName = (menu) => {
   const normalized = String(menu?.menuName || '').trim().toLowerCase();
   if (normalized === 'sales' && !menu?.parentId) {
@@ -211,6 +212,21 @@ const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname, d
 
   if (!menuPath) {
     return null;
+  }
+
+  if (isAdminMenuPath(menuPath)) {
+    return (
+      <a
+        href={menuPath}
+        target="_blank"
+        rel="noreferrer"
+        className={`sidebar__link${isNested ? ' sidebar__link--nested' : ''}`}
+        title={collapsed ? `${displayMenuName} (opens in new window)` : undefined}
+      >
+        <span className="sidebar__link-icon">{shortLabel}</span>
+        {!collapsed ? <span className="sidebar__link-text">{displayMenuName}</span> : null}
+      </a>
+    );
   }
 
   return (

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import LookupField from "../../item-master/components/LookupField";
 
 const PRIORITY_OPTIONS = [
@@ -150,6 +150,26 @@ export default function PaymentTab({
   const [showBankSetup, setShowBankSetup] = useState(false);
   const [bankRows, setBankRows] = useState(() => createBankRows(form));
   const [selectedBankIndex, setSelectedBankIndex] = useState(form.PaymentBankSelectedIndex >= 0 ? form.PaymentBankSelectedIndex : 0);
+  const showSalesOrderPartialDelivery = form.CardType !== "cSupplier";
+  const showPartialDeliveryPerRow = showSalesOrderPartialDelivery && form.PartialDelivery === "tYES";
+
+  useEffect(() => {
+    if (form.CardType === "cSupplier" && (form.PartialDelivery === "tYES" || form.BackOrder === "tYES")) {
+      setForm((prev) => ({
+        ...prev,
+        PartialDelivery: "tNO",
+        BackOrder: "tNO",
+      }));
+      return;
+    }
+
+    if (form.PartialDelivery !== "tYES" && form.BackOrder === "tYES") {
+      setForm((prev) => ({
+        ...prev,
+        BackOrder: "tNO",
+      }));
+    }
+  }, [form.BackOrder, form.CardType, form.PartialDelivery, setForm]);
 
   const paymentDates = form.BPPaymentDates || [];
   const paymentDateSummary = paymentDates.length > 0 ? paymentDates.map((row) => row.PaymentDate).join(", ") : "";
@@ -539,14 +559,18 @@ export default function PaymentTab({
               </div>
 
               <div className="bp-payment-flags">
-                <label className="im-checkbox-label">
-                  <input type="checkbox" checked={form.PartialDelivery === "tYES"} onChange={handleCheckboxChange("PartialDelivery")} />
-                  <span>Allow Partial Delivery of Sales Order</span>
-                </label>
-                <label className="im-checkbox-label">
-                  <input type="checkbox" checked={form.BackOrder === "tYES"} onChange={handleCheckboxChange("BackOrder")} />
-                  <span>Allow Partial Delivery per Row</span>
-                </label>
+                {showSalesOrderPartialDelivery && (
+                  <label className="im-checkbox-label">
+                    <input type="checkbox" checked={form.PartialDelivery === "tYES"} onChange={handleCheckboxChange("PartialDelivery")} />
+                    <span>Allow Partial Delivery of Sales Order</span>
+                  </label>
+                )}
+                {showPartialDeliveryPerRow && (
+                  <label className="im-checkbox-label">
+                    <input type="checkbox" checked={form.BackOrder === "tYES"} onChange={handleCheckboxChange("BackOrder")} />
+                    <span>Allow Partial Delivery per Row</span>
+                  </label>
+                )}
                 <label className="im-checkbox-label">
                   <input type="checkbox" checked={form.NoDiscounts === "tYES"} onChange={handleCheckboxChange("NoDiscounts")} />
                   <span>Do Not Apply Discount Groups</span>

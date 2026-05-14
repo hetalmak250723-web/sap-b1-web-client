@@ -137,6 +137,8 @@ function App() {
               <Route path="/reports/purchasing/purchase-request-report" element={<PurchaseRequestReportPage />} />
               <Route path="/admin" element={<AdminPanelHome />} />
               <Route path="/admin/:entityKey" element={<AdminPanelEntity />} />
+              <Route path="/admin/:entityKey/new" element={<AdminPanelEntity />} />
+              <Route path="/admin/:entityKey/:recordId" element={<AdminPanelEntity />} />
               <Route path="/bom" element={<BOM />} />
               <Route path="/production-order" element={<ProductionOrder />} />
               <Route path="/issue-for-production" element={<IssueForProduction />} />

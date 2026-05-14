@@ -84,6 +84,14 @@ const getPaymentTerms = () => safe(db.query(`
   ORDER  BY PymntGroup
 `));
 
+const getSalesEmployees = () => safe(db.query(`
+  SELECT SlpCode, SlpName, Memo, Commission, Active
+  FROM   OSLP
+  ORDER  BY
+    CASE WHEN SlpCode = -1 THEN 0 ELSE 1 END,
+    SlpName
+`));
+
 const getShippingTypes = () => safe(db.query(`
   SELECT TrnspCode, TrnspName
   FROM   OSHP
@@ -307,10 +315,13 @@ const getPurchaseQuotation = async (docEntry) => {
       T0.NumAtCard AS VendorRefNo,
       T0.DocDate AS PostingDate,
       T0.DocDueDate AS DeliveryDate,
+      T0.ReqDate AS RequiredDate,
       T0.TaxDate AS DocumentDate,
       T0.BPLId AS Branch,
       T0.DocCur AS Currency,
       T0.GroupNum AS PaymentTerms,
+      T0.SlpCode AS SalesEmployeeCode,
+      T1.SlpName AS SalesEmployeeName,
       T0.Comments AS Remarks,
       T0.JrnlMemo AS JournalRemark,
       T0.DiscPrcnt AS DiscountPercent,
@@ -324,6 +335,7 @@ const getPurchaseQuotation = async (docEntry) => {
         ELSE T0.DocStatus
       END AS DocumentStatus
     FROM OPQT T0
+    LEFT JOIN OSLP T1 ON T1.SlpCode = T0.SlpCode
     WHERE T0.DocEntry = @docEntry
   `, { docEntry }));
 
@@ -380,6 +392,8 @@ const getPurchaseQuotation = async (docEntry) => {
         vendor: header.CardCode,
         name: header.CardName,
         contactPerson: header.ContactPersonCode ? String(header.ContactPersonCode) : '',
+        salesEmployee: header.SalesEmployeeCode ? String(header.SalesEmployeeCode) : '',
+        purchaser: header.SalesEmployeeName || '',
         salesContractNo: header.VendorRefNo || '',
         branch: header.Branch ? String(header.Branch) : '',
         docNo: header.DocNum ? String(header.DocNum) : '',
@@ -387,6 +401,7 @@ const getPurchaseQuotation = async (docEntry) => {
         series: header.Series ? String(header.Series) : '',
         postingDate: header.PostingDate ? header.PostingDate.toISOString().split('T')[0] : '',
         deliveryDate: header.DeliveryDate ? header.DeliveryDate.toISOString().split('T')[0] : '',
+        requiredDate: header.RequiredDate ? header.RequiredDate.toISOString().split('T')[0] : '',
         documentDate: header.DocumentDate ? header.DocumentDate.toISOString().split('T')[0] : '',
         confirmed: header.Confirmed === 'Y',
         journalRemark: header.JournalRemark || '',
@@ -493,18 +508,25 @@ const getPurchaseQuotationForCopy = async (docEntry) => {
 
 // ── DOCUMENT SERIES ───────────────────────────────────────────────────────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (branch = null, targetDate = null) => {
   const result = await safe(db.query(`
     SELECT 
       T0.Series,
       T0.SeriesName,
       T0.Indicator,
-      T0.NextNumber
+      T0.NextNumber,
+      ISNULL(T0.BPLId, 0) AS BPLId,
+      T1.F_RefDate AS FromDate,
+      T1.T_RefDate AS ToDate
     FROM NNM1 T0
+    INNER JOIN OFPR T1
+      ON T0.Indicator = T1.Indicator
     WHERE T0.ObjectCode = '540000006'
       AND T0.Locked = 'N'
+      AND (@branch IS NULL OR ISNULL(T0.BPLId, 0) IN (0, @branch))
+      AND (@targetDate IS NULL OR CAST(@targetDate AS date) BETWEEN T1.F_RefDate AND T1.T_RefDate)
     ORDER BY T0.SeriesName
-  `));
+  `, { branch, targetDate }));
 
   return { series: result };
 };
@@ -563,6 +585,7 @@ const getReferenceData = async () => {
     items,
     warehouses,
     paymentTerms,
+    salesEmployees,
     shippingTypes,
     branches,
     states,
@@ -575,6 +598,7 @@ const getReferenceData = async () => {
     getItems(),
     getWarehouses(),
     getPaymentTerms(),
+    getSalesEmployees(),
     getShippingTypes(),
     getBranches(),
     getStates(),
@@ -638,6 +662,7 @@ const getReferenceData = async () => {
     company_address: { State: companyInfo.state },
     tax_codes: taxCodes,
     payment_terms: paymentTerms,
+    sales_employees: salesEmployees.map((e) => ({ SlpCode: e.SlpCode, SlpName: e.SlpName, Memo: e.Memo, Commission: e.Commission, Active: e.Active })),
     shipping_types: shippingTypes,
     branches,
     states,

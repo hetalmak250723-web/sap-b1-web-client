@@ -8,6 +8,7 @@ const AdminPanelHome = () => {
   const [entities, setEntities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     let isCancelled = false;
@@ -37,10 +38,21 @@ const AdminPanelHome = () => {
     };
   }, []);
 
+  const filteredEntities = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return entities;
+
+    return entities.filter((entity) => (
+      String(entity.title || '').toLowerCase().includes(query)
+      || String(entity.description || '').toLowerCase().includes(query)
+      || String(entity.group || '').toLowerCase().includes(query)
+    ));
+  }, [entities, searchTerm]);
+
   const groupedEntities = useMemo(() => {
     const groups = new Map();
 
-    for (const entity of entities) {
+    for (const entity of filteredEntities) {
       const groupName = entity.group || 'Other';
       if (!groups.has(groupName)) {
         groups.set(groupName, []);
@@ -61,7 +73,7 @@ const AdminPanelHome = () => {
       if (groupIndexB === -1) return -1;
       return groupIndexA - groupIndexB;
     });
-  }, [entities]);
+  }, [filteredEntities]);
 
   const totalRecords = entities.reduce((sum, entity) => sum + Number(entity.count || 0), 0);
 
@@ -69,23 +81,41 @@ const AdminPanelHome = () => {
     <div className="admin-panel-page">
       <section className="admin-panel-hero">
         <div className="admin-panel-hero__copy">
-          <div className="admin-panel-hero__eyebrow">Admin Panel</div>
-          <h1>Manage the `henny_master` configuration database</h1>
+          <div className="admin-panel-hero__eyebrow">Admin Workspace</div>
+          <h1>Manage users, companies, roles, and access in one place</h1>
           <p>
-            This workspace gives Admin users full CRUD access to the shared setup tables for companies,
-            users, roles, menus, reports, parameters, and rights mappings.
+            This dedicated workspace is separated from the day-to-day transaction screens so admin work
+            feels safer, cleaner, and easier to navigate.
           </p>
         </div>
 
         <div className="admin-panel-hero__stats">
           <div className="admin-panel-stat-card">
-            <span>Admin Sections</span>
-            <strong>{entities.length}</strong>
+            <span>Available Sections</span>
+            <strong>{filteredEntities.length}</strong>
           </div>
           <div className="admin-panel-stat-card">
             <span>Tracked Rows</span>
             <strong>{totalRecords}</strong>
           </div>
+        </div>
+      </section>
+
+      <section className="admin-panel-toolbar">
+        <div className="admin-panel-toolbar__search">
+          <label htmlFor="admin-panel-search">Find a section</label>
+          <input
+            id="admin-panel-search"
+            type="search"
+            className="admin-panel-input"
+            placeholder="Search companies, users, roles, access..."
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+          />
+        </div>
+        <div className="admin-panel-toolbar__note">
+          <strong>Separate workspace</strong>
+          <span>Admin opens outside the regular SAP screens for a cleaner experience.</span>
         </div>
       </section>
 

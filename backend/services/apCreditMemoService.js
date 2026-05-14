@@ -402,6 +402,7 @@ const submitAPCreditMemo = async (payload) => {
     if (header.series) sapPayload.Series = parseInt(header.series, 10);
     if (header.branch) sapPayload.BPLId = parseInt(header.branch, 10);
     if (header.paymentTerms) sapPayload.PaymentGroupCode = parseInt(header.paymentTerms, 10);
+    if (header.salesEmployee !== '' && header.salesEmployee != null) sapPayload.SalesPersonCode = parseInt(header.salesEmployee, 10);
     if (header.freight) sapPayload.TotalExpenses = parseFloat(header.freight);
 
     if (header_udfs && Object.keys(header_udfs).length > 0) {

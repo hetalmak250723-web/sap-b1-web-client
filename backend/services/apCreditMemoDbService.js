@@ -70,6 +70,14 @@ const getPaymentTerms = () => safe(db.query(`
   ORDER  BY PymntGroup
 `));
 
+const getSalesEmployees = () => safe(db.query(`
+  SELECT SlpCode, SlpName, Memo, Commission, Active
+  FROM   OSLP
+  ORDER  BY
+    CASE WHEN SlpCode = -1 THEN 0 ELSE 1 END,
+    SlpName
+`));
+
 const getShippingTypes = () => safe(db.query(`
   SELECT TrnspCode, TrnspName
   FROM   OSHP
@@ -245,6 +253,8 @@ const getGRPOForCopy = async (docEntry) => {
       T0.BPLId AS Branch,
       T0.DocCur AS Currency,
       T0.GroupNum AS PaymentTerms,
+      T0.SlpCode AS SalesEmployeeCode,
+      T1.SlpName AS SalesEmployeeName,
       T0.Comments AS Remarks,
       T0.JrnlMemo AS JournalRemark,
       T0.DiscPrcnt AS DiscountPercent,
@@ -449,6 +459,7 @@ const getAPCreditMemo = async (docEntry) => {
         ELSE T0.DocStatus
       END AS DocumentStatus
     FROM ORPC T0
+    LEFT JOIN OSLP T1 ON T1.SlpCode = T0.SlpCode
     WHERE T0.DocEntry = @docEntry
   `, { docEntry }));
 
@@ -509,6 +520,8 @@ const getAPCreditMemo = async (docEntry) => {
         vendor: header.CardCode,
         name: header.CardName,
         contactPerson: header.ContactPersonCode ? String(header.ContactPersonCode) : '',
+        salesEmployee: header.SalesEmployeeCode ? String(header.SalesEmployeeCode) : '',
+        purchaser: header.SalesEmployeeName || '',
         salesContractNo: header.VendorRefNo || '',
         branch: header.Branch ? String(header.Branch) : '',
         docNo: header.DocNum ? String(header.DocNum) : '',
@@ -600,6 +613,7 @@ const getReferenceData = async () => {
     items,
     warehouses,
     paymentTerms,
+    salesEmployees,
     shippingTypes,
     branches,
     states,
@@ -612,6 +626,7 @@ const getReferenceData = async () => {
     getItems(),
     getWarehouses(),
     getPaymentTerms(),
+    getSalesEmployees(),
     getShippingTypes(),
     getBranches(),
     getStates(),
@@ -669,6 +684,7 @@ const getReferenceData = async () => {
     company_address: { State: companyInfo.state },
     tax_codes: taxCodes,
     payment_terms: paymentTerms,
+    sales_employees: salesEmployees.map((e) => ({ SlpCode: e.SlpCode, SlpName: e.SlpName, Memo: e.Memo, Commission: e.Commission, Active: e.Active })),
     shipping_types: shippingTypes,
     branches,
     states,

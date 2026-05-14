@@ -1,5 +1,5 @@
 import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom';
 import {
   createAdminRecord,
   deleteAdminRecord,
@@ -27,7 +27,7 @@ const formatCellValue = (value, column, lookupLabels) => {
   }
 
   if (value === null || value === undefined || value === '') {
-    return '—';
+    return '-';
   }
 
   if (column.dataType === 'bit') {
@@ -82,18 +82,130 @@ const buildFormFromRecord = (schema, record) => {
   return nextForm;
 };
 
+const renderField = (column, value, selectedRecord, isCreating, lookups, handleFieldChange) => {
+  const fieldId = `admin-field-${column.name}`;
+
+  if (!column.editable) {
+    return (
+      <div key={column.name} className="admin-form-field admin-form-field--readonly">
+        <label htmlFor={fieldId}>{column.label}</label>
+        <input
+          id={fieldId}
+          className="admin-panel-input"
+          value={isCreating ? 'Auto generated' : selectedRecord?.[column.name] ?? ''}
+          readOnly
+        />
+      </div>
+    );
+  }
+
+  if (column.isForeignKey) {
+    return (
+      <div key={column.name} className="admin-form-field">
+        <label htmlFor={fieldId}>{column.label}</label>
+        <select
+          id={fieldId}
+          className="admin-panel-input"
+          value={value ?? ''}
+          onChange={(event) => handleFieldChange(column, event.target.value)}
+        >
+          <option value="">Select {column.label}</option>
+          {(lookups[column.name] || []).map((option) => (
+            <option key={`${column.name}-${option.value}`} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {column.helpText ? <small>{column.helpText}</small> : null}
+      </div>
+    );
+  }
+
+  if (column.dataType === 'bit' && column.nullable) {
+    return (
+      <div key={column.name} className="admin-form-field">
+        <label htmlFor={fieldId}>{column.label}</label>
+        <select
+          id={fieldId}
+          className="admin-panel-input"
+          value={value ?? ''}
+          onChange={(event) => handleFieldChange(column, event.target.value)}
+        >
+          <option value="">Not set</option>
+          <option value="true">Yes</option>
+          <option value="false">No</option>
+        </select>
+        {column.helpText ? <small>{column.helpText}</small> : null}
+      </div>
+    );
+  }
+
+  if (column.dataType === 'bit') {
+    return (
+      <div key={column.name} className="admin-form-field admin-form-field--checkbox">
+        <label htmlFor={fieldId}>{column.label}</label>
+        <div className="admin-checkbox-row">
+          <input
+            id={fieldId}
+            type="checkbox"
+            checked={Boolean(value)}
+            onChange={(event) => handleFieldChange(column, event.target.checked)}
+          />
+          <span>{Boolean(value) ? 'Enabled' : 'Disabled'}</span>
+        </div>
+        {column.helpText ? <small>{column.helpText}</small> : null}
+      </div>
+    );
+  }
+
+  const isLongText = (column.maxLength && column.maxLength > 180) || column.name === 'ApiUrl';
+
+  return (
+    <div
+      key={column.name}
+      className={`admin-form-field${isLongText ? ' admin-form-field--wide' : ''}`}
+    >
+      <label htmlFor={fieldId}>{column.label}</label>
+      {isLongText ? (
+        <textarea
+          id={fieldId}
+          className="admin-panel-input admin-panel-textarea"
+          value={value ?? ''}
+          maxLength={column.maxLength && column.maxLength > 0 ? column.maxLength : undefined}
+          onChange={(event) => handleFieldChange(column, event.target.value)}
+        />
+      ) : (
+        <input
+          id={fieldId}
+          className="admin-panel-input"
+          type={column.inputType === 'password' ? 'password' : column.inputType}
+          value={value ?? ''}
+          maxLength={column.maxLength && column.maxLength > 0 ? column.maxLength : undefined}
+          onChange={(event) => handleFieldChange(column, event.target.value)}
+        />
+      )}
+      {column.helpText ? <small>{column.helpText}</small> : null}
+    </div>
+  );
+};
+
 const AdminPanelEntity = () => {
   const { entityKey = '' } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const createMatch = useMatch('/admin/:entityKey/new');
+  const editMatch = useMatch('/admin/:entityKey/:recordId');
+  const isCreating = Boolean(createMatch);
+  const editingRecordId = isCreating ? null : editMatch?.params?.recordId || null;
+  const pageMode = isCreating ? 'create' : editingRecordId ? 'edit' : 'list';
+
   const [bootstrap, setBootstrap] = useState(null);
-  const [selectedRecordId, setSelectedRecordId] = useState(null);
   const [formData, setFormData] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(location.state?.notice || '');
   const deferredSearchTerm = useDeferredValue(searchTerm);
 
   const schema = bootstrap?.schema || null;
@@ -101,24 +213,12 @@ const AdminPanelEntity = () => {
   const records = bootstrap?.records || [];
   const lookups = bootstrap?.lookups || {};
 
-  const hydrateBootstrap = (payload, preferredRecordId = null, nextCreating = false) => {
-    const nextSchema = payload?.schema || null;
-    const nextRecords = payload?.records || [];
-    const nextPrimaryKey = nextSchema?.primaryKey || '';
-    const shouldCreate = nextCreating || !nextRecords.length;
-    const nextSelectedId = preferredRecordId && nextRecords.some((row) => row[nextPrimaryKey] === preferredRecordId)
-      ? preferredRecordId
-      : nextRecords[0]?.[nextPrimaryKey] ?? null;
-
-    setBootstrap(payload);
-    setIsCreating(shouldCreate);
-    setSelectedRecordId(shouldCreate ? null : nextSelectedId);
-    setFormData(
-      shouldCreate
-        ? buildEmptyForm(nextSchema)
-        : buildFormFromRecord(nextSchema, nextRecords.find((row) => row[nextPrimaryKey] === nextSelectedId) || null),
-    );
-  };
+  useEffect(() => {
+    if (location.state?.notice) {
+      setNotice(location.state.notice);
+      navigate(location.pathname, { replace: true, state: null });
+    }
+  }, [location.pathname, location.state, navigate]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -127,10 +227,9 @@ const AdminPanelEntity = () => {
       try {
         setIsLoading(true);
         setError('');
-        setNotice('');
         const payload = await fetchAdminEntityBootstrap(entityKey);
         if (!isCancelled) {
-          hydrateBootstrap(payload, null, false);
+          setBootstrap(payload);
         }
       } catch (loadError) {
         if (!isCancelled) {
@@ -174,37 +273,56 @@ const AdminPanelEntity = () => {
 
     return records.filter((record) =>
       visibleColumns.some((column) => {
-        const cellValue = formatCellValue(
-          record[column.name],
-          column,
-          lookupLabelMaps[column.name],
-        );
+        const cellValue = formatCellValue(record[column.name], column, lookupLabelMaps[column.name]);
         return String(cellValue).toLowerCase().includes(normalizedSearch);
       }),
     );
   }, [deferredSearchTerm, lookupLabelMaps, records, visibleColumns]);
 
-  const selectedRecord = useMemo(
-    () => records.find((record) => record[primaryKey] === selectedRecordId) || null,
-    [primaryKey, records, selectedRecordId],
+  const selectedRecord = useMemo(() => {
+    if (!primaryKey || !editingRecordId) return null;
+    return records.find((record) => String(record[primaryKey]) === String(editingRecordId)) || null;
+  }, [editingRecordId, primaryKey, records]);
+
+  const initialFormData = useMemo(() => {
+    if (!schema) return {};
+
+    if (pageMode === 'create') {
+      return buildEmptyForm(schema);
+    }
+
+    if (pageMode === 'edit') {
+      return selectedRecord ? buildFormFromRecord(schema, selectedRecord) : {};
+    }
+
+    return {};
+  }, [pageMode, schema, selectedRecord]);
+
+  const editableColumnCount = useMemo(
+    () => (schema?.columns || []).filter((column) => column.editable).length,
+    [schema],
   );
 
+  useEffect(() => {
+    setFormData(initialFormData);
+  }, [initialFormData]);
+
+  useEffect(() => {
+    if (pageMode === 'edit' && schema && records.length && !selectedRecord) {
+      setError('The selected record was not found.');
+    }
+  }, [pageMode, records.length, schema, selectedRecord]);
+
   const openNewRecord = () => {
-    if (!schema) return;
     setNotice('');
     setError('');
-    setIsCreating(true);
-    setSelectedRecordId(null);
-    setFormData(buildEmptyForm(schema));
+    navigate(`/admin/${entityKey}/new`);
   };
 
   const openExistingRecord = (record) => {
-    if (!schema) return;
     setNotice('');
     setError('');
-    setIsCreating(false);
-    setSelectedRecordId(record[primaryKey]);
-    setFormData(buildFormFromRecord(schema, record));
+    navigate(`/admin/${entityKey}/${record[primaryKey]}`);
   };
 
   const handleFieldChange = (column, nextValue) => {
@@ -219,12 +337,25 @@ const AdminPanelEntity = () => {
       setIsLoading(true);
       setError('');
       const payload = await fetchAdminEntityBootstrap(entityKey);
-      hydrateBootstrap(payload, isCreating ? null : selectedRecordId, isCreating);
+      setBootstrap(payload);
     } catch (refreshError) {
       setError(refreshError.response?.data?.message || refreshError.message || 'Unable to refresh records.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const goToList = (nextNotice = '', replace = false) => {
+    navigate(`/admin/${entityKey}`, {
+      replace,
+      state: nextNotice ? { notice: nextNotice } : null,
+    });
+  };
+
+  const handleResetForm = () => {
+    setError('');
+    setNotice('');
+    setFormData(initialFormData);
   };
 
   const handleSubmit = async (event) => {
@@ -236,19 +367,14 @@ const AdminPanelEntity = () => {
       setError('');
       setNotice('');
 
-      let payload;
-      if (isCreating) {
-        payload = await createAdminRecord(entityKey, formData);
-      } else {
-        payload = await updateAdminRecord(entityKey, selectedRecordId, formData);
+      if (pageMode === 'create') {
+        await createAdminRecord(entityKey, formData);
+        goToList('Record created successfully.', true);
+        return;
       }
 
-      const preferredRecordId = isCreating
-        ? payload.records?.[0]?.[payload.schema?.primaryKey] ?? null
-        : selectedRecordId;
-
-      hydrateBootstrap(payload, preferredRecordId, false);
-      setNotice(isCreating ? 'Record created successfully.' : 'Record updated successfully.');
+      await updateAdminRecord(entityKey, editingRecordId, formData);
+      goToList('Record updated successfully.', true);
     } catch (saveError) {
       setError(saveError.response?.data?.message || saveError.message || 'Unable to save the record.');
     } finally {
@@ -257,7 +383,7 @@ const AdminPanelEntity = () => {
   };
 
   const handleDelete = async () => {
-    if (!schema || isCreating || selectedRecordId === null || selectedRecordId === undefined) return;
+    if (!schema || pageMode !== 'edit' || editingRecordId === null || editingRecordId === undefined) return;
 
     const confirmed = window.confirm(`Delete this ${bootstrap?.entity?.title || 'record'} entry?`);
     if (!confirmed) return;
@@ -266,9 +392,8 @@ const AdminPanelEntity = () => {
       setIsSaving(true);
       setError('');
       setNotice('');
-      const payload = await deleteAdminRecord(entityKey, selectedRecordId);
-      hydrateBootstrap(payload, null, false);
-      setNotice('Record deleted successfully.');
+      await deleteAdminRecord(entityKey, editingRecordId);
+      goToList('Record deleted successfully.', true);
     } catch (deleteError) {
       setError(deleteError.response?.data?.message || deleteError.message || 'Unable to delete the record.');
     } finally {
@@ -291,24 +416,117 @@ const AdminPanelEntity = () => {
     );
   }
 
+  if (pageMode === 'list') {
+    return (
+      <div className="admin-entity-page">
+        <section className="admin-entity-banner">
+          <div>
+            <div className="admin-entity-banner__eyebrow">Admin Section</div>
+            <h1>{bootstrap?.entity?.title || 'Admin Data'}</h1>
+            <p>{bootstrap?.entity?.description}</p>
+            <div className="admin-entity-banner__meta">
+              <span>{records.length} records</span>
+              <span>{editableColumnCount} editable fields</span>
+              <span>List view</span>
+            </div>
+          </div>
+
+          <div className="admin-entity-banner__actions">
+            <Link className="admin-panel-button admin-panel-button--ghost" to="/admin">
+              All Sections
+            </Link>
+            <button type="button" className="admin-panel-button admin-panel-button--ghost" onClick={handleRefresh}>
+              Refresh
+            </button>
+            <button type="button" className="admin-panel-button" onClick={openNewRecord}>
+              New Record
+            </button>
+          </div>
+        </section>
+
+        {error ? <div className="admin-panel-alert admin-panel-alert--error">{error}</div> : null}
+        {notice ? <div className="admin-panel-alert admin-panel-alert--success">{notice}</div> : null}
+
+        <section className="admin-records-page">
+          <div className="admin-records-panel">
+            <div className="admin-records-panel__toolbar">
+              <input
+                type="search"
+                className="admin-panel-input"
+                placeholder={`Search ${bootstrap?.entity?.title || 'records'}`}
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+              <div className="admin-records-panel__meta">
+                {filteredRecords.length} / {records.length} rows
+              </div>
+            </div>
+
+            <div className="admin-records-table-wrap">
+              <table className="admin-records-table">
+                <thead>
+                  <tr>
+                    {visibleColumns.map((column) => (
+                      <th key={column.name}>{column.label}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.length ? (
+                    filteredRecords.map((record) => (
+                      <tr
+                        key={record[primaryKey]}
+                        onClick={() => openExistingRecord(record)}
+                      >
+                        {visibleColumns.map((column) => (
+                          <td key={column.name}>
+                            {formatCellValue(record[column.name], column, lookupLabelMaps[column.name])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={Math.max(visibleColumns.length, 1)}>
+                        <div className="admin-panel-empty admin-panel-empty--inline">
+                          No matching records found.
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  }
+
   return (
     <div className="admin-entity-page">
       <section className="admin-entity-banner">
         <div>
           <div className="admin-entity-banner__eyebrow">Admin Section</div>
-          <h1>{bootstrap?.entity?.title || 'Admin Data'}</h1>
-          <p>{bootstrap?.entity?.description}</p>
+          <h1>{pageMode === 'create' ? `Create ${bootstrap?.entity?.title}` : `Edit ${bootstrap?.entity?.title}`}</h1>
+          <p>
+            {pageMode === 'create'
+              ? 'Create a fresh record using the form below.'
+              : bootstrap?.entity?.description}
+          </p>
+          <div className="admin-entity-banner__meta">
+            <span>{records.length} records</span>
+            <span>{editableColumnCount} editable fields</span>
+            <span>{pageMode === 'create' ? 'Create mode' : 'Edit mode'}</span>
+          </div>
         </div>
 
         <div className="admin-entity-banner__actions">
-          <Link className="admin-panel-button admin-panel-button--ghost" to="/admin">
-            All Sections
-          </Link>
+          <button type="button" className="admin-panel-button admin-panel-button--ghost" onClick={() => goToList()}>
+            Back to List
+          </button>
           <button type="button" className="admin-panel-button admin-panel-button--ghost" onClick={handleRefresh}>
             Refresh
-          </button>
-          <button type="button" className="admin-panel-button" onClick={openNewRecord}>
-            New Record
           </button>
         </div>
       </section>
@@ -316,71 +534,19 @@ const AdminPanelEntity = () => {
       {error ? <div className="admin-panel-alert admin-panel-alert--error">{error}</div> : null}
       {notice ? <div className="admin-panel-alert admin-panel-alert--success">{notice}</div> : null}
 
-      <div className="admin-entity-layout">
-        <section className="admin-records-panel">
-          <div className="admin-records-panel__toolbar">
-            <input
-              type="search"
-              className="admin-panel-input"
-              placeholder={`Search ${bootstrap?.entity?.title || 'records'}`}
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-            <div className="admin-records-panel__meta">
-              {filteredRecords.length} / {records.length} rows
-            </div>
-          </div>
-
-          <div className="admin-records-table-wrap">
-            <table className="admin-records-table">
-              <thead>
-                <tr>
-                  {visibleColumns.map((column) => (
-                    <th key={column.name}>{column.label}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRecords.length ? (
-                  filteredRecords.map((record) => (
-                    <tr
-                      key={record[primaryKey]}
-                      className={!isCreating && record[primaryKey] === selectedRecordId ? 'is-selected' : ''}
-                      onClick={() => openExistingRecord(record)}
-                    >
-                      {visibleColumns.map((column) => (
-                        <td key={column.name}>
-                          {formatCellValue(record[column.name], column, lookupLabelMaps[column.name])}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={Math.max(visibleColumns.length, 1)}>
-                      <div className="admin-panel-empty admin-panel-empty--inline">
-                        No matching records found.
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section className="admin-form-panel">
+      <section className="admin-form-page">
+        <div className="admin-form-panel">
           <div className="admin-form-panel__header">
             <div>
-              <h2>{isCreating ? `Create ${bootstrap?.entity?.title}` : `Edit ${bootstrap?.entity?.title}`}</h2>
+              <h2>{pageMode === 'create' ? `Create ${bootstrap?.entity?.title}` : `Edit ${bootstrap?.entity?.title}`}</h2>
               <p>
-                {isCreating
+                {pageMode === 'create'
                   ? 'Fill in the fields below to add a new record.'
                   : `Primary key: ${selectedRecord?.[primaryKey] ?? 'Not selected'}`}
               </p>
             </div>
 
-            {!isCreating && selectedRecord ? (
+            {pageMode === 'edit' && selectedRecord ? (
               <button
                 type="button"
                 className="admin-panel-button admin-panel-button--danger"
@@ -393,137 +559,26 @@ const AdminPanelEntity = () => {
           </div>
 
           <form className="admin-form-grid" onSubmit={handleSubmit}>
-            {(schema?.columns || []).map((column) => {
-              const value = formData[column.name];
-              const fieldId = `admin-field-${column.name}`;
-
-              if (!column.editable) {
-                return (
-                  <div key={column.name} className="admin-form-field admin-form-field--readonly">
-                    <label htmlFor={fieldId}>{column.label}</label>
-                    <input
-                      id={fieldId}
-                      className="admin-panel-input"
-                      value={isCreating ? 'Auto generated' : selectedRecord?.[column.name] ?? ''}
-                      readOnly
-                    />
-                  </div>
-                );
-              }
-
-              if (column.isForeignKey) {
-                return (
-                  <div key={column.name} className="admin-form-field">
-                    <label htmlFor={fieldId}>{column.label}</label>
-                    <select
-                      id={fieldId}
-                      className="admin-panel-input"
-                      value={value ?? ''}
-                      onChange={(event) => handleFieldChange(column, event.target.value)}
-                    >
-                      <option value="">Select {column.label}</option>
-                      {(lookups[column.name] || []).map((option) => (
-                        <option key={`${column.name}-${option.value}`} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    {column.helpText ? <small>{column.helpText}</small> : null}
-                  </div>
-                );
-              }
-
-              if (column.dataType === 'bit' && column.nullable) {
-                return (
-                  <div key={column.name} className="admin-form-field">
-                    <label htmlFor={fieldId}>{column.label}</label>
-                    <select
-                      id={fieldId}
-                      className="admin-panel-input"
-                      value={value ?? ''}
-                      onChange={(event) => handleFieldChange(column, event.target.value)}
-                    >
-                      <option value="">Not set</option>
-                      <option value="true">Yes</option>
-                      <option value="false">No</option>
-                    </select>
-                    {column.helpText ? <small>{column.helpText}</small> : null}
-                  </div>
-                );
-              }
-
-              if (column.dataType === 'bit') {
-                return (
-                  <div key={column.name} className="admin-form-field admin-form-field--checkbox">
-                    <label htmlFor={fieldId}>{column.label}</label>
-                    <div className="admin-checkbox-row">
-                      <input
-                        id={fieldId}
-                        type="checkbox"
-                        checked={Boolean(value)}
-                        onChange={(event) => handleFieldChange(column, event.target.checked)}
-                      />
-                      <span>{Boolean(value) ? 'Enabled' : 'Disabled'}</span>
-                    </div>
-                    {column.helpText ? <small>{column.helpText}</small> : null}
-                  </div>
-                );
-              }
-
-              const isLongText = (column.maxLength && column.maxLength > 180) || column.name === 'ApiUrl';
-
-              return (
-                <div
-                  key={column.name}
-                  className={`admin-form-field${isLongText ? ' admin-form-field--wide' : ''}`}
-                >
-                  <label htmlFor={fieldId}>{column.label}</label>
-                  {isLongText ? (
-                    <textarea
-                      id={fieldId}
-                      className="admin-panel-input admin-panel-textarea"
-                      value={value ?? ''}
-                      maxLength={column.maxLength && column.maxLength > 0 ? column.maxLength : undefined}
-                      onChange={(event) => handleFieldChange(column, event.target.value)}
-                    />
-                  ) : (
-                    <input
-                      id={fieldId}
-                      className="admin-panel-input"
-                      type={column.inputType === 'password' ? 'password' : column.inputType}
-                      value={value ?? ''}
-                      maxLength={column.maxLength && column.maxLength > 0 ? column.maxLength : undefined}
-                      onChange={(event) => handleFieldChange(column, event.target.value)}
-                    />
-                  )}
-                  {column.helpText ? <small>{column.helpText}</small> : null}
-                </div>
-              );
-            })}
+            {(schema?.columns || []).map((column) =>
+              renderField(column, formData[column.name], selectedRecord, pageMode === 'create', lookups, handleFieldChange)
+            )}
 
             <div className="admin-form-actions">
               <button type="submit" className="admin-panel-button" disabled={isSaving}>
-                {isSaving ? 'Saving...' : isCreating ? 'Create Record' : 'Save Changes'}
+                {isSaving ? 'Saving...' : pageMode === 'create' ? 'Create Record' : 'Save Changes'}
               </button>
               <button
                 type="button"
                 className="admin-panel-button admin-panel-button--ghost"
-                onClick={() => {
-                  if (isCreating) {
-                    setFormData(buildEmptyForm(schema));
-                    return;
-                  }
-
-                  setFormData(buildFormFromRecord(schema, selectedRecord));
-                }}
+                onClick={handleResetForm}
                 disabled={isSaving}
               >
                 Reset Form
               </button>
             </div>
           </form>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   );
 };

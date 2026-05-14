@@ -1,5 +1,10 @@
 const bcrypt = require('bcryptjs');
 const authDbService = require('./authDbService');
+const {
+  deleteReportMenuSidebarMenu,
+  syncAllReportMenuSidebarMenus,
+  syncReportMenuSidebarMenuById,
+} = require('./reportMenuSidebarSyncService');
 
 const MAX_LIST_ROWS = 500;
 
@@ -65,16 +70,6 @@ const ENTITY_CONFIGS = [
     listColumns: ['MenuId', 'MenuName', 'MenuPath', 'ParentId', 'SortOrder', 'Icon', 'ReportId'],
   },
   {
-    key: 'reports',
-    tableName: 'Reports',
-    title: 'Reports',
-    description: 'Report definitions, routing, and visibility.',
-    path: '/admin/reports',
-    group: 'Reporting',
-    lookupLabelColumns: ['ReportName', 'ReportCode'],
-    listColumns: ['ReportId', 'ReportName', 'ReportCode', 'ApiUrl', 'ReportType', 'CompanyId', 'IsPublic', 'IsActive'],
-  },
-  {
     key: 'report-menus',
     tableName: 'ReportMenus',
     title: 'Report Menus',
@@ -83,36 +78,6 @@ const ENTITY_CONFIGS = [
     group: 'Reporting',
     lookupLabelColumns: ['MenuName'],
     listColumns: ['ReportMenuId', 'MenuName', 'ParentId', 'CompanyId', 'SortOrder', 'CreatedBy', 'CreatedAt', 'UpdatedAt'],
-  },
-  {
-    key: 'menu-reports',
-    tableName: 'MenuReports',
-    title: 'Menu Reports',
-    description: 'Links between menu items and reports.',
-    path: '/admin/menu-reports',
-    group: 'Reporting',
-    lookupLabelColumns: ['Id'],
-    listColumns: ['Id', 'MenuId', 'ReportId'],
-  },
-  {
-    key: 'report-parameters',
-    tableName: 'ReportParameters',
-    title: 'Report Parameters',
-    description: 'Parameter definitions used by report execution forms.',
-    path: '/admin/report-parameters',
-    group: 'Reporting',
-    lookupLabelColumns: ['ParamName', 'DisplayName'],
-    listColumns: ['ParamId', 'ReportId', 'ParamName', 'DisplayName', 'ParamType', 'IsRequired', 'SortOrder', 'DefaultValue'],
-  },
-  {
-    key: 'company-reports',
-    tableName: 'CompanyReports',
-    title: 'Company Reports',
-    description: 'Links reports to companies with active flags.',
-    path: '/admin/company-reports',
-    group: 'Reporting',
-    lookupLabelColumns: ['Id'],
-    listColumns: ['Id', 'CompanyId', 'ReportId', 'IsActive'],
   },
   {
     key: 'role-rights',
@@ -378,6 +343,10 @@ const getEntityCount = async (tableName) => {
 };
 
 const getEntityList = async () => {
+  await authDbService.transaction(async (db) => {
+    await syncAllReportMenuSidebarMenus(db);
+  });
+
   const entities = await Promise.all(
     ENTITY_CONFIGS.map(async (config) => ({
       key: config.key,
@@ -393,6 +362,12 @@ const getEntityList = async () => {
 };
 
 const getEntityBootstrap = async (entityKey) => {
+  if (entityKey === 'report-menus') {
+    await authDbService.transaction(async (db) => {
+      await syncAllReportMenuSidebarMenus(db);
+    });
+  }
+
   const schema = await getEntitySchema(entityKey);
   const [records, lookups] = await Promise.all([
     getRecordsForEntity(schema),
@@ -558,6 +533,26 @@ const buildInsertQuery = (schema, payload) => {
   };
 };
 
+const buildInsertQueryWithOutput = (schema, payload, outputAlias = 'recordId') => {
+  const columnNames = Object.keys(payload);
+
+  if (!columnNames.length) {
+    throw createHttpError(400, 'No fields were provided for insert.');
+  }
+
+  const insertColumns = columnNames.map(escapeIdentifier).join(', ');
+  const valuePlaceholders = columnNames.map((columnName) => `@${columnName}`).join(', ');
+
+  return {
+    sqlText: `
+      INSERT INTO dbo.${escapeIdentifier(schema.tableName)} (${insertColumns})
+      OUTPUT INSERTED.${escapeIdentifier(schema.primaryKey)} AS ${escapeIdentifier(outputAlias)}
+      VALUES (${valuePlaceholders})
+    `,
+    params: payload,
+  };
+};
+
 const buildUpdateQuery = (schema, payload, recordId) => {
   const updateColumnNames = Object.keys(payload).filter((columnName) => columnName !== schema.primaryKey);
 
@@ -581,6 +576,20 @@ const buildUpdateQuery = (schema, payload, recordId) => {
 const createRecord = async (entityKey, input, authContext) => {
   const schema = await getEntitySchema(entityKey);
   const payload = await buildPayload(schema, input, 'create', authContext);
+  if (entityKey === 'report-menus') {
+    const query = buildInsertQueryWithOutput(schema, payload);
+    await authDbService.transaction(async (db) => {
+      const inserted = await db.query(query.sqlText, query.params);
+      const insertedRecordId = Number(inserted.recordset?.[0]?.recordId);
+      if (!Number.isFinite(insertedRecordId)) {
+        throw createHttpError(500, 'Failed to create report menu.');
+      }
+
+      await syncReportMenuSidebarMenuById(db, insertedRecordId);
+    });
+    return getEntityBootstrap(entityKey);
+  }
+
   const query = buildInsertQuery(schema, payload);
   await authDbService.query(query.sqlText, query.params);
   return getEntityBootstrap(entityKey);
@@ -595,6 +604,19 @@ const updateRecord = async (entityKey, recordId, input, authContext) => {
 
   const payload = await buildPayload(schema, input, 'update', authContext);
   const query = buildUpdateQuery(schema, payload, numericRecordId);
+  if (entityKey === 'report-menus') {
+    await authDbService.transaction(async (db) => {
+      const result = await db.query(query.sqlText, query.params);
+      if (!result.rowsAffected?.[0]) {
+        throw createHttpError(404, 'Record not found.');
+      }
+
+      await syncReportMenuSidebarMenuById(db, numericRecordId);
+    });
+
+    return getEntityBootstrap(entityKey);
+  }
+
   const result = await authDbService.query(query.sqlText, query.params);
 
   if (!result.rowsAffected?.[0]) {
@@ -609,6 +631,23 @@ const deleteRecord = async (entityKey, recordId) => {
   const numericRecordId = Number(recordId);
   if (!Number.isFinite(numericRecordId)) {
     throw createHttpError(400, 'A valid record ID is required for delete.');
+  }
+
+  if (entityKey === 'report-menus') {
+    await authDbService.transaction(async (db) => {
+      await deleteReportMenuSidebarMenu(db, numericRecordId);
+
+      const result = await db.query(`
+        DELETE FROM dbo.${escapeIdentifier(schema.tableName)}
+        WHERE ${escapeIdentifier(schema.primaryKey)} = @recordId
+      `, { recordId: numericRecordId });
+
+      if (!result.rowsAffected?.[0]) {
+        throw createHttpError(404, 'Record not found.');
+      }
+    });
+
+    return getEntityBootstrap(entityKey);
   }
 
   const result = await authDbService.query(`

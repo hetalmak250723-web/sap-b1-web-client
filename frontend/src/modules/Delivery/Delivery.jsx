@@ -23,6 +23,7 @@ import CopyFromModal from './components/CopyFromModal';
 import CopyToModal from './components/CopyToModal';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
+import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
 import {
   BATCH_QTY_TOLERANCE,
   getLineUomFactor,
@@ -67,6 +68,7 @@ import {
   ROW_UDF_DEFINITIONS,
   BASE_MATRIX_COLUMNS,
   createUdfState,
+  normalizeUdfState,
   readSavedFormSettings,
 } from '../../config/deliveryForm';
 
@@ -96,6 +98,13 @@ const fmtAddr = (a) => {
   [a.City, a.County, a.State, a.ZipCode], [a.Country]]
     .map(p => p.filter(Boolean).join(', ')).filter(Boolean).join('\n');
 };
+const normalizeAddressText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 const isBatchManaged = (item) => {
   if (!item) return false;
   
@@ -218,13 +227,13 @@ function Delivery() {
   const [lines, setLines] = useState([createLine()]);
   const [attachments] = useState(INIT_ATTACH);
   const [activeTab, setActiveTab] = useState('Contents');
-  const [headerUdfs, setHeaderUdfs] = useState(() => createUdfState(HEADER_UDF_DEFINITIONS));
+  const [headerUdfs, setHeaderUdfs] = useState(() => normalizeUdfState(HEADER_UDF_DEFINITIONS));
   const [formSettings, setFormSettings] = useState(() => readSavedFormSettings());
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [formSettingsOpen, setFormSettingsOpen] = useState(false);
   const [refData, setRefData] = useState({
-    company: '', vendors: [], contacts: [], pay_to_addresses: [], items: [],
+    company: '', vendors: [], contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [], items: [],
     warehouses: [], warehouse_addresses: [], company_address: {}, tax_codes: [],
     payment_terms: [], shipping_types: [], branches: [], uom_groups: [],
     distribution_rules: [], sales_employees: [], quality_options: { buyer: [], seller: [] }, price_options: { buyer: [], seller: [] },
@@ -232,6 +241,9 @@ function Delivery() {
   });
   const [pageState, setPageState] = useState({ loading: false, vendorLoading: false, posting: false, error: '', success: '', seriesLoading: false });
   const [valErrors, setValErrors] = useState({ header: {}, lines: {}, form: '' });
+  const [loadedSnapshot, setLoadedSnapshot] = useState('');
+  const [snapshotPending, setSnapshotPending] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [addressModal, setAddressModal] = useState(null);
   const [taxInfoModal, setTaxInfoModal] = useState(false);
   const [batchModal, setBatchModal] = useState({ open: false, lineIndex: null, availableBatches: [], loading: false, error: '' });
@@ -264,6 +276,18 @@ function Delivery() {
     assesseeType: '', tinNo: '', itrFiling: '', gstType: '', gstin: ''
   });
 
+  useEffect(() => {
+    if (!refData.states?.length || !header.placeOfSupply) return;
+    const normalizedPlaceOfSupply = getStateCodeValue(header.placeOfSupply, refData.states);
+    if (normalizedPlaceOfSupply && normalizedPlaceOfSupply !== header.placeOfSupply) {
+      setHeader(prev => (
+        prev.placeOfSupply === header.placeOfSupply
+          ? { ...prev, placeOfSupply: normalizedPlaceOfSupply }
+          : prev
+      ));
+    }
+  }, [header.placeOfSupply, refData.states]);
+
   useEffect(() => { localStorage.setItem(FORM_SETTINGS_STORAGE_KEY, JSON.stringify(formSettings)); }, [formSettings]);
 
   // Close Copy From dropdown when clicking outside
@@ -288,11 +312,27 @@ function Delivery() {
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
   const hasBuyerCode = Boolean(String(header.vendor || '').trim());
   const isUpdateMode = Boolean(currentDocEntry);
+  const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
+  const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
   const primaryActionLabel = pageState.posting
     ? 'Saving...'
     : isUpdateMode
-      ? 'Update (Alt+U)'
+      ? (hasUnsavedChanges ? 'Update (Alt+U)' : 'OK')
       : 'Add (Alt+A)';
+  const secondaryActionLabel = pageState.posting
+    ? 'Saving…'
+    : currentDocEntry
+      ? updateActionLabel
+      : 'Add & New';
+
+  useEffect(() => {
+    if (!snapshotPending || !currentDocEntry || pageState.loading || pageState.vendorLoading) return;
+    setLoadedSnapshot(JSON.stringify({ header, lines, headerUdfs }));
+    setSnapshotPending(false);
+  }, [snapshotPending, currentDocEntry, pageState.loading, pageState.vendorLoading, header, lines, headerUdfs]);
+  const markDirty = useCallback(() => {
+    if (currentDocEntry) setIsDirty(true);
+  }, [currentDocEntry]);
   const hydrateLoadedLine = useCallback((line) => {
     const itemCode = String(line?.itemNo || line?.ItemCode || line?.itemCode || '').trim();
     const item = refData.items.find(i => String(i.ItemCode || '').trim() === itemCode);
@@ -404,6 +444,8 @@ function Delivery() {
             vendors: vendorRows,
             contacts: refDataRes.data.contacts || [],
             pay_to_addresses: refDataRes.data.pay_to_addresses || [],
+            ship_to_addresses: refDataRes.data.ship_to_addresses || [],
+            bill_to_addresses: refDataRes.data.bill_to_addresses || [],
             items: refDataRes.data.items || [],
             warehouses: refDataRes.data.warehouses || [],
             warehouse_addresses: refDataRes.data.warehouse_addresses || [],
@@ -489,6 +531,13 @@ function Delivery() {
           placeOfSupply: so.header?.placeOfSupply || '',
           branch: so.header?.branch || '',
           warehouse: firstLineWarehouse || so.header?.warehouse || '',
+          shipToCode: so.header?.shipToCode || '',
+          shipToAddress: so.header?.shipToAddress || so.header?.shipTo || '',
+          shipTo: so.header?.shipTo || so.header?.shipToAddress || '',
+          billToCode: so.header?.billToCode || so.header?.payToCode || '',
+          billToAddress: so.header?.billToAddress || so.header?.payTo || '',
+          payToCode: so.header?.payToCode || so.header?.billToCode || '',
+          payTo: so.header?.payTo || so.header?.billToAddress || '',
           series: so.header?.series || '',
           nextNumber: so.header?.docNo || '',
         }));
@@ -501,9 +550,12 @@ function Delivery() {
         
         console.log('📦 [Delivery] Lines after mapping:', lines);
         
-        setHeaderUdfs({ ...createUdfState(HEADER_UDF_DEFINITIONS), ...(so.header_udfs || {}) });
+        setHeaderUdfs(normalizeUdfState(HEADER_UDF_DEFINITIONS, so.header_udfs || {}));
+        setLoadedSnapshot('');
+        setSnapshotPending(true);
+        setIsDirty(false);
         if (so.header?.customerCode || so.header?.customer) {
-          loadVendorDetails(so.header?.customerCode || so.header?.customer);
+          loadVendorDetails(so.header?.customerCode || so.header?.customer, { preserveExisting: true });
         }
         
         // Call handleSeriesChange to populate next number
@@ -775,10 +827,73 @@ function Delivery() {
     });
   }, [header.vendor, vendorPayToAddresses]);
 
+  useEffect(() => {
+    if (!currentDocEntry || !header.vendor) return;
+
+    const resolveAddressCode = (addresses, currentCode, currentText) => {
+      const normalizedCode = String(currentCode || '').trim();
+      if (normalizedCode && addresses.some((address) => String(address.Address || '').trim() === normalizedCode)) {
+        return normalizedCode;
+      }
+
+      const normalizedText = normalizeAddressText(currentText);
+      if (!normalizedText) return '';
+
+      const matchedAddress = addresses.find((address) => {
+        const formatted = normalizeAddressText(fmtAddr(address));
+        if (formatted && formatted === normalizedText) return true;
+
+        const compactFormatted = formatted.replace(/\s+/g, '');
+        const compactText = normalizedText.replace(/\s+/g, '');
+        return compactFormatted && compactFormatted === compactText;
+      });
+
+      return matchedAddress ? String(matchedAddress.Address || '').trim() : '';
+    };
+
+    const resolvedShipToCode = resolveAddressCode(
+      vendorEffectiveShipToAddresses,
+      header.shipToCode,
+      header.shipToAddress || header.shipTo
+    );
+    const resolvedBillToCode = resolveAddressCode(
+      vendorEffectiveBillToAddresses,
+      header.billToCode || header.payToCode,
+      header.billToAddress || header.payTo
+    );
+
+    if (
+      resolvedShipToCode === String(header.shipToCode || '').trim() &&
+      resolvedBillToCode === String(header.billToCode || '').trim()
+    ) {
+      return;
+    }
+
+    setHeader((prev) => ({
+      ...prev,
+      shipToCode: resolvedShipToCode || prev.shipToCode,
+      billToCode: resolvedBillToCode || prev.billToCode,
+      payToCode: resolvedBillToCode || prev.payToCode,
+    }));
+  }, [
+    currentDocEntry,
+    header.vendor,
+    header.shipToCode,
+    header.shipToAddress,
+    header.shipTo,
+    header.billToCode,
+    header.billToAddress,
+    header.payToCode,
+    header.payTo,
+    vendorEffectiveShipToAddresses,
+    vendorEffectiveBillToAddresses,
+  ]);
+
   // ── vendor details ────────────────────────────────────────────────────────
-  const loadVendorDetails = async (code) => {
+  const loadVendorDetails = async (code, options = {}) => {
+    const { preserveExisting = false } = options;
     if (!code) {
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
       setHeader(prev => ({ ...prev, placeOfSupply: '' }));
       return;
     }
@@ -789,44 +904,58 @@ function Delivery() {
       const r = await fetchDeliveryCustomerDetails(code);
       const contacts = r.data.contacts || [];
       const payToAddresses = r.data.pay_to_addresses || [];
+      const shipToAddresses = r.data.ship_to_addresses || [];
+      const billToAddresses = r.data.bill_to_addresses || [];
       
       setRefData(p => ({
         ...p,
         contacts: contacts,
-        pay_to_addresses: payToAddresses
+        pay_to_addresses: payToAddresses,
+        ship_to_addresses: shipToAddresses,
+        bill_to_addresses: billToAddresses
       }));
 
-      if (contacts.length > 0) {
-        setHeader(prev => ({
-          ...prev,
-          contactPerson: contacts[0].CntctCode
-        }));
-      }
+      const defaultShipToAddress = shipToAddresses[0] || payToAddresses[0] || null;
+      const defaultBillToAddress = billToAddresses[0] || payToAddresses[0] || null;
 
-      // Auto-populate Place of Supply from customer's default address
-      if (payToAddresses.length > 0) {
-        const defaultAddress = payToAddresses[0];
-        if (defaultAddress.State) {
-          console.log('🌍 Auto-setting Place of Supply from customer address:', defaultAddress.State);
-          
-          // Find the state code that matches the state name
-          const stateMatch = refData.states.find(st => 
-            st.Name === defaultAddress.State || st.Code === defaultAddress.State
-          );
-          const stateCode = stateMatch ? stateMatch.Code : defaultAddress.State;
-          
-          setHeader(prev => ({
-            ...prev,
-            placeOfSupply: stateCode,
-            shipToCode: defaultAddress.Address || '',
-            shipToAddress: fmtAddr(defaultAddress)
-          }));
+      setHeader(prev => {
+        const nextHeader = { ...prev };
+
+        if (contacts.length > 0 && (!preserveExisting || !prev.contactPerson)) {
+          nextHeader.contactPerson = contacts[0].CntctCode;
         }
-      }
+
+        if (defaultShipToAddress) {
+          const formattedShipTo = fmtAddr(defaultShipToAddress);
+          if (!preserveExisting || !prev.shipToCode) {
+            nextHeader.shipToCode = defaultShipToAddress.Address || '';
+            nextHeader.shipToAddress = formattedShipTo;
+            nextHeader.shipTo = formattedShipTo;
+          }
+
+          if (defaultShipToAddress.State && (!preserveExisting || !prev.placeOfSupply)) {
+            console.log('🌍 Auto-setting Place of Supply from customer address:', defaultShipToAddress.State);
+            const stateMatch = refData.states.find(st =>
+              st.Name === defaultShipToAddress.State || st.Code === defaultShipToAddress.State
+            );
+            nextHeader.placeOfSupply = stateMatch ? stateMatch.Code : defaultShipToAddress.State;
+          }
+        }
+
+        if (defaultBillToAddress && (!preserveExisting || !prev.billToCode)) {
+          const formattedBillTo = fmtAddr(defaultBillToAddress);
+          nextHeader.billToCode = defaultBillToAddress.Address || '';
+          nextHeader.billToAddress = formattedBillTo;
+          nextHeader.payToCode = defaultBillToAddress.Address || '';
+          nextHeader.payTo = formattedBillTo;
+        }
+
+        return nextHeader;
+      });
 
     } catch (err) {
       console.error('Error loading customer details:', err);
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
     } finally {
       setPageState(p => ({ ...p, vendorLoading: false }));
     }
@@ -1024,6 +1153,7 @@ function Delivery() {
         ...p,
         shipToCode: addressCode,
         shipToAddress: fmtAddr(addr),
+        shipTo: fmtAddr(addr),
         placeOfSupply: stateCode
       }));
     }
@@ -1041,7 +1171,9 @@ function Delivery() {
       setHeader(p => ({
         ...p,
         billToCode: addressCode,
-        billToAddress: fmtAddr(addr)
+        billToAddress: fmtAddr(addr),
+        payToCode: addressCode,
+        payTo: fmtAddr(addr)
       }));
     }
   };
@@ -1301,6 +1433,7 @@ function Delivery() {
     // Clear errors and add new line with current header values
     setValErrors(p => ({ ...p, form: '' }));
     setPageState(p => ({ ...p, error: '' }));
+    markDirty();
     
     console.log('➕ [Delivery] Adding new line with header values:', {
       branch: header.branch,
@@ -1317,12 +1450,19 @@ function Delivery() {
   };
 
   const removeLine = (i) => {
+    markDirty();
     setValErrors(p => { const nl = { ...p.lines }; delete nl[i]; return { ...p, lines: nl, form: '' }; });
     setLines(p => p.filter((_, idx) => idx !== i));
   };
 
-  const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
-  const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  const handleHeaderUdfChange = (k, v) => {
+    markDirty();
+    setHeaderUdfs(p => ({ ...p, [k]: v }));
+  };
+  const handleRowUdfChange = (i, k, v) => {
+    markDirty();
+    setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
+  };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
 
   // ── Address Modal handlers ────────────────────────────────────────────────
@@ -1347,9 +1487,9 @@ function Delivery() {
     ].filter(Boolean).join('\n');
 
     if (addressModal.type === 'shipTo') {
-      setHeader(p => ({ ...p, shipTo: formatted }));
+      setHeader(p => ({ ...p, shipTo: formatted, shipToAddress: formatted }));
     } else {
-      setHeader(p => ({ ...p, payTo: formatted }));
+      setHeader(p => ({ ...p, billToAddress: formatted, payTo: formatted }));
     }
     closeAddressModal();
   };
@@ -1392,7 +1532,7 @@ function Delivery() {
   };
 
   const handleStateSelect = (state) => {
-    setHeader(p => ({ ...p, placeOfSupply: state.Name || state.Code || '' }));
+    setHeader(p => ({ ...p, placeOfSupply: getStateCodeValue(state, refData.states) }));
   };
 
   // ── BP Modal handlers ─────────────────────────────────────────────────────
@@ -2460,6 +2600,7 @@ function Delivery() {
       setPageState(p => ({ ...p, error: 'This document is closed and cannot be edited.', success: '' }));
       return;
     }
+    if (currentDocEntry && !hasUnsavedChanges) return;
     const e = await validate(); // Make validate async
     if (e.form || Object.values(e.header).some(Boolean) || Object.values(e.lines).some(le => Object.values(le || {}).some(Boolean))) {
       setValErrors(e);
@@ -2480,12 +2621,24 @@ function Delivery() {
         roundingAmount: fmtDec(totals.roundingAmount, numDec.totalPaymentDue),
       };
       
-      const payload = { company_id: SALES_ORDER_COMPANY_ID, header: prep, lines, freightCharges: freightModal.freightCharges, header_udfs: headerUdfs };
+      const payload = {
+        company_id: SALES_ORDER_COMPANY_ID,
+        header: prep,
+        lines: lines.map((line) => ({
+          ...line,
+          udf: normalizeUdfState(ROW_UDF_DEFINITIONS, line.udf || {}),
+        })),
+        freightCharges: freightModal.freightCharges,
+        header_udfs: normalizeUdfState(HEADER_UDF_DEFINITIONS, headerUdfs),
+      };
       const r = currentDocEntry ? await updateDelivery(currentDocEntry, payload) : await submitDelivery(payload);
       const dn = r.data.doc_num ? ` Doc No: ${r.data.doc_num}.` : '';
+      setLoadedSnapshot('');
+      setSnapshotPending(false);
+      setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
       setValErrors({ header: {}, lines: {}, form: '' });
       
       if (refData.series.length > 0) {
@@ -2501,6 +2654,9 @@ function Delivery() {
   };
 
   const resetForm = () => {
+    setLoadedSnapshot('');
+    setSnapshotPending(false);
+    setIsDirty(false);
     setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
     setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
     setValErrors({ header: {}, lines: {}, form: '' });
@@ -2515,7 +2671,7 @@ function Delivery() {
       if (pageState.posting || !isDocumentEditable) return;
 
       const key = String(event.key || '').toLowerCase();
-      const shouldSubmit = (!isUpdateMode && key === 'a') || (isUpdateMode && key === 'u');
+      const shouldSubmit = (!isUpdateMode && key === 'a') || (isUpdateMode && hasUnsavedChanges && key === 'u');
       if (!shouldSubmit) return;
 
       event.preventDefault();
@@ -2524,13 +2680,13 @@ function Delivery() {
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [isDocumentEditable, isUpdateMode, pageState.posting]);
+  }, [hasUnsavedChanges, isDocumentEditable, isUpdateMode, pageState.posting]);
 
   // Continue in next part with render...
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form ref={formRef} className="del-page" onSubmit={handleSubmit}>
+    <form ref={formRef} className="del-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="del-toolbar">
@@ -2729,7 +2885,7 @@ function Delivery() {
                         <input
                           name="placeOfSupply"
                           className={`so-field__input${valErrors.header.placeOfSupply ? ' so-field__input--error' : ''}`}
-                          value={header.placeOfSupply || ''}
+                          value={getStateDisplayName(header.placeOfSupply, refData.states)}
                           onChange={handleHeaderChange}
                           placeholder="State code"
                           style={{ flex: 1 }}
@@ -2912,8 +3068,8 @@ function Delivery() {
               <LogisticsTab
                 header={header}
                 onHeaderChange={handleHeaderChange}
-                effectiveWhseAddrs={effectiveWhseAddrs}
-                vendorPayToAddresses={vendorPayToAddresses}
+                vendorShipToAddresses={vendorEffectiveShipToAddresses}
+                vendorBillToAddresses={vendorEffectiveBillToAddresses}
                 shipTypeOpts={shipTypeOpts}
                 onOpenAddressModal={openAddressModal}
               />
@@ -3049,7 +3205,7 @@ function Delivery() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '12px', marginBottom: '12px', gap: '8px' }}>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting}>
-                  {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add & New'}
+                  {secondaryActionLabel}
                 </button>
                 <button type="button" className="del-btn" disabled={pageState.posting}>
                   Add Draft & New
@@ -3179,6 +3335,10 @@ function Delivery() {
         addressForm={addressForm}
         onFormChange={handleAddressFormChange}
         states={refData.states}
+        header={header}
+        vendorShipToAddresses={vendorEffectiveShipToAddresses}
+        vendorBillToAddresses={vendorEffectiveBillToAddresses}
+        onHeaderChange={handleHeaderChange}
       />
 
       {/* Tax Information Modal */}

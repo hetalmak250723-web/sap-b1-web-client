@@ -1212,13 +1212,30 @@ const lookupSalesPersons = async (query = "") => {
   }));
 };
 
-const lookupBPSeries = async () => {
+const resolveBPSeriesDocSubTypes = (bpType = "") => {
+  const normalizedType = String(bpType || "").trim();
+  if (normalizedType === "cSupplier") return ["S"];
+  if (normalizedType === "cCustomer" || normalizedType === "cLead") return ["C"];
+  return [];
+};
+
+const lookupBPSeries = async (bpType = "") => {
+  const docSubTypes = resolveBPSeriesDocSubTypes(bpType);
   const rows = await queryRows(`
-    SELECT Series, SeriesName, InitialNum, NextNumber, BeginStr, EndStr, Indicator, Locked, IsManual
+    SELECT Series, SeriesName, InitialNum, NextNumber, BeginStr, EndStr, Indicator, Locked, IsManual, DocSubType
     FROM NNM1
-    WHERE ObjectCode IN ('2', 'OCRD')
-    ORDER BY CASE WHEN IsManual = 'Y' THEN 0 ELSE 1 END, Series
-  `);
+    WHERE ObjectCode = '2'
+      AND Locked <> 'Y'
+      AND (
+        @docSubType1 = ''
+        OR DocSubType = @docSubType1
+        OR DocSubType = @docSubType2
+      )
+    ORDER BY SeriesName, Series
+  `, {
+    docSubType1: docSubTypes[0] || "",
+    docSubType2: docSubTypes[1] || "",
+  });
 
   const seenDisplayNames = new Set();
 
@@ -1237,23 +1254,35 @@ const lookupBPSeries = async () => {
       nextNumber: row.NextNumber ?? row.InitialNum ?? null,
       locked: String(row.Locked || "").toUpperCase() === "Y",
       isManual,
+      docSubType: row.DocSubType || "",
       isDefault: false,
     };
   }).filter((row) => {
-    const key = row.isManual ? "manual" : row.name.trim().toLowerCase();
+    const key = `${row.docSubType}:${row.isManual ? "manual" : row.name.trim().toLowerCase()}`;
     if (seenDisplayNames.has(key)) return false;
     seenDisplayNames.add(key);
     return true;
   });
 };
 
-const getBPSeriesNextNumber = async (series) => {
+const getBPSeriesNextNumber = async (series, bpType = "") => {
+  const docSubTypes = resolveBPSeriesDocSubTypes(bpType);
   const row = await queryOne(`
-    SELECT TOP 1 Series, SeriesName, InitialNum, NextNumber, BeginStr, EndStr, Indicator, Locked, IsManual
+    SELECT TOP 1 Series, SeriesName, InitialNum, NextNumber, BeginStr, EndStr, Indicator, Locked, IsManual, DocSubType
     FROM NNM1
     WHERE Series = @series
-      AND ObjectCode IN ('2', 'OCRD')
-  `, { series: toInt(series, 0) });
+      AND ObjectCode = '2'
+      AND Locked <> 'Y'
+      AND (
+        @docSubType1 = ''
+        OR DocSubType = @docSubType1
+        OR DocSubType = @docSubType2
+      )
+  `, {
+    series: toInt(series, 0),
+    docSubType1: docSubTypes[0] || "",
+    docSubType2: docSubTypes[1] || "",
+  });
 
   if (!row) return null;
 

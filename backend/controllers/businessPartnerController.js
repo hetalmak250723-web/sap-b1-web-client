@@ -3,6 +3,23 @@ const masterDataDbService = require("../services/masterDataDbService");
 const authDbService = require("../services/authDbService");
 const businessPartnerDbService = require("../services/businessPartnerDbService");
 
+const parseMetadataEnumMembers = (metadataXml, enumName) => {
+  const enumStart = metadataXml.indexOf(`<EnumType Name="${enumName}"`);
+  if (enumStart < 0) return [];
+
+  const enumEnd = metadataXml.indexOf("</EnumType>", enumStart);
+  if (enumEnd < 0) return [];
+
+  const enumBlock = metadataXml.slice(enumStart, enumEnd);
+  return [...enumBlock.matchAll(/<Member Name="([^"]+)"/g)].map((match) => match[1]);
+};
+
+const formatSapEnumLabel = (value) =>
+  String(value || "")
+    .replace(/^[a-z](?=[A-Z])/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .trim();
+
 const enrichBP = async (bp) => {
   if (!bp || !bp.CardCode) return bp;
 
@@ -80,7 +97,7 @@ const createBP = async (req, res) => {
   let isManual = !series || series === "0";
 
   try {
-    const next = !isManual ? await masterDataDbService.getBPSeriesNextNumber(series) : null;
+    const next = !isManual ? await masterDataDbService.getBPSeriesNextNumber(series, data.CardType) : null;
     isManual = isManual || Boolean(next?.isManual);
 
     if (isManual && !data.CardCode) {
@@ -225,6 +242,28 @@ const lookupCountries = async (req, res) => {
   }
 };
 
+const lookupCompanyTypes = async (_req, res) => {
+  try {
+    const response = await sapService.request({
+      method: "GET",
+      url: "/$metadata",
+    });
+
+    const metadataXml = typeof response.data === "string" ? response.data : String(response.data || "");
+    const members = parseMetadataEnumMembers(metadataXml, "BoCardCompanyTypes");
+    const rows = members.map((value) => ({
+      code: value,
+      name: formatSapEnumLabel(value) || value,
+    }));
+
+    res.json(rows);
+  } catch (err) {
+    res.status(err.response?.status || 500).json({
+      message: err.response?.data?.error?.message?.value || err.message,
+    });
+  }
+};
+
 const lookupCreditCards = async (req, res) => {
   try {
     const rows = await masterDataDbService.lookupCreditCards(req.query.query || "");
@@ -306,9 +345,9 @@ const lookupWithholdingTaxCodes = async (req, res) => {
   }
 };
 
-const lookupNumberingSeries = async (_req, res) => {
+const lookupNumberingSeries = async (req, res) => {
   try {
-    const rows = await masterDataDbService.lookupBPSeries();
+    const rows = await masterDataDbService.lookupBPSeries(req.query.bpType || "");
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -331,7 +370,7 @@ const getNextNumber = async (req, res) => {
   }
 
   try {
-    const row = await masterDataDbService.getBPSeriesNextNumber(series);
+    const row = await masterDataDbService.getBPSeriesNextNumber(series, req.query.bpType || "");
     if (!row) {
       return res.status(404).json({ message: `Series ${series} not found.` });
     }
@@ -352,6 +391,7 @@ module.exports = {
   lookupPriceLists,
   lookupCurrencies,
   lookupCountries,
+  lookupCompanyTypes,
   lookupCreditCards,
   createCreditCard,
   lookupBanks,

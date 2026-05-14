@@ -28,8 +28,8 @@ const submitPurchaseQuotation = (payload) =>
 const updatePurchaseQuotation = (docEntry, payload) =>
   apiClient.patch(`/purchase-quotation/${docEntry}`, payload);
 
-const fetchDocumentSeries = () =>
-  apiClient.get('/purchase-quotation/series');
+const fetchDocumentSeries = (params = {}) =>
+  apiClient.get('/purchase-quotation/series', { params });
 
 const fetchNextNumber = (series) =>
   apiClient.get(`/purchase-quotation/series/${series}/next-number`);
