@@ -1,5 +1,4 @@
 .sar-page {
-  background: #f0f2f5;
   min-height: 100%;
   padding: 8px 12px 12px;
 }
@@ -7,23 +6,10 @@
 .sar-window {
   max-width: 920px;
   width: 920px;
-  border: 1px solid #c8d0da;
-  background: #fff;
-  box-shadow: inset 0 1px 0 #fff;
 }
 
 .sar-window__titlebar {
   padding: 7px 12px;
-  font-size: 14px;
-  font-weight: 700;
-  color: #003366;
-  background: #e8edf2;
-  border-bottom: 1px solid #c8d0da;
-}
-
-.sar-window__underline {
-  height: 3px;
-  background: linear-gradient(90deg, #d0a100 0%, #f0c13b 28%, transparent 28%);
 }
 
 .sar-window__body {
@@ -78,9 +64,7 @@
 
 .sar-section-box,
 .sar-selection-panel {
-  border: 1px solid #c8d0da;
   padding: 8px 10px 10px;
-  background: #fbfcfd;
 }
 
 .sar-selection-panel--nested {
@@ -115,16 +99,8 @@
 .sar-cfl-btn {
   width: 23px;
   height: 20px;
-  border: 1px solid #b58a00;
-  background: linear-gradient(180deg, #ffe27a 0%, #f0bf25 100%);
-  border-radius: 2px;
-  cursor: pointer;
   font-size: 12px;
   line-height: 1;
-}
-
-.sar-cfl-btn:hover {
-  background: linear-gradient(180deg, #ffe998 0%, #f4ca46 100%);
 }
 
 .sar-date-row {
@@ -151,21 +127,15 @@
 
 .sar-grid-wrap {
   overflow: auto;
-  border: 1px solid #c8d0da;
 }
 
 .sar-grid {
   width: 100%;
-  border-collapse: collapse;
   font-size: 12px;
   min-width: 1040px;
 }
 
 .sar-grid th {
-  background: #eef3f8;
-  border-bottom: 1px solid #c8d0da;
-  border-right: 1px solid #dbe3ec;
-  color: #203040;
   padding: 5px 8px;
   text-align: left;
   white-space: nowrap;
@@ -173,21 +143,10 @@
 
 .sar-grid td {
   padding: 5px 8px;
-  border-bottom: 1px solid #edf1f5;
-  border-right: 1px solid #f0f2f5;
   white-space: nowrap;
 }
 
-.sar-grid tbody tr:nth-child(even) {
-  background: #fafbfc;
-}
-
-.sar-grid tbody tr:hover {
-  background: #eef5ff;
-}
-
 .sar-grid tfoot td {
-  background: #eef3f8;
   font-weight: 700;
   border-top: 2px solid #a0aab4;
 }

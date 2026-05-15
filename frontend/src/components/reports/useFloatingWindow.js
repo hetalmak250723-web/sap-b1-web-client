@@ -94,6 +94,18 @@ function useFloatingWindow({
   }, [isMaximized, isMinimized, position, taskId]);
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+
+    const shouldMarkMaximized = isOpen && isMaximized && !isMinimized;
+    document.body.classList.toggle("sap-floating-window-maximized", shouldMarkMaximized);
+    return () => {
+      document.body.classList.remove("sap-floating-window-maximized");
+    };
+  }, [isMaximized, isMinimized, isOpen]);
+
+  useEffect(() => {
     if (!taskId) return;
 
     if (!isOpen) {
@@ -326,12 +338,12 @@ function useFloatingWindow({
       ref: windowRef,
       style: isMaximized
         ? {
-            height: `calc(100vh - ${minMargin * 2}px)`,
+            height: `calc(100vh - var(--sap-topbar-height, 64px) - ${minMargin}px)`,
             left: `${minMargin}px`,
             position: "fixed",
-            top: `${minMargin}px`,
+            top: `calc(var(--sap-topbar-height, 64px) + ${minMargin}px)`,
             width: `calc(100vw - ${minMargin * 2}px)`,
-            zIndex: 40,
+            zIndex: 1390,
           }
         : position
           ? {

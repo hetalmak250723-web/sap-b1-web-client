@@ -1,5 +1,7 @@
 .admin-standalone-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 24%),
     radial-gradient(circle at top right, rgba(245, 158, 11, 0.16), transparent 28%),
@@ -11,9 +13,11 @@
 }
 
 .admin-workspace {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   display: grid;
   grid-template-columns: 290px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .admin-workspace__sidebar {
@@ -121,7 +125,9 @@
 
 .admin-workspace__main {
   min-width: 0;
+  min-height: 0;
   padding: 28px 24px 40px;
+  overflow: auto;
 }
 
 .admin-workspace__header {

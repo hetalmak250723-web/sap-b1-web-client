@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { flattenMenuTree, normalizePath } from "../auth/routeUtils";
@@ -114,6 +114,20 @@ function PageWindowFrame({ children }) {
     taskTitle: pageTitle,
   });
 
+  useEffect(() => {
+    if (isExcludedPath || typeof document === "undefined") {
+      return undefined;
+    }
+
+    document.body.classList.toggle(
+      "sap-route-window-maximized",
+      windowFrame.isMaximized && !windowFrame.isMinimized,
+    );
+    return () => {
+      document.body.classList.remove("sap-route-window-maximized");
+    };
+  }, [isExcludedPath, windowFrame.isMaximized, windowFrame.isMinimized]);
+
   if (isExcludedPath) {
     return children;
   }
@@ -144,31 +158,33 @@ function PageWindowFrame({ children }) {
   return (
     <section
       className={`page-window-frame${windowFrame.isMaximized ? " is-maximized" : ""}`}
-      {...windowFrame.windowProps}
+      ref={windowFrame.windowProps.ref}
     >
       <header
         className="page-window-frame__titlebar"
         aria-label={`${pageTitle} window controls`}
-        {...windowFrame.titleBarProps}
       >
         <div className="page-window-frame__controls">
           <button
             type="button"
             aria-label={windowFrame.isMinimized ? "Restore" : "Minimize"}
+            title={windowFrame.isMinimized ? "Restore" : "Minimize"}
             onClick={handleMinimize}
           >
             {windowFrame.isMinimized ? "□" : "-"}
           </button>
           <button
             type="button"
-            aria-label={windowFrame.isMaximized ? "Restore Down" : "Maximize"}
+            aria-label={windowFrame.isMaximized ? "Restore" : "Maximize"}
+            title={windowFrame.isMaximized ? "Restore" : "Maximize"}
             onClick={windowFrame.toggleMaximize}
           >
-            []
+            {windowFrame.isMaximized ? "Restore" : "Maximize"}
           </button>
           <button
             type="button"
             aria-label="Close"
+            title="Close"
             onClick={handleClose}
           >
             x

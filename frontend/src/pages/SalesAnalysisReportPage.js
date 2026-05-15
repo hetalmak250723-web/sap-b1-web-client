@@ -1257,12 +1257,12 @@ function SalesAnalysisReportPage() {
     if (reportResult?.reportKind === 'itemSummary') {
       return (
           <div
-            className={`sales-analysis-window sales-analysis-window--report${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
+            className={`sales-analysis-window sales-analysis-window--report sap-report-window${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
             {...reportWindow.windowProps}
             style={reportStyle}
           >
-            <div className="sales-analysis-window__titlebar" {...reportWindow.titleBarProps}>
-              <div className="sales-analysis-window__title">
+            <div className="sales-analysis-window__titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
+              <div className="sales-analysis-window__title sap-report-title">
                 {reportResult?.reportTitle || 'Sales Analysis by Items'}
               </div>
               <div className="sales-analysis-window__controls">
@@ -1273,7 +1273,7 @@ function SalesAnalysisReportPage() {
                 >
                   {reportWindow.isMinimized ? '□' : '-'}
                 </button>
-                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
+                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore' : 'Maximize'} title={reportWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
                 <button type="button" aria-label="Close" onClick={handleCloseReportWindow}>x</button>
               </div>
             </div>
@@ -1339,12 +1339,12 @@ function SalesAnalysisReportPage() {
     if (reportResult?.reportKind === 'salesEmployeeSummary') {
       return (
           <div
-            className={`sales-analysis-window sales-analysis-window--report${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
+            className={`sales-analysis-window sales-analysis-window--report sap-report-window${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
             {...reportWindow.windowProps}
             style={reportStyle}
           >
-            <div className="sales-analysis-window__titlebar" {...reportWindow.titleBarProps}>
-              <div className="sales-analysis-window__title">
+            <div className="sales-analysis-window__titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
+              <div className="sales-analysis-window__title sap-report-title">
                 {reportResult?.reportTitle || 'Sales Analysis by Sales Employee'}
               </div>
               <div className="sales-analysis-window__controls">
@@ -1355,7 +1355,7 @@ function SalesAnalysisReportPage() {
                 >
                   {reportWindow.isMinimized ? '□' : '-'}
                 </button>
-                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
+                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore' : 'Maximize'} title={reportWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
                 <button type="button" aria-label="Close" onClick={handleCloseReportWindow}>x</button>
               </div>
             </div>
@@ -1425,12 +1425,12 @@ function SalesAnalysisReportPage() {
     if (reportResult?.reportLayout === 'period') {
       return (
           <div
-            className={`sales-analysis-window sales-analysis-window--report${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
+            className={`sales-analysis-window sales-analysis-window--report sap-report-window${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
             {...reportWindow.windowProps}
             style={reportStyle}
           >
-            <div className="sales-analysis-window__titlebar" {...reportWindow.titleBarProps}>
-              <div className="sales-analysis-window__title">
+            <div className="sales-analysis-window__titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
+              <div className="sales-analysis-window__title sap-report-title">
                 {reportResult?.reportTitle || 'Sales Analysis by Customer'}
               </div>
               <div className="sales-analysis-window__controls">
@@ -1441,7 +1441,7 @@ function SalesAnalysisReportPage() {
                 >
                   {reportWindow.isMinimized ? '□' : '-'}
                 </button>
-                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
+                <button type="button" aria-label={reportWindow.isMaximized ? 'Restore' : 'Maximize'} title={reportWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
                 <button type="button" aria-label="Close" onClick={handleCloseReportWindow}>x</button>
               </div>
             </div>
@@ -1548,12 +1548,12 @@ function SalesAnalysisReportPage() {
 
     return (
         <div
-          className={`sales-analysis-window sales-analysis-window--report${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
+          className={`sales-analysis-window sales-analysis-window--report sap-report-window${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
           {...reportWindow.windowProps}
           style={reportStyle}
         >
-          <div className="sales-analysis-window__titlebar" {...reportWindow.titleBarProps}>
-            <div className="sales-analysis-window__title">
+          <div className="sales-analysis-window__titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
+            <div className="sales-analysis-window__title sap-report-title">
               {reportResult?.reportTitle || 'Sales Analysis by Customer'}
             </div>
             <div className="sales-analysis-window__controls">
@@ -1564,7 +1564,7 @@ function SalesAnalysisReportPage() {
               >
                 {reportWindow.isMinimized ? '□' : '-'}
               </button>
-              <button type="button" aria-label={reportWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
+              <button type="button" aria-label={reportWindow.isMaximized ? 'Restore' : 'Maximize'} title={reportWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
               <button type="button" aria-label="Close" onClick={handleCloseReportWindow}>x</button>
             </div>
           </div>
@@ -1669,16 +1669,16 @@ function SalesAnalysisReportPage() {
   };
 
   return (
-    <div className="sales-analysis-page" style={{ overflow: 'hidden', position: 'relative', width: '100%', height: '100%' }}>
+    <div className="sales-analysis-page sap-report-page" style={{ overflow: 'hidden', position: 'relative', width: '100%', height: '100%' }}>
       <div
-        className={`sales-analysis-window${criteriaWindow.isMinimized ? ' is-minimized' : ''}${criteriaWindow.isMaximized ? ' is-maximized' : ''}`}
+        className={`sales-analysis-window sap-report-window${criteriaWindow.isMinimized ? ' is-minimized' : ''}${criteriaWindow.isMaximized ? ' is-maximized' : ''}`}
         {...criteriaWindow.windowProps}
         style={{
           ...(criteriaWindow.windowProps?.style || {}),
         }}
       >
-        <div className="sales-analysis-window__titlebar" {...criteriaWindow.titleBarProps}>
-          <div className="sales-analysis-window__title">Sales Analysis Report - Selection Criteria</div>
+        <div className="sales-analysis-window__titlebar sap-report-titlebar" {...criteriaWindow.titleBarProps}>
+          <div className="sales-analysis-window__title sap-report-title">Sales Analysis Report - Selection Criteria</div>
           <div className="sales-analysis-window__controls">
             <button
               type="button"
@@ -1687,7 +1687,7 @@ function SalesAnalysisReportPage() {
             >
               {criteriaWindow.isMinimized ? '□' : '-'}
             </button>
-            <button type="button" aria-label={criteriaWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={criteriaWindow.toggleMaximize}>[]</button>
+            <button type="button" aria-label={criteriaWindow.isMaximized ? 'Restore' : 'Maximize'} title={criteriaWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={criteriaWindow.toggleMaximize}>[]</button>
             <button type="button" aria-label="Close" onClick={handleCloseCriteriaWindow}>x</button>
           </div>
         </div>
@@ -1902,3 +1902,4 @@ function SalesAnalysisReportPage() {
 }
 
 export default SalesAnalysisReportPage;
+

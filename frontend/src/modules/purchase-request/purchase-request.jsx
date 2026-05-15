@@ -1245,10 +1245,10 @@ function PurchaseRequest() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page" onSubmit={handleSubmit}>
+    <form className="po-page sap-document-page" onSubmit={handleSubmit}>
 
       {/* toolbar */}
-      <div className="po-toolbar">
+      <div className="po-toolbar sap-document-toolbar">
         <span className="po-toolbar__title">Purchase Request{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
           {pageState.posting ? 'Saving…' : currentDocEntry ? 'Update' : 'Add'}

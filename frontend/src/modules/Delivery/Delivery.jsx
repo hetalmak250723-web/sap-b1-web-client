@@ -2686,10 +2686,10 @@ function Delivery() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form ref={formRef} className="del-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form ref={formRef} className="del-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
-      <div className="del-toolbar">
+      <div className="del-toolbar sap-document-toolbar">
         <span className="del-toolbar__title">Delivery{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable} title={primaryActionLabel}>
           {primaryActionLabel}

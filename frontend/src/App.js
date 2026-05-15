@@ -66,6 +66,7 @@ import AdminPanelEntity from "./pages/AdminPanelEntity";
 import "./App.css";
 import "./styles/auth.css";
 import "./styles/admin-panel.css";
+import "./styles/sap-ui.css";
 
 function App() {
   return (

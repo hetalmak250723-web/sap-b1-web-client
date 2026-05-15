@@ -2267,10 +2267,10 @@ function SalesOrder() {
 
     // ── render ────────────────────────────────────────────────────────────────
     return (
-        <form ref={formRef} className={`so-page${sidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
+        <form ref={formRef} className={`so-page sap-document-page${sidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
 
             {/* toolbar */}
-            <div className="so-toolbar">
+            <div className="so-toolbar sap-document-toolbar">
                 <span className="so-toolbar__title">Sales Order{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
                 <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting || !isDocumentEditable} title={primaryActionLabel}>
                     {primaryActionLabel}
