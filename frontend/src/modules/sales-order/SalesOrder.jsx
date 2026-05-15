@@ -85,6 +85,32 @@ const fmtAddr = (a) => {
     [a.City, a.County, a.State, a.ZipCode], [a.Country]]
         .map(p => p.filter(Boolean).join(', ')).filter(Boolean).join('\n');
 };
+const mapAddressToModalForm = (address, existing = {}) => ({
+    shipToCode: existing.shipToCode || '',
+    shipToAddress: existing.shipToAddress || '',
+    billToCode: existing.billToCode || '',
+    billToAddress: existing.billToAddress || '',
+    streetPoBox: address?.Street || '',
+    streetNo: address?.StreetNo || '',
+    buildingFloorRoom: address?.Building || '',
+    block: address?.Block || '',
+    city: address?.City || '',
+    zipCode: address?.ZipCode || '',
+    county: address?.County || '',
+    state: address?.State || '',
+    countryRegion: address?.Country || '',
+    addressName2: address?.Address2 || '',
+    addressName3: address?.Address3 || '',
+    gln: address?.GLN || '',
+    gstin: address?.GSTIN || '',
+});
+const normalizeAddressText = (value) =>
+    String(value || '')
+        .toLowerCase()
+        .replace(/[\r\n]+/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
 
 // ─── static fallbacks ────────────────────────────────────────────────────────
 const FALLBACK_PAYMENT_TERMS = [
@@ -215,7 +241,8 @@ function SalesOrder() {
     const [copyFromDocType, setCopyFromDocType] = useState('quotation'); // 'quotation' or 'blanket'
     const [copyToModal, setCopyToModal] = useState(false);
     const [addressForm, setAddressForm] = useState({
-        streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
+        shipToCode: '', shipToAddress: '', billToCode: '', billToAddress: '',
+        streetPoBox: '', streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
         state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
     });
     const [taxInfoForm, setTaxInfoForm] = useState({
@@ -664,6 +691,20 @@ function SalesOrder() {
     const shipTypeOpts = refData.shipping_types.length
         ? refData.shipping_types.map(s => ({ value: String(s.TrnspCode), label: s.TrnspName }))
         : FALLBACK_SHIPPING;
+    const resolveSalesOrderAddress = useCallback((code, addresses = [], fallbackText = '') => {
+        const normalizedCode = String(code || '').trim();
+        if (normalizedCode) {
+            const exactMatch = addresses.find((address) => String(address?.Address || '').trim() === normalizedCode);
+            if (exactMatch) return exactMatch;
+        }
+
+        const normalizedFallbackText = normalizeAddressText(fallbackText);
+        if (normalizedFallbackText) {
+            return addresses.find((address) => normalizeAddressText(fmtAddr(address)) === normalizedFallbackText) || null;
+        }
+
+        return null;
+    }, []);
 
     const getUomOptions = useCallback((line) => {
         const item = refData.items.find(i => String(i.ItemCode || '') === String(line.itemNo || ''));
@@ -1406,13 +1447,37 @@ function SalesOrder() {
     const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
     const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
     const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+    const toggleHeaderUdfs = () => {
+        setFormSettingsOpen(false);
+        setSidebarOpen(p => !p);
+    };
+    const toggleFormSettings = () => {
+        setSidebarOpen(false);
+        setFormSettingsOpen(p => !p);
+    };
 
     // ── Address Modal handlers ────────────────────────────────────────────────
     const openAddressModal = (type) => {
-        setAddressForm({
-            streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
-            state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
-        });
+        const shipAddress = resolveSalesOrderAddress(
+            header.shipToCode,
+            vendorEffectiveShipToAddresses,
+            header.shipToAddress || header.shipTo,
+        );
+        const billAddress = resolveSalesOrderAddress(
+            header.billToCode || header.payToCode,
+            vendorEffectiveBillToAddresses,
+            header.billToAddress || header.payTo,
+        );
+        const activeAddress = type === 'billTo' ? billAddress : shipAddress;
+
+        setAddressForm(
+            mapAddressToModalForm(activeAddress, {
+                shipToCode: header.shipToCode || shipAddress?.Address || '',
+                shipToAddress: header.shipToAddress || header.shipTo || (shipAddress ? fmtAddr(shipAddress) : ''),
+                billToCode: header.billToCode || header.payToCode || billAddress?.Address || '',
+                billToAddress: header.billToAddress || header.payTo || (billAddress ? fmtAddr(billAddress) : ''),
+            }),
+        );
         setAddressModal({ type });
     };
 
@@ -1422,16 +1487,39 @@ function SalesOrder() {
 
     const saveAddressModal = () => {
         const formatted = [
-            [addressForm.streetNo, addressForm.buildingFloorRoom].filter(Boolean).join(', '),
+            [addressForm.streetPoBox, addressForm.streetNo].filter(Boolean).join(', '),
+            addressForm.buildingFloorRoom,
             [addressForm.block, addressForm.city].filter(Boolean).join(', '),
             [addressForm.county, addressForm.state, addressForm.zipCode].filter(Boolean).join(', '),
-            addressForm.countryRegion
+            addressForm.countryRegion,
+            addressForm.addressName2,
+            addressForm.addressName3,
         ].filter(Boolean).join('\n');
 
         if (addressModal.type === 'shipTo') {
-            setHeader(p => ({ ...p, shipToAddress: formatted, shipTo: formatted }));
+            setHeader(p => ({
+                ...p,
+                shipToCode: addressForm.shipToCode || p.shipToCode,
+                shipToAddress: addressForm.shipToAddress || formatted,
+                shipTo: addressForm.shipToAddress || formatted,
+                billToCode: addressForm.billToCode || p.billToCode,
+                payToCode: addressForm.billToCode || p.payToCode,
+                billToAddress: addressForm.billToAddress || p.billToAddress,
+                payTo: addressForm.billToAddress || p.payTo,
+                placeOfSupply: addressForm.state || p.placeOfSupply,
+            }));
         } else {
-            setHeader(p => ({ ...p, billToAddress: formatted, payTo: formatted }));
+            setHeader(p => ({
+                ...p,
+                shipToCode: addressForm.shipToCode || p.shipToCode,
+                shipToAddress: addressForm.shipToAddress || p.shipToAddress,
+                shipTo: addressForm.shipToAddress || p.shipTo,
+                billToCode: addressForm.billToCode || p.billToCode,
+                payToCode: addressForm.billToCode || p.payToCode,
+                billToAddress: addressForm.billToAddress || formatted,
+                payTo: addressForm.billToAddress || formatted,
+                placeOfSupply: header.useBillToForTax ? addressForm.state || p.placeOfSupply : p.placeOfSupply,
+            }));
         }
         closeAddressModal();
     };
@@ -2245,6 +2333,7 @@ function SalesOrder() {
     };
 
     const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+    const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
 
     useEffect(() => {
         const handleShortcut = (event) => {
@@ -2267,7 +2356,7 @@ function SalesOrder() {
 
     // ── render ────────────────────────────────────────────────────────────────
     return (
-        <form ref={formRef} className={`so-page sap-document-page${sidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
+        <form ref={formRef} className={`so-page sap-document-page${isRightSidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
 
             {/* toolbar */}
             <div className="so-toolbar sap-document-toolbar">
@@ -2281,10 +2370,10 @@ function SalesOrder() {
                 <button type="button" className="so-btn" onClick={resetForm}>
                     Cancel
                 </button>
-                <button type="button" className="so-btn" onClick={() => setSidebarOpen(p => !p)}>
+                <button type="button" className="so-btn" onClick={toggleHeaderUdfs}>
                     {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
                 </button>
-                <button type="button" className="so-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+                <button type="button" className="so-btn" onClick={toggleFormSettings}>
                     Form Settings
                 </button>
                 <PrintSalesOrderActions
@@ -2426,7 +2515,7 @@ function SalesOrder() {
             )}
 
             <fieldset className="so-fieldset" disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-            <div className={`so-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+            <div className={`so-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`}>
                 <div className="so-layout__main">
 
                         {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
@@ -2991,34 +3080,30 @@ function SalesOrder() {
 
                     </div>
 
-                    <fieldset
-                        className="so-fieldset"
+                    <HeaderUdfSidebar
+                        className="so-layout__sidebar"
+                        isOpen={sidebarOpen}
+                        fields={visHdrUdfs}
+                        formSettings={formSettings}
+                        values={headerUdfs}
                         disabled={!hasBuyerCode}
-                        style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
-                    >
-                        <HeaderUdfSidebar
-                            className="so-layout__sidebar"
-                            isOpen={sidebarOpen}
-                            fields={visHdrUdfs}
-                            formSettings={formSettings}
-                            values={headerUdfs}
-                            onFieldChange={handleHeaderUdfChange}
-                        />
-                    </fieldset>
+                        onFieldChange={handleHeaderUdfChange}
+                        onClose={() => setSidebarOpen(false)}
+                    />
+                    <FormSettingsPanel
+                        variant="sidebar"
+                        className="so-layout__sidebar"
+                        isOpen={formSettingsOpen}
+                        onClose={() => setFormSettingsOpen(false)}
+                        matrixFields={BASE_MATRIX_COLUMNS}
+                        headerUdfFields={HEADER_UDF_DEFINITIONS}
+                        rowUdfFields={ROW_UDF_DEFINITIONS}
+                        formSettings={formSettings}
+                        onSettingChange={updateFormSetting}
+                    />
                 </div>
 
             </fieldset>
-
-            {/* Form Settings Panel */}
-            <FormSettingsPanel
-                isOpen={formSettingsOpen}
-                onClose={() => setFormSettingsOpen(false)}
-                matrixFields={BASE_MATRIX_COLUMNS}
-                headerUdfFields={HEADER_UDF_DEFINITIONS}
-                rowUdfFields={ROW_UDF_DEFINITIONS}
-                formSettings={formSettings}
-                onSettingChange={updateFormSetting}
-            />
 
             {/* Address Component Modal */}
             <AddressModal

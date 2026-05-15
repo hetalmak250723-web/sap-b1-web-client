@@ -80,6 +80,32 @@ const fmtAddr = (a) => {
   [a.City, a.County, a.State, a.ZipCode], [a.Country]]
     .map(p => p.filter(Boolean).join(', ')).filter(Boolean).join('\n');
 };
+const mapAddressToModalForm = (address, existing = {}) => ({
+  shipToCode: existing.shipToCode || '',
+  shipToAddress: existing.shipToAddress || '',
+  billToCode: existing.billToCode || '',
+  billToAddress: existing.billToAddress || '',
+  streetPoBox: address?.Street || '',
+  streetNo: address?.StreetNo || '',
+  buildingFloorRoom: address?.Building || '',
+  block: address?.Block || '',
+  city: address?.City || '',
+  zipCode: address?.ZipCode || '',
+  county: address?.County || '',
+  state: address?.State || '',
+  countryRegion: address?.Country || '',
+  addressName2: address?.Address2 || '',
+  addressName3: address?.Address3 || '',
+  gln: address?.GLN || '',
+  gstin: address?.GSTIN || '',
+});
+const normalizeAddressText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 // Check if batches are available for item in specific warehouse
 const checkBatchAvailability = async (itemCode, whsCode) => {
@@ -177,6 +203,7 @@ const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
 function ARCreditMemo() {
   const location = useLocation();
   const navigate = useNavigate();
+  const requestedEditDocEntry = location.state?.arCreditMemoDocEntry;
 
   const [currentDocEntry, setCurrentDocEntry] = useState(null);
   const [header, setHeader] = useState(INIT_HEADER);
@@ -188,7 +215,7 @@ function ARCreditMemo() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [formSettingsOpen, setFormSettingsOpen] = useState(false);
   const [refData, setRefData] = useState({
-    company: '', vendors: [], contacts: [], pay_to_addresses: [], items: [],
+    company: '', vendors: [], contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [], items: [],
     warehouses: [], warehouse_addresses: [], company_address: {}, tax_codes: [],
     payment_terms: [], shipping_types: [], branches: [], uom_groups: [],
     decimal_settings: DEC, warnings: [], series: [], states: [],
@@ -208,7 +235,8 @@ function ARCreditMemo() {
   const [copyFromModal, setCopyFromModal] = useState(false);
   const [copyToModal, setCopyToModal] = useState(false);
   const [addressForm, setAddressForm] = useState({
-    streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
+    shipToCode: '', shipToAddress: '', billToCode: '', billToAddress: '',
+    streetPoBox: '', streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
     state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
   });
   const [taxInfoForm, setTaxInfoForm] = useState({
@@ -269,6 +297,19 @@ function ARCreditMemo() {
   const hasBuyerCode = Boolean(String(header.vendor || '').trim());
   const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
   const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const resolvePreferredSeries = (seriesList, postingDateValue, selectedSeries = '') => {
+    if (!Array.isArray(seriesList) || !seriesList.length) return null;
+
+    const normalizedSeries = String(selectedSeries || '').trim();
+    const matchedSeries = normalizedSeries
+      ? seriesList.find((series) => String(series.Series) === normalizedSeries)
+      : null;
+
+    if (matchedSeries) return matchedSeries;
+
+    const seriesDate = postingDateValue ? new Date(`${postingDateValue}T00:00:00`) : new Date();
+    return getDefaultSeriesForCurrentYear(seriesList, seriesDate) || seriesList[0];
+  };
   const primaryActionLabel = pageState.posting
     ? 'Saving…'
     : currentDocEntry
@@ -298,14 +339,12 @@ function ARCreditMemo() {
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
-        const [refDataRes, seriesRes] = await Promise.all([
-          fetchARCreditMemoReferenceData(AR_INVOICE_COMPANY_ID),
-          fetchDocumentSeries(),
-        ]);
+        const refDataRes = await fetchARCreditMemoReferenceData(AR_INVOICE_COMPANY_ID);
         
         if (!ignore) {
           const vendorRows = refDataRes.data.vendors || refDataRes.data.customers || [];
-          setRefData({
+          setRefData(prev => ({
+            ...prev,
             company: refDataRes.data.company || '',
             vendors: vendorRows,
             contacts: refDataRes.data.contacts || [],
@@ -323,15 +362,8 @@ function ARCreditMemo() {
             uom_groups: refDataRes.data.uom_groups || [],
             decimal_settings: { ...DEC, ...(refDataRes.data.decimal_settings || {}) },
             warnings: refDataRes.data.warnings || [],
-            series: seriesRes.data.series || [],
-          });
-          
-          if (seriesRes.data.series && seriesRes.data.series.length > 0 && !currentDocEntry) {
-            const defaultSeries = getDefaultSeriesForCurrentYear(seriesRes.data.series);
-            if (defaultSeries?.Series != null) {
-              handleSeriesChange(defaultSeries.Series);
-            }
-          }
+            series: Array.isArray(prev.series) ? prev.series : [],
+          }));
         }
       } catch (e) {
         if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load reference data.') }));
@@ -345,7 +377,50 @@ function ARCreditMemo() {
 
   // ── load existing order ───────────────────────────────────────────────────
   useEffect(() => {
-    const docEntry = location.state?.arCreditMemoDocEntry;
+    if (currentDocEntry || requestedEditDocEntry) return;
+
+    const seriesDate = String(header.postingDate || '').trim();
+    if (!seriesDate) {
+      setRefData(prev => ({ ...prev, series: [] }));
+      setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+      return;
+    }
+
+    let ignore = false;
+
+    const loadSeriesForPostingDate = async () => {
+      try {
+        const seriesResponse = await fetchDocumentSeries(seriesDate);
+        const availableSeries = seriesResponse.data?.series || [];
+
+        if (ignore || requestedEditDocEntry) return;
+
+        setRefData(prev => ({ ...prev, series: availableSeries }));
+
+        if (!availableSeries.length) {
+          setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+          return;
+        }
+
+        const currentSeries = String(header.series || '');
+        const defaultSeries = resolvePreferredSeries(availableSeries, seriesDate, currentSeries);
+
+        if (!defaultSeries?.Series) return;
+
+        if (String(defaultSeries.Series) !== currentSeries || !String(header.nextNumber || '').trim()) {
+          handleSeriesChange(defaultSeries.Series);
+        }
+      } catch (e) {
+        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load document series.') }));
+      }
+    };
+
+    loadSeriesForPostingDate();
+    return () => { ignore = true; };
+  }, [currentDocEntry, requestedEditDocEntry, header.postingDate]);
+
+  useEffect(() => {
+    const docEntry = requestedEditDocEntry;
     if (!docEntry) return;
     let ignore = false;
     const load = async () => {
@@ -353,8 +428,36 @@ function ARCreditMemo() {
       try {
         const r = await fetchARCreditMemoByDocEntry(docEntry);
         const so = r.data.ar_credit_memo;
+        let editSeries = [];
+        try {
+          const seriesDate = so?.header?.postingDate || so?.header?.documentDate || '';
+          const seriesResponse = await fetchDocumentSeries(seriesDate);
+          editSeries = seriesResponse.data?.series || [];
+        } catch (_seriesError) {
+          editSeries = [];
+        }
         if (ignore || !so) return;
         setCurrentDocEntry(so.doc_entry || Number(docEntry));
+        const savedSeriesValue = String(so.header?.series || '');
+        const savedSeriesOption = savedSeriesValue
+          ? {
+              Series: savedSeriesValue,
+              SeriesName: so.header?.seriesName || savedSeriesValue,
+              Indicator: so.header?.seriesIndicator || '',
+            }
+          : null;
+        const mergedEditSeries = savedSeriesOption
+          ? [
+              savedSeriesOption,
+              ...editSeries.filter((series) => String(series.Series) !== savedSeriesValue),
+            ]
+          : editSeries;
+        if (mergedEditSeries.length) {
+          setRefData(prev => ({
+            ...prev,
+            series: mergedEditSeries,
+          }));
+        }
         setHeader(prev => ({
           ...prev,
           ...INIT_HEADER,
@@ -365,8 +468,9 @@ function ARCreditMemo() {
           paymentTerms: so.header?.paymentTermsCode || so.header?.paymentTerms || '',
           placeOfSupply: so.header?.placeOfSupply || '',
           branch: so.header?.branch || '',
+          docNo: so.header?.docNo || so.header?.docNum || '',
           series: so.header?.series || '',
-          nextNumber: so.header?.docNo || '',
+          nextNumber: so.header?.docNo || so.header?.docNum || '',
         }));
         
         setLines(
@@ -381,12 +485,6 @@ function ARCreditMemo() {
         if (so.header?.customerCode || so.header?.customer) {
           loadVendorDetails(so.header?.customerCode || so.header?.customer);
         }
-        
-        // Call handleSeriesChange to populate next number
-        if (so.header?.series) {
-          handleSeriesChange(so.header.series);
-        }
-        
         setPageState(p => ({ ...p, success: so.doc_num ? `AR Credit Memo ${so.doc_num} loaded.` : 'AR Credit Memo loaded.' }));
       } catch (e) {
         if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load AR Credit Memo.') }));
@@ -399,7 +497,7 @@ function ARCreditMemo() {
     };
     load();
     return () => { ignore = true; };
-  }, [location.pathname, location.state, navigate]);
+  }, [location.pathname, requestedEditDocEntry, navigate]);
 
   useEffect(() => {
     if (!currentDocEntry) {
@@ -590,6 +688,10 @@ function ARCreditMemo() {
     ? [{ CardCode: header.vendor, CntctCode: header.contactPerson, Name: header.contactPerson }, ...vendorContacts]
     : vendorContacts;
   const vendorPayToAddresses = refData.pay_to_addresses.filter(a => String(a.CardCode || '') === String(header.vendor || ''));
+  const vendorShipToAddresses = refData.ship_to_addresses.filter(a => String(a.CardCode || '') === String(header.vendor || ''));
+  const vendorBillToAddresses = refData.bill_to_addresses.filter(a => String(a.CardCode || '') === String(header.vendor || ''));
+  const vendorEffectiveShipToAddresses = vendorShipToAddresses.length ? vendorShipToAddresses : vendorPayToAddresses;
+  const vendorEffectiveBillToAddresses = vendorBillToAddresses.length ? vendorBillToAddresses : vendorPayToAddresses;
   const selectedBranch = refData.branches.find(b => String(b.BPLId || '') === String(header.branch || ''));
   const firstLineWhse = String(lines[0]?.whse || '').trim();
   const selectedWhseAddr = refData.warehouse_addresses.find(w => String(w.WhsCode || '') === firstLineWhse);
@@ -607,6 +709,20 @@ function ARCreditMemo() {
   const shipTypeOpts = refData.shipping_types.length
     ? refData.shipping_types.map(s => ({ value: String(s.TrnspCode), label: s.TrnspName }))
     : FALLBACK_SHIPPING;
+  const resolveARCreditMemoAddress = useCallback((code, addresses = [], fallbackText = '') => {
+    const normalizedCode = String(code || '').trim();
+    if (normalizedCode) {
+      const exactMatch = addresses.find((address) => String(address?.Address || '').trim() === normalizedCode);
+      if (exactMatch) return exactMatch;
+    }
+
+    const normalizedFallbackText = normalizeAddressText(fallbackText);
+    if (normalizedFallbackText) {
+      return addresses.find((address) => normalizeAddressText(fmtAddr(address)) === normalizedFallbackText) || null;
+    }
+
+    return null;
+  }, []);
 
   const getUomOptions = useCallback((line) => {
     const item = refData.items.find(i => String(i.ItemCode || '') === String(line.itemNo || ''));
@@ -701,20 +817,26 @@ function ARCreditMemo() {
   useEffect(() => {
     if (!header.vendor) return;
     setHeader(prev => {
-      const existing = vendorPayToAddresses.find(a => String(a.Address || '') === String(prev.payToCode || ''));
+      const existing = vendorEffectiveBillToAddresses.find(a => String(a.Address || '') === String(prev.payToCode || prev.billToCode || ''));
       if (existing) return prev;
-      const def = vendorPayToAddresses[0];
+      const def = vendorEffectiveBillToAddresses[0];
       if (!def) return prev;
       const fmt = fmtAddr(def);
       if (prev.payToCode === def.Address && prev.payTo === fmt) return prev;
-      return { ...prev, payToCode: def.Address || '', payTo: fmt };
+      return {
+        ...prev,
+        payToCode: def.Address || '',
+        payTo: fmt,
+        billToCode: prev.billToCode || def.Address || '',
+        billToAddress: prev.billToAddress || fmt,
+      };
     });
-  }, [header.vendor, vendorPayToAddresses]);
+  }, [header.vendor, vendorEffectiveBillToAddresses]);
 
   // ── vendor details ────────────────────────────────────────────────────────
   const loadVendorDetails = async (code) => {
     if (!code) {
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
       setHeader(prev => ({ 
         ...prev, 
         placeOfSupply: '',
@@ -732,11 +854,14 @@ function ARCreditMemo() {
       const r = await fetchARCreditMemoCustomerDetails(code);
       const contacts = r.data.contacts || [];
       const payToAddresses = r.data.pay_to_addresses || [];
+      const shipToAddresses = r.data.ship_to_addresses || [];
       
       setRefData(p => ({
         ...p,
         contacts: contacts,
-        pay_to_addresses: payToAddresses
+        pay_to_addresses: payToAddresses,
+        ship_to_addresses: shipToAddresses,
+        bill_to_addresses: payToAddresses
       }));
 
       if (contacts.length > 0) {
@@ -746,8 +871,25 @@ function ARCreditMemo() {
         }));
       }
 
+      const defaultShipTo = shipToAddresses[0] || payToAddresses[0] || null;
+      const defaultBillTo = payToAddresses[0] || shipToAddresses[0] || null;
+      if (defaultShipTo || defaultBillTo) {
+        const formattedShipTo = defaultShipTo ? fmtAddr(defaultShipTo) : '';
+        const formattedBillTo = defaultBillTo ? fmtAddr(defaultBillTo) : formattedShipTo;
+        setHeader(prev => ({
+          ...prev,
+          placeOfSupply: defaultShipTo?.State || defaultBillTo?.State || prev.placeOfSupply,
+          shipToCode: defaultShipTo?.Address || '',
+          shipToAddress: formattedShipTo,
+          billToCode: defaultBillTo?.Address || '',
+          billToAddress: formattedBillTo,
+          payToCode: defaultBillTo?.Address || '',
+          payTo: formattedBillTo
+        }));
+      }
+
       // Auto-populate addresses from customer's default address
-      if (payToAddresses.length > 0) {
+      if (false && payToAddresses.length > 0) {
         const defaultAddress = payToAddresses[0];
         const formattedAddress = fmtAddr(defaultAddress);
         
@@ -771,7 +913,7 @@ function ARCreditMemo() {
 
     } catch (err) {
       console.error('Error loading customer details:', err);
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
     } finally {
       setPageState(p => ({ ...p, vendorLoading: false }));
     }
@@ -844,7 +986,8 @@ function ARCreditMemo() {
     }
     
     // Find the address from customer addresses
-    const addr = vendorPayToAddresses.find(a => String(a.Address) === String(addressCode));
+    const addr = vendorEffectiveShipToAddresses.find(a => String(a.Address) === String(addressCode))
+      || vendorEffectiveBillToAddresses.find(a => String(a.Address) === String(addressCode));
     if (addr) {
       const formattedAddress = fmtAddr(addr);
       setHeader(p => ({ 
@@ -865,7 +1008,8 @@ function ARCreditMemo() {
     }
     
     // Find the address from customer addresses
-    const addr = vendorPayToAddresses.find(a => String(a.Address) === String(addressCode));
+    const addr = vendorEffectiveBillToAddresses.find(a => String(a.Address) === String(addressCode))
+      || vendorEffectiveShipToAddresses.find(a => String(a.Address) === String(addressCode));
     if (addr) {
       const formattedAddress = fmtAddr(addr);
       setHeader(p => ({ 
@@ -1225,13 +1369,37 @@ function ARCreditMemo() {
     setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
-    setAddressForm({
-      streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
-      state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
-    });
+    const shipAddress = resolveARCreditMemoAddress(
+      header.shipToCode,
+      vendorEffectiveShipToAddresses,
+      header.shipToAddress || header.shipTo,
+    );
+    const billAddress = resolveARCreditMemoAddress(
+      header.billToCode || header.payToCode,
+      vendorEffectiveBillToAddresses,
+      header.billToAddress || header.payTo,
+    );
+    const activeAddress = type === 'billTo' ? billAddress : shipAddress;
+
+    setAddressForm(
+      mapAddressToModalForm(activeAddress, {
+        shipToCode: header.shipToCode || shipAddress?.Address || '',
+        shipToAddress: header.shipToAddress || header.shipTo || (shipAddress ? fmtAddr(shipAddress) : ''),
+        billToCode: header.billToCode || header.payToCode || billAddress?.Address || '',
+        billToAddress: header.billToAddress || header.payTo || (billAddress ? fmtAddr(billAddress) : ''),
+      }),
+    );
     setAddressModal({ type });
   };
 
@@ -1241,16 +1409,39 @@ function ARCreditMemo() {
 
   const saveAddressModal = () => {
     const formatted = [
-      [addressForm.streetNo, addressForm.buildingFloorRoom].filter(Boolean).join(', '),
+      [addressForm.streetPoBox, addressForm.streetNo].filter(Boolean).join(', '),
+      addressForm.buildingFloorRoom,
       [addressForm.block, addressForm.city].filter(Boolean).join(', '),
       [addressForm.county, addressForm.state, addressForm.zipCode].filter(Boolean).join(', '),
-      addressForm.countryRegion
+      addressForm.countryRegion,
+      addressForm.addressName2,
+      addressForm.addressName3,
     ].filter(Boolean).join('\n');
 
     if (addressModal.type === 'shipTo') {
-      setHeader(p => ({ ...p, shipTo: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode || p.shipToCode,
+        shipToAddress: addressForm.shipToAddress || formatted,
+        shipTo: addressForm.shipToAddress || formatted,
+        billToCode: addressForm.billToCode || p.billToCode,
+        payToCode: addressForm.billToCode || p.payToCode,
+        billToAddress: addressForm.billToAddress || p.billToAddress,
+        payTo: addressForm.billToAddress || p.payTo,
+        placeOfSupply: addressForm.state || p.placeOfSupply,
+      }));
     } else {
-      setHeader(p => ({ ...p, payTo: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode || p.shipToCode,
+        shipToAddress: addressForm.shipToAddress || p.shipToAddress,
+        shipTo: addressForm.shipToAddress || p.shipTo,
+        billToCode: addressForm.billToCode || p.billToCode,
+        payToCode: addressForm.billToCode || p.payToCode,
+        billToAddress: addressForm.billToAddress || formatted,
+        payTo: addressForm.billToAddress || formatted,
+        placeOfSupply: header.useBillToForTax ? addressForm.state || p.placeOfSupply : p.placeOfSupply,
+      }));
     }
     closeAddressModal();
   };
@@ -1898,7 +2089,7 @@ function ARCreditMemo() {
       setIsDirty(false);
       setCurrentDocEntry(null); setHeader(INIT_HEADER); setLines([createLine()]);
       setHeaderUdfs(createUdfState(HEADER_UDF_DEFINITIONS)); setActiveTab('Contents');
-      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [] }));
+      setRefData(p => ({ ...p, contacts: [], pay_to_addresses: [], ship_to_addresses: [], bill_to_addresses: [] }));
       setValErrors({ header: {}, lines: {}, form: '' });
       
       if (Array.isArray(refData.series) && refData.series.length > 0) {
@@ -1925,12 +2116,13 @@ function ARCreditMemo() {
   };
 
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
 
   // Continue in next part with render...
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="del-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className={`del-page sap-document-page${isRightSidebarOpen ? ' del-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="del-toolbar sap-document-toolbar">
@@ -1948,11 +2140,11 @@ function ARCreditMemo() {
         <button
           type="button"
           className="del-btn"
-          onClick={() => setSidebarOpen(p => !p)}
+          onClick={toggleHeaderUdfs}
         >
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="del-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="del-btn" onClick={toggleFormSettings}>
           Form Settings
         </button>
         <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
@@ -2011,7 +2203,7 @@ function ARCreditMemo() {
       )}
 
       <fieldset className="del-fieldset" disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div className={`so-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+      <div className={`so-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`}>
         <div className="so-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
@@ -2180,7 +2372,7 @@ function ARCreditMemo() {
                       <input 
                         name="nextNumber" 
                         className="del-field__input" 
-                        value={pageState.seriesLoading ? '...' : header.nextNumber} 
+                        value={currentDocEntry ? (header.docNo || header.nextNumber || '') : (pageState.seriesLoading ? '...' : header.nextNumber)}
                         readOnly 
                         style={{ background: '#f0f2f5' }}
                         title="Number will be assigned after saving"
@@ -2262,6 +2454,8 @@ function ARCreditMemo() {
                 onHeaderChange={handleHeaderChange}
                 effectiveWhseAddrs={effectiveWhseAddrs}
                 vendorPayToAddresses={vendorPayToAddresses}
+                vendorShipToAddresses={vendorEffectiveShipToAddresses}
+                vendorBillToAddresses={vendorEffectiveBillToAddresses}
                 shipTypeOpts={shipTypeOpts}
                 onOpenAddressModal={openAddressModal}
               />
@@ -2453,34 +2647,30 @@ function ARCreditMemo() {
 
           </div>{/* end main col */}
 
-          <fieldset
-            className="del-fieldset"
+          <HeaderUdfSidebar
+            className="so-layout__sidebar"
+            isOpen={sidebarOpen}
+            fields={visHdrUdfs}
+            formSettings={formSettings}
+            values={headerUdfs}
             disabled={!hasBuyerCode}
-            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
-          >
-            <HeaderUdfSidebar
-              className="so-layout__sidebar"
-              isOpen={sidebarOpen}
-              fields={visHdrUdfs}
-              formSettings={formSettings}
-              values={headerUdfs}
-              onFieldChange={handleHeaderUdfChange}
-            />
-          </fieldset>
+            onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="so-layout__sidebar"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={[]}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
+          />
         </div>
 
       </fieldset>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={[]}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       <AddressModal

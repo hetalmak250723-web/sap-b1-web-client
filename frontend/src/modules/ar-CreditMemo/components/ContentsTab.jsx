@@ -41,7 +41,7 @@ export default function ContentsTab({
           + Add Line
         </button>
       </div>
-      <div className="del-grid-wrap">
+      <div className="del-grid-wrap" style={{ overflowX: 'auto', overflowY: 'visible' }}>
         <table className="del-grid" style={{ minWidth: 1100 }}>
           <thead>
             <tr>

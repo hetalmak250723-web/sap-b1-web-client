@@ -43,6 +43,9 @@ const buildShortLabel = (label, fallback = 'MN') => {
 };
 
 const REPORT_STUDIO_NAME = 'report studio';
+const MASTER_MENU_NAME = 'master';
+const MASTER_VISIBLE_CHILDREN = new Set(['item master', 'business partner']);
+const MASTER_VISIBLE_PATHS = new Set(['/item-master', '/business-partner']);
 const isAdminMenuPath = (menuPath = '') => normalizePath(menuPath).startsWith('/admin');
 const getDisplayMenuName = (menu) => {
   const normalized = String(menu?.menuName || '').trim().toLowerCase();
@@ -118,10 +121,20 @@ const sortTopLevelMenus = (menus = []) =>
 const buildSidebarMenus = (menus = []) => {
   const { dashboardMenu, remainingMenus } = extractDashboardMenu(menus);
 
-  const removeHiddenSidebarItems = (items = []) =>
+  const shouldShowMasterChild = (item, menuPath) =>
+    MASTER_VISIBLE_CHILDREN.has(normalizeMenuPriorityName(item?.menuName)) ||
+    MASTER_VISIBLE_PATHS.has(menuPath);
+
+  const removeHiddenSidebarItems = (items = [], insideMaster = false) =>
     items.reduce((nextItems, item) => {
       const menuPath = item?.menuPath ? normalizePath(item.menuPath) : '';
-      const filteredChildren = removeHiddenSidebarItems(item.children || []);
+      const isMasterMenu = normalizeMenuPriorityName(item?.menuName) === MASTER_MENU_NAME;
+      const isInsideMaster = insideMaster || isMasterMenu;
+      const filteredChildren = removeHiddenSidebarItems(item.children || [], isInsideMaster);
+
+      if (insideMaster && !shouldShowMasterChild(item, menuPath) && !filteredChildren.length) {
+        return nextItems;
+      }
 
       if (!menuPath && !filteredChildren.length) {
         return nextItems;

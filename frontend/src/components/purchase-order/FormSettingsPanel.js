@@ -51,61 +51,114 @@ function FormSettingsPanel({
   rowUdfFields,
   formSettings,
   onSettingChange,
+  variant = 'floating',
+  className = '',
+  style,
 }) {
   if (!isOpen) {
     return null;
   }
 
-  return (
-    <div
-      style={{
+  const isSidebar = variant === 'sidebar';
+  const handleCloseKeyDown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onClose();
+    }
+  };
+  const wrapperClassName = [isSidebar ? '' : 'po-form-settings-floating', className]
+    .filter(Boolean)
+    .join(' ');
+  const wrapperStyle = isSidebar
+    ? style
+    : {
         position: 'fixed',
-        top: 0,
-        right: 0,
+        top: '172px',
+        right: '12px',
         width: '380px',
-        height: '100%',
-        background: '#fff',
-        borderLeft: '1px solid #dee2e6',
+        maxWidth: 'calc(100vw - 24px)',
+        height: 'calc(100vh - 184px)',
         zIndex: 1050,
         overflowY: 'auto',
-      }}
-    >
-      <div className="d-flex justify-content-between align-items-center p-3 border-bottom">
-        <div>
-          <h6 className="mb-1">Form Settings</h6>
-          <small className="text-muted">Control visibility &amp; activity</small>
-        </div>
-        <button
-          type="button"
-          className="btn btn-sm btn-outline-danger"
-          onClick={onClose}
-        >
-          x
-        </button>
-      </div>
+        paddingBottom: '12px',
+        ...style,
+      };
+  const cardStyle = isSidebar
+    ? {
+        minHeight: '0',
+        background: '#fff',
+      }
+    : {
+        minHeight: '100%',
+        borderRadius: '14px',
+        border: '1px solid #d7e1ec',
+        boxShadow: '0 16px 36px rgba(15, 23, 42, 0.12)',
+        background: '#fff',
+      };
 
-      <div className="p-3">
-        <SettingsSection
-          title="Matrix Columns"
-          fields={matrixFields}
-          groupKey="matrixColumns"
-          formSettings={formSettings}
-          onSettingChange={onSettingChange}
-        />
-        <SettingsSection
-          title="Header UDF Sidebar"
-          fields={headerUdfFields}
-          groupKey="headerUdfs"
-          formSettings={formSettings}
-          onSettingChange={onSettingChange}
-        />
-        <SettingsSection
-          title="Row UDF Columns"
-          fields={rowUdfFields}
-          groupKey="rowUdfs"
-          formSettings={formSettings}
-          onSettingChange={onSettingChange}
-        />
+  return (
+    <div className={wrapperClassName} style={wrapperStyle}>
+      <div
+        className="card p-3 po-udf-sidebar-card"
+        style={cardStyle}
+      >
+        <div className="mb-3 border-bottom pb-2 d-flex justify-content-between align-items-start gap-2">
+          <div>
+            <h6 className="mb-1">Form Settings</h6>
+            <small className="text-muted">Control visibility and activity</small>
+          </div>
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={onClose}
+            onKeyDown={handleCloseKeyDown}
+            aria-label="Close Form Settings"
+            className="btn btn-sm"
+            style={{
+              minWidth: '32px',
+              height: '32px',
+              padding: 0,
+              border: '1px solid #c7d3e3',
+              borderRadius: '8px',
+              background: '#fff',
+              color: '#234',
+              fontSize: '18px',
+              lineHeight: 1,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 1px 2px rgba(15, 23, 42, 0.06)',
+              cursor: 'pointer',
+              userSelect: 'none',
+            }}
+          >
+            ×
+          </span>
+        </div>
+
+        <div className="po-udf-sidebar-body">
+          <SettingsSection
+            title="Matrix Columns"
+            fields={matrixFields}
+            groupKey="matrixColumns"
+            formSettings={formSettings}
+            onSettingChange={onSettingChange}
+          />
+          <SettingsSection
+            title="Header UDF Sidebar"
+            fields={headerUdfFields}
+            groupKey="headerUdfs"
+            formSettings={formSettings}
+            onSettingChange={onSettingChange}
+          />
+          <SettingsSection
+            title="Row UDF Columns"
+            fields={rowUdfFields}
+            groupKey="rowUdfs"
+            formSettings={formSettings}
+            onSettingChange={onSettingChange}
+          />
+        </div>
       </div>
     </div>
   );

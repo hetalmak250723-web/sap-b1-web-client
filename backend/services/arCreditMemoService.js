@@ -374,9 +374,9 @@ const updateARCreditMemo = async (docEntry, payload) => {
 
 // ───────── DOCUMENT SERIES ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
   try {
-    const result = await arCreditMemoDb.getDocumentSeries();
+    const result = await arCreditMemoDb.getDocumentSeries(targetDate);
     return { series: result };
   } catch (error) {
     console.error('[AR Credit Memo Service] Failed to load document series:', error);

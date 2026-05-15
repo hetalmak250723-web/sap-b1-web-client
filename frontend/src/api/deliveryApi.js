@@ -31,8 +31,10 @@ const updateDelivery = (docEntry, payload) =>
   apiClient.patch(`/delivery/${docEntry}`, payload);
 
 // ─────────── Series ───────────
-const fetchDocumentSeries = () =>
-  apiClient.get('/delivery/series');
+const fetchDocumentSeries = (date = '') =>
+  apiClient.get('/delivery/series', {
+    params: date ? { date } : {},
+  });
 
 const fetchNextNumber = (series) =>
   apiClient.get(`/delivery/series/${series}/next-number`);

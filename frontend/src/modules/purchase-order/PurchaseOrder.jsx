@@ -19,6 +19,7 @@ import CopyFromModal from './components/CopyFromModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { filterWarehousesByBranch } from '../../utils/warehouseBranch';
+import { mapAddressToModalForm, resolveAddressForModal } from '../../utils/documentAddress';
 import { getDefaultSeriesForCurrentYear } from '../../utils/seriesDefaults';
 import { getStateCodeValue, getStateDisplayName } from '../../utils/stateDisplay';
 import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
@@ -295,7 +296,7 @@ function PurchaseOrder() {
   const [copyFromModal, setCopyFromModal] = useState(false);
   const [copyFromDocType, setCopyFromDocType] = useState('purchaseQuotation');
   const [addressForm, setAddressForm] = useState({
-    streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
+    streetPoBox: '', streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
     state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
   });
   const [taxInfoForm, setTaxInfoForm] = useState({
@@ -773,6 +774,8 @@ function PurchaseOrder() {
   }, [header.warehouse]);
 
   useEffect(() => {
+    const shouldAutoPopulateAddresses = true;
+    if (!shouldAutoPopulateAddresses) return;
     if (!header.vendor) return;
     setHeader(prev => {
       const existing = vendorEffectiveShipToAddresses.find(a => String(a.Address || '') === String(prev.shipToCode || ''));
@@ -787,6 +790,8 @@ function PurchaseOrder() {
   }, [header.vendor, vendorEffectiveShipToAddresses]);
 
   useEffect(() => {
+    const shouldAutoPopulateAddresses = true;
+    if (!shouldAutoPopulateAddresses) return;
     if (!header.vendor) return;
     setHeader(prev => {
       const existing = vendorEffectiveBillToAddresses.find(a => String(a.Address || '') === String(prev.payToCode || ''));
@@ -835,7 +840,7 @@ function PurchaseOrder() {
         }));
       }
 
-      // Auto-populate addresses from vendor
+      // Auto-populate logistics addresses from vendor, matching sales documents.
       const effectiveShipTo = shipToAddresses.length ? shipToAddresses : payToAddresses;
       const effectiveBillTo = billToAddresses.length ? billToAddresses : payToAddresses;
 
@@ -1104,6 +1109,14 @@ function PurchaseOrder() {
     setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Series and Auto-Numbering handlers ────────────────────────────────────
   const handleSeriesChange = async (seriesValue) => {
@@ -1141,10 +1154,26 @@ function PurchaseOrder() {
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
-    setAddressForm({
-      streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
-      state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
-    });
+    const shipAddress = resolveAddressForModal(
+      header.shipToCode,
+      vendorEffectiveShipToAddresses,
+      header.shipToAddress || header.shipTo,
+      fmtAddr,
+    );
+    const payAddress = resolveAddressForModal(
+      header.payToCode || header.billToCode,
+      vendorEffectiveBillToAddresses,
+      header.billToAddress || header.billTo || header.payTo,
+      fmtAddr,
+    );
+    const activeAddress = type === 'payTo' || type === 'billTo' ? payAddress : shipAddress;
+
+    setAddressForm(mapAddressToModalForm(activeAddress, {
+      shipToCode: header.shipToCode || shipAddress?.Address || '',
+      shipToAddress: header.shipToAddress || header.shipTo || (shipAddress ? fmtAddr(shipAddress) : ''),
+      billToCode: header.billToCode || header.payToCode || payAddress?.Address || '',
+      billToAddress: header.billToAddress || header.billTo || header.payTo || (payAddress ? fmtAddr(payAddress) : ''),
+    }));
     setAddressModal({ type });
   };
 
@@ -1154,7 +1183,8 @@ function PurchaseOrder() {
 
   const saveAddressModal = () => {
     const formatted = [
-      [addressForm.streetNo, addressForm.buildingFloorRoom].filter(Boolean).join(', '),
+      [addressForm.streetPoBox, addressForm.streetNo].filter(Boolean).join(', '),
+      addressForm.buildingFloorRoom,
       [addressForm.block, addressForm.city].filter(Boolean).join(', '),
       [addressForm.county, addressForm.state, addressForm.zipCode].filter(Boolean).join(', '),
       addressForm.countryRegion
@@ -1528,13 +1558,15 @@ function PurchaseOrder() {
     setFreightModal({ open: false, freightCharges: [], loading: false });
   };
 
+  const hasBuyerCode = Boolean(String(header.vendor || '').trim());
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
   const visibleColumns = BASE_MATRIX_COLUMNS.filter(c => formSettings.matrixColumns?.[c.key]?.visible !== false);
   const visibleRowUdfs = ROW_UDF_DEFINITIONS.filter(f => formSettings.rowUdfs?.[f.key]?.visible !== false);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className={`po-page sap-document-page${isRightSidebarOpen ? ' po-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="po-toolbar sap-document-toolbar">
@@ -1548,10 +1580,10 @@ function PurchaseOrder() {
         <button type="button" className="po-btn" onClick={resetForm}>
           Cancel
         </button>
-        <button type="button" className="po-btn" onClick={() => setSidebarOpen(p => !p)}>
+        <button type="button" className="po-btn" onClick={toggleHeaderUdfs}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="po-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="po-btn" onClick={toggleFormSettings}>
           Form Settings
         </button>
         <div className="po-dropdown">
@@ -1643,7 +1675,7 @@ function PurchaseOrder() {
       )}
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-        <div className={`po-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+        <div className={`po-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`}>
           <div className="po-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
@@ -2118,22 +2150,24 @@ function PurchaseOrder() {
             fields={visHdrUdfs}
             formSettings={formSettings}
             values={headerUdfs}
+            disabled={!hasBuyerCode}
             onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="po-layout__sidebar"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={BASE_MATRIX_COLUMNS}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
           />
         </div>
 
       </fieldset>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={BASE_MATRIX_COLUMNS}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       <AddressModal

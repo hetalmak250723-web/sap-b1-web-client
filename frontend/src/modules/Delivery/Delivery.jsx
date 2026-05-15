@@ -240,6 +240,12 @@ function Delivery() {
   const navigate = useNavigate();
   const formRef = useRef(null);
   const isHydratingDocumentRef = useRef(false);
+  const requestedEditDocEntry =
+    location.state?.deliveryDocEntry ||
+    location.state?.docEntry ||
+    location.state?.document?.docEntry ||
+    location.state?.document?.DocEntry ||
+    location.state?.salesOrderDocEntry;
 
   const [currentDocEntry, setCurrentDocEntry] = useState(null);
   const [header, setHeader] = useState(INIT_HEADER);
@@ -334,6 +340,19 @@ function Delivery() {
   const isUpdateMode = Boolean(currentDocEntry);
   const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
   const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const resolvePreferredSeries = (seriesList, postingDateValue, selectedSeries = '') => {
+    if (!Array.isArray(seriesList) || !seriesList.length) return null;
+
+    const normalizedSeries = String(selectedSeries || '').trim();
+    const matchedSeries = normalizedSeries
+      ? seriesList.find((series) => String(series.Series) === normalizedSeries)
+      : null;
+
+    if (matchedSeries) return matchedSeries;
+
+    const seriesDate = postingDateValue ? new Date(`${postingDateValue}T00:00:00`) : new Date();
+    return getDefaultSeriesForCurrentYear(seriesList, seriesDate) || seriesList[0];
+  };
   const primaryActionLabel = pageState.posting
     ? 'Saving...'
     : isUpdateMode
@@ -452,14 +471,12 @@ function Delivery() {
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
-        const [refDataRes, seriesRes] = await Promise.all([
-          fetchDeliveryReferenceData(SALES_ORDER_COMPANY_ID),
-          fetchDocumentSeries(),
-        ]);
+        const refDataRes = await fetchDeliveryReferenceData(SALES_ORDER_COMPANY_ID);
         
         if (!ignore) {
           const vendorRows = refDataRes.data.vendors || refDataRes.data.customers || [];
-          setRefData({
+          setRefData(prev => ({
+            ...prev,
             company: refDataRes.data.company || '',
             vendors: vendorRows,
             contacts: refDataRes.data.contacts || [],
@@ -482,15 +499,8 @@ function Delivery() {
             price_options: refDataRes.data.price_options || { buyer: [], seller: [] },
             decimal_settings: { ...DEC, ...(refDataRes.data.decimal_settings || {}) },
             warnings: refDataRes.data.warnings || [],
-            series: seriesRes.data.series || [],
-          });
-          
-          if (seriesRes.data.series && seriesRes.data.series.length > 0 && !currentDocEntry) {
-            const defaultSeries = getDefaultSeriesForCurrentYear(seriesRes.data.series);
-            if (defaultSeries?.Series != null) {
-              handleSeriesChange(defaultSeries.Series);
-            }
-          }
+            series: Array.isArray(prev.series) ? prev.series : [],
+          }));
         }
       } catch (e) {
         if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load reference data.') }));
@@ -502,14 +512,55 @@ function Delivery() {
     return () => { ignore = true; };
   }, []);
 
+  useEffect(() => {
+    if (currentDocEntry || requestedEditDocEntry || isHydratingDocumentRef.current) return;
+
+    const seriesDate = String(header.postingDate || '').trim();
+    if (!seriesDate) {
+      setRefData(prev => ({ ...prev, series: [] }));
+      setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+      return;
+    }
+
+    let ignore = false;
+
+    const loadSeriesForPostingDate = async () => {
+      try {
+        const seriesResponse = await fetchDocumentSeries(seriesDate);
+        const availableSeries = seriesResponse.data?.series || [];
+
+        if (ignore || requestedEditDocEntry || isHydratingDocumentRef.current) return;
+
+        setRefData(prev => ({ ...prev, series: availableSeries }));
+
+        if (!availableSeries.length) {
+          setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+          return;
+        }
+
+        const currentSeries = String(header.series || '');
+        const defaultSeries = resolvePreferredSeries(availableSeries, seriesDate, currentSeries);
+
+        if (!defaultSeries?.Series) return;
+
+        if (String(defaultSeries.Series) !== currentSeries || !String(header.nextNumber || '').trim()) {
+          handleSeriesChange(defaultSeries.Series);
+        }
+      } catch (e) {
+        if (!ignore) {
+          setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load document series.') }));
+        }
+      }
+    };
+
+    loadSeriesForPostingDate();
+
+    return () => { ignore = true; };
+  }, [currentDocEntry, requestedEditDocEntry, header.postingDate]);
+
   // ── load existing order ───────────────────────────────────────────────────
   useEffect(() => {
-    const docEntry =
-      location.state?.deliveryDocEntry ||
-      location.state?.docEntry ||
-      location.state?.document?.docEntry ||
-      location.state?.document?.DocEntry ||
-      location.state?.salesOrderDocEntry;
+    const docEntry = requestedEditDocEntry;
     if (!docEntry) return;
     let ignore = false;
     let hydrationTimer = null;
@@ -519,6 +570,14 @@ function Delivery() {
         isHydratingDocumentRef.current = true;
         const r = await fetchDeliveryByDocEntry(docEntry);
         const so = r.data.delivery;
+        let editSeries = [];
+        try {
+          const seriesDate = so?.header?.postingDate || so?.header?.documentDate || '';
+          const seriesResponse = await fetchDocumentSeries(seriesDate);
+          editSeries = seriesResponse.data?.series || [];
+        } catch (_seriesError) {
+          editSeries = [];
+        }
         const loadedLines = Array.isArray(so?.lines) && so.lines.length
           ? so.lines
           : Array.isArray(so?.DocumentLines) && so.DocumentLines.length
@@ -540,6 +599,26 @@ function Delivery() {
         if (ignore || !so) return;
         setCurrentDocEntry(so.doc_entry || Number(docEntry));
         setActiveTab('Contents');
+        const savedSeriesValue = String(so.header?.series || '');
+        const savedSeriesOption = savedSeriesValue
+          ? {
+              Series: savedSeriesValue,
+              SeriesName: so.header?.seriesName || savedSeriesValue,
+              Indicator: so.header?.seriesIndicator || '',
+            }
+          : null;
+        const mergedEditSeries = savedSeriesOption
+          ? [
+              savedSeriesOption,
+              ...editSeries.filter((series) => String(series.Series) !== savedSeriesValue),
+            ]
+          : editSeries;
+        if (mergedEditSeries.length) {
+          setRefData(prev => ({
+            ...prev,
+            series: mergedEditSeries,
+          }));
+        }
         setHeader(prev => ({
           ...prev,
           ...INIT_HEADER,
@@ -558,8 +637,9 @@ function Delivery() {
           billToAddress: so.header?.billToAddress || so.header?.payTo || '',
           payToCode: so.header?.payToCode || so.header?.billToCode || '',
           payTo: so.header?.payTo || so.header?.billToAddress || '',
+          docNo: so.header?.docNo || so.header?.docNum || '',
           series: so.header?.series || '',
-          nextNumber: so.header?.docNo || '',
+          nextNumber: so.header?.docNo || so.header?.docNum || '',
         }));
         
         setLines(
@@ -576,11 +656,6 @@ function Delivery() {
         setIsDirty(false);
         if (so.header?.customerCode || so.header?.customer) {
           loadVendorDetails(so.header?.customerCode || so.header?.customer, { preserveExisting: true });
-        }
-        
-        // Call handleSeriesChange to populate next number
-        if (so.header?.series) {
-          handleSeriesChange(so.header.series);
         }
         
         setPageState(p => ({ ...p, success: so.doc_num ? `Delivery ${so.doc_num} loaded.` : 'Delivery loaded.' }));
@@ -1498,6 +1573,14 @@ function Delivery() {
     setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
@@ -2767,6 +2850,7 @@ function Delivery() {
   };
 
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -2789,7 +2873,7 @@ function Delivery() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form ref={formRef} className="del-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form ref={formRef} className={`del-page sap-document-page${isRightSidebarOpen ? ' del-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="del-toolbar sap-document-toolbar">
@@ -2807,13 +2891,11 @@ function Delivery() {
         <button
           type="button"
           className="del-btn"
-          onClick={() => {
-            setSidebarOpen(p => !p);
-          }}
+          onClick={toggleHeaderUdfs}
         >
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="del-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="del-btn" onClick={toggleFormSettings}>
           Form Settings
         </button>
         <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
@@ -2912,7 +2994,7 @@ function Delivery() {
       )}
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-        <div className={`del-layout${sidebarOpen ? ' is-sidebar-open' : ''}`} style={{ padding: '0 12px', overflow: 'visible', minWidth: 0 }}>
+        <div className={`del-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`} style={{ padding: '0 12px', overflow: 'visible', minWidth: 0 }}>
 
           <div className="del-layout__main" style={{ minWidth: 0, overflow: 'visible' }}>
 
@@ -3085,7 +3167,7 @@ function Delivery() {
                       <input 
                         name="nextNumber" 
                         className="del-field__input" 
-                        value={pageState.seriesLoading ? '...' : header.nextNumber} 
+                        value={currentDocEntry ? (header.docNo || header.nextNumber || '') : (pageState.seriesLoading ? '...' : header.nextNumber)}
                         readOnly 
                         style={{ background: '#f0f2f5' }}
                         title="Number will be assigned after saving"
@@ -3406,29 +3488,29 @@ function Delivery() {
 
           </div>{/* end main col */}
 
-          <fieldset className="del-layout__sidebar" disabled={!hasBuyerCode} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-              <HeaderUdfSidebar
-                className="del-layout__sidebar"
-                isOpen={sidebarOpen}
-                fields={visHdrUdfs}
-                formSettings={formSettings}
-                values={headerUdfs}
-                onFieldChange={handleHeaderUdfChange}
-              />
-          </fieldset>
+          <HeaderUdfSidebar
+            className="del-layout__sidebar"
+            isOpen={sidebarOpen}
+            fields={visHdrUdfs}
+            formSettings={formSettings}
+            values={headerUdfs}
+            disabled={!hasBuyerCode}
+            onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="del-layout__sidebar"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={BASE_MATRIX_COLUMNS}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
+          />
         </div>
       </fieldset>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={BASE_MATRIX_COLUMNS}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       <AddressModal

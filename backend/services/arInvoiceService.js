@@ -355,9 +355,9 @@ const updateARInvoice = async (docEntry, payload) => {
 
 // ───────── DOCUMENT SERIES ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
   try {
-    const result = await arInvoiceDb.getDocumentSeries();
+    const result = await arInvoiceDb.getDocumentSeries(targetDate);
     return { series: result };
   } catch (error) {
     console.error('[AR Invoice Service] Failed to load document series:', error);
