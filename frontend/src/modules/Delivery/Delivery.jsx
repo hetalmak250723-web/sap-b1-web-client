@@ -98,6 +98,25 @@ const fmtAddr = (a) => {
   [a.City, a.County, a.State, a.ZipCode], [a.Country]]
     .map(p => p.filter(Boolean).join(', ')).filter(Boolean).join('\n');
 };
+const mapAddressToModalForm = (address, existing = {}) => ({
+  shipToCode: existing.shipToCode || '',
+  shipToAddress: existing.shipToAddress || '',
+  billToCode: existing.billToCode || '',
+  billToAddress: existing.billToAddress || '',
+  streetPoBox: address?.Street || '',
+  streetNo: address?.StreetNo || '',
+  buildingFloorRoom: address?.Building || '',
+  block: address?.Block || '',
+  city: address?.City || '',
+  zipCode: address?.ZipCode || '',
+  county: address?.County || '',
+  state: address?.State || '',
+  countryRegion: address?.Country || '',
+  addressName2: address?.Address2 || '',
+  addressName3: address?.Address3 || '',
+  gln: address?.GLN || '',
+  gstin: address?.GSTIN || '',
+});
 const normalizeAddressText = (value) =>
   String(value || '')
     .toLowerCase()
@@ -267,7 +286,8 @@ function Delivery() {
   const [copyFromDocType, setCopyFromDocType] = useState('salesOrder');
   const [copyToModal, setCopyToModal] = useState(false);
   const [addressForm, setAddressForm] = useState({
-    streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
+    shipToCode: '', shipToAddress: '', billToCode: '', billToAddress: '',
+    streetPoBox: '', streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
     state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
   });
   const [taxInfoForm, setTaxInfoForm] = useState({
@@ -709,6 +729,20 @@ function Delivery() {
   const shipTypeOpts = refData.shipping_types.length
     ? refData.shipping_types.map(s => ({ value: String(s.TrnspCode), label: s.TrnspName }))
     : FALLBACK_SHIPPING;
+  const resolveDeliveryAddress = useCallback((code, addresses = [], fallbackText = '') => {
+    const normalizedCode = String(code || '').trim();
+    if (normalizedCode) {
+      const exactMatch = addresses.find((address) => String(address?.Address || '').trim() === normalizedCode);
+      if (exactMatch) return exactMatch;
+    }
+
+    const normalizedFallbackText = normalizeAddressText(fallbackText);
+    if (normalizedFallbackText) {
+      return addresses.find((address) => normalizeAddressText(fmtAddr(address)) === normalizedFallbackText) || null;
+    }
+
+    return null;
+  }, []);
 
   const getUomOptions = useCallback((line) => {
     const item = refData.items.find(i => String(i.ItemCode || '') === String(line.itemNo || ''));
@@ -1467,10 +1501,26 @@ function Delivery() {
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
-    setAddressForm({
-      streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
-      state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
-    });
+    const shipAddress = resolveDeliveryAddress(
+      header.shipToCode,
+      vendorEffectiveShipToAddresses,
+      header.shipToAddress || header.shipTo,
+    );
+    const billAddress = resolveDeliveryAddress(
+      header.billToCode || header.payToCode,
+      vendorEffectiveBillToAddresses,
+      header.billToAddress || header.payTo,
+    );
+    const activeAddress = type === 'billTo' ? billAddress : shipAddress;
+
+    setAddressForm(
+      mapAddressToModalForm(activeAddress, {
+        shipToCode: header.shipToCode || shipAddress?.Address || '',
+        shipToAddress: header.shipToAddress || header.shipTo || (shipAddress ? fmtAddr(shipAddress) : ''),
+        billToCode: header.billToCode || header.payToCode || billAddress?.Address || '',
+        billToAddress: header.billToAddress || header.payTo || (billAddress ? fmtAddr(billAddress) : ''),
+      }),
+    );
     setAddressModal({ type });
   };
 
@@ -1480,22 +1530,75 @@ function Delivery() {
 
   const saveAddressModal = () => {
     const formatted = [
-      [addressForm.streetNo, addressForm.buildingFloorRoom].filter(Boolean).join(', '),
+      [addressForm.streetPoBox, addressForm.streetNo].filter(Boolean).join(', '),
+      addressForm.buildingFloorRoom,
       [addressForm.block, addressForm.city].filter(Boolean).join(', '),
       [addressForm.county, addressForm.state, addressForm.zipCode].filter(Boolean).join(', '),
-      addressForm.countryRegion
+      addressForm.countryRegion,
+      addressForm.addressName2,
+      addressForm.addressName3,
     ].filter(Boolean).join('\n');
 
     if (addressModal.type === 'shipTo') {
-      setHeader(p => ({ ...p, shipTo: formatted, shipToAddress: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode,
+        shipTo: addressForm.shipToAddress || formatted,
+        shipToAddress: addressForm.shipToAddress || formatted,
+        billToCode: addressForm.billToCode || p.billToCode,
+        payToCode: addressForm.billToCode || p.payToCode,
+        billToAddress: addressForm.billToAddress || p.billToAddress,
+        payTo: addressForm.billToAddress || p.payTo,
+        placeOfSupply: addressForm.state || p.placeOfSupply,
+      }));
     } else {
-      setHeader(p => ({ ...p, billToAddress: formatted, payTo: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode || p.shipToCode,
+        shipToAddress: addressForm.shipToAddress || p.shipToAddress,
+        shipTo: addressForm.shipToAddress || p.shipTo,
+        billToCode: addressForm.billToCode,
+        payToCode: addressForm.billToCode,
+        billToAddress: addressForm.billToAddress || formatted,
+        payTo: addressForm.billToAddress || formatted,
+      }));
     }
     closeAddressModal();
   };
 
   const handleAddressFormChange = (e) => {
     const { name, value } = e.target;
+
+    if (name === 'shipToCode') {
+      const selectedAddress = resolveDeliveryAddress(value, vendorEffectiveShipToAddresses);
+      setAddressForm(prev => {
+        const nextState = {
+          ...prev,
+          shipToCode: value,
+          shipToAddress: selectedAddress ? fmtAddr(selectedAddress) : prev.shipToAddress,
+        };
+        return addressModal?.type === 'shipTo'
+          ? mapAddressToModalForm(selectedAddress, nextState)
+          : nextState;
+      });
+      return;
+    }
+
+    if (name === 'billToCode') {
+      const selectedAddress = resolveDeliveryAddress(value, vendorEffectiveBillToAddresses);
+      setAddressForm(prev => {
+        const nextState = {
+          ...prev,
+          billToCode: value,
+          billToAddress: selectedAddress ? fmtAddr(selectedAddress) : prev.billToAddress,
+        };
+        return addressModal?.type === 'billTo'
+          ? mapAddressToModalForm(selectedAddress, nextState)
+          : nextState;
+      });
+      return;
+    }
+
     setAddressForm(p => ({ ...p, [name]: value }));
   };
 
@@ -3335,10 +3438,6 @@ function Delivery() {
         addressForm={addressForm}
         onFormChange={handleAddressFormChange}
         states={refData.states}
-        header={header}
-        vendorShipToAddresses={vendorEffectiveShipToAddresses}
-        vendorBillToAddresses={vendorEffectiveBillToAddresses}
-        onHeaderChange={handleHeaderChange}
       />
 
       {/* Tax Information Modal */}
