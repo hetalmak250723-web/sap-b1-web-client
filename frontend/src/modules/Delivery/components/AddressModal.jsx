@@ -7,10 +7,6 @@ export default function AddressModal({
   addressForm,
   onFormChange,
   states,
-  header,
-  vendorShipToAddresses,
-  vendorBillToAddresses,
-  onHeaderChange,
 }) {
   if (!isOpen) return null;
 
@@ -22,84 +18,14 @@ export default function AddressModal({
           <button type="button" className="del-modal__close" onClick={onClose}>×</button>
         </div>
         <div className="del-modal__body">
-          <div
-            style={{
-              marginBottom: '16px',
-              paddingBottom: '12px',
-              borderBottom: '1px solid #d7e1ee',
-            }}
-          >
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#0f3b69', marginBottom: 10 }}>
-              Logistics Addresses
-            </div>
-
-            <div className="del-field-grid" style={{ gridTemplateColumns: '1fr 1fr', columnGap: '20px' }}>
-              <div className="del-field">
-                <label className="del-field__label">Ship To Code</label>
-                <select
-                  className="del-field__select"
-                  name="shipToCode"
-                  value={header.shipToCode || ''}
-                  onChange={onHeaderChange}
-                >
-                  <option value="">Select</option>
-                  {vendorShipToAddresses.map((address) => (
-                    <option key={address.Address} value={address.Address}>
-                      {address.Address}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="del-field">
-                <label className="del-field__label">Bill To Code</label>
-                <select
-                  className="del-field__select"
-                  name="billToCode"
-                  value={header.billToCode || ''}
-                  onChange={onHeaderChange}
-                >
-                  <option value="">Select</option>
-                  {vendorBillToAddresses.map((address) => (
-                    <option key={address.Address} value={address.Address}>
-                      {address.Address}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="del-field">
-                <label className="del-field__label">Ship To Address</label>
-                <textarea
-                  className="del-textarea"
-                  rows={4}
-                  name="shipToAddress"
-                  value={header.shipToAddress || header.shipTo || ''}
-                  onChange={onHeaderChange}
-                />
-              </div>
-
-              <div className="del-field">
-                <label className="del-field__label">Bill To Address</label>
-                <textarea
-                  className="del-textarea"
-                  rows={4}
-                  name="billToAddress"
-                  value={header.billToAddress || header.payTo || ''}
-                  onChange={onHeaderChange}
-                />
-              </div>
-            </div>
-          </div>
-
           <div className="del-field-grid">
             {/* Street / PO Box */}
             <div className="del-field">
               <label className="del-field__label">Street / PO Box *</label>
               <input
                 className="del-field__input"
-                name="streetNo"
-                value={addressForm.streetNo}
+                name="streetPoBox"
+                value={addressForm.streetPoBox}
                 onChange={onFormChange}
               />
             </div>
@@ -107,7 +33,12 @@ export default function AddressModal({
             {/* Street No. */}
             <div className="del-field">
               <label className="del-field__label">Street No.</label>
-              <input className="del-field__input" />
+              <input
+                className="del-field__input"
+                name="streetNo"
+                value={addressForm.streetNo}
+                onChange={onFormChange}
+              />
             </div>
 
             {/* Building/Floor/Room */}
