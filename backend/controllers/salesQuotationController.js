@@ -106,7 +106,7 @@ const updateSalesQuotation = async (req, res) => {
 
 const getDocumentSeries = async (req, res) => {
   try {
-    const data = await salesQuotationService.getDocumentSeries();
+    const data = await salesQuotationService.getDocumentSeries(req.query.date);
     res.json(data);
   } catch (error) {
     res.status(500).json(getErrorPayload(error, 'Failed to load document series.'));

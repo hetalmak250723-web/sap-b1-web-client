@@ -205,7 +205,8 @@ const getOwners = () => safe(db.query(`
 
 // ── Document Series (ObjectCode = '23' for Quotations) ───────────────────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
+  const effectiveTargetDate = targetDate || new Date().toISOString().split('T')[0];
   const result = await safe(db.query(`
   SELECT 
     T0.Series,
@@ -220,9 +221,9 @@ INNER JOIN OFPR T1
     ON T0.Indicator = T1.Indicator
 WHERE T0.ObjectCode = '23'
     AND T0.Locked = 'N'
-    AND GETDATE() BETWEEN T1.F_RefDate AND T1.T_RefDate
+    AND CAST(@targetDate AS date) BETWEEN T1.F_RefDate AND T1.T_RefDate
 ORDER BY T0.SeriesName
-  `));
+  `, { targetDate: effectiveTargetDate }));
   return result.map(s => ({
     Series: s.Series,
     SeriesName: s.SeriesName,
@@ -452,7 +453,7 @@ const getSalesQuotation = async (docEntry) => {
       T0.NumAtCard, T0.Comments AS Remarks, T0.DocTotal, T0.DocCur,
       T0.CntctCode, T0.BPLId, T0.GroupNum,
       T0.ShipToCode, T0.PayToCode, T0.Address, T0.Address2,
-      T0.TrnspCode, T0.Confirmed, T0.JrnlMemo, T0.Series, T0.DiscPrcnt,
+      T0.TrnspCode, T0.Confirmed, T0.JrnlMemo, T0.Series, NNM.SeriesName, NNM.Indicator AS SeriesIndicator, T0.DiscPrcnt,
       T0.SlpCode,
       SLP.SlpName AS SalesEmployeeName,
       T0.OwnerCode,
@@ -472,6 +473,7 @@ const getSalesQuotation = async (docEntry) => {
     FROM OQUT T0
     INNER JOIN QUT1 T1 ON T0.DocEntry = T1.DocEntry
     LEFT JOIN OSLP SLP ON SLP.SlpCode = T0.SlpCode
+    LEFT JOIN NNM1 NNM ON NNM.ObjectCode = '23' AND NNM.Series = T0.Series
     LEFT JOIN OHEM EMP ON EMP.empID = T0.OwnerCode
     OUTER APPLY (
       SELECT TOP 1 C.State, C.Country
@@ -519,6 +521,8 @@ const getSalesQuotation = async (docEntry) => {
         contactPerson: String(header.CntctCode || ''),
         branch: String(header.BPLId || ''),
         series: String(header.Series || ''),
+        seriesName: header.SeriesName || '',
+        seriesIndicator: header.SeriesIndicator || '',
         placeOfSupply: header.PlaceOfSupply || '',
         postingDate: header.DocDate ? header.DocDate.toISOString().split('T')[0] : '',
         deliveryDate: header.DocDueDate ? header.DocDueDate.toISOString().split('T')[0] : '',

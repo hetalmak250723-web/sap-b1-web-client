@@ -335,9 +335,9 @@ const updateSalesQuotation = async (docEntry, payload) => {
 
 // ───────── DOCUMENT SERIES ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
   try {
-    const series = await salesQuotationDb.getDocumentSeries();
+    const series = await salesQuotationDb.getDocumentSeries(targetDate);
     return { series };
   } catch (error) {
     console.error('[Sales Quotation Service] Failed to load document series:', error);

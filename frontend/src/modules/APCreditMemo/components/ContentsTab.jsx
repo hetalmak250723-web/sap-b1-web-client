@@ -44,7 +44,7 @@ export default function ContentsTab({
           + Add Line
         </button>
       </div>
-      <div className="so-grid-wrap">
+      <div className="so-grid-wrap" style={{ overflowX: 'auto', overflowY: 'visible' }}>
         <table className="so-grid" style={{ minWidth: 1100 }}>
           <thead>
             <tr>

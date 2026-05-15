@@ -557,6 +557,14 @@ function SalesOrderPage() {
   const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
   const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
@@ -793,6 +801,7 @@ function SalesOrderPage() {
   };
 
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
   useEffect(() => {
     console.log("Contacts updated:", refData.contacts);
   }, [refData.contacts]);
@@ -802,10 +811,10 @@ function SalesOrderPage() {
 
       {/* toolbar */}
       <div className="d-flex gap-2 mb-3">
-        <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setSidebarOpen(p => !p)}>
+        <button type="button" className="btn btn-outline-primary btn-sm" onClick={toggleHeaderUdfs}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="btn btn-outline-secondary btn-sm" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="btn btn-outline-secondary btn-sm" onClick={toggleFormSettings}>
           Form Settings
         </button>
       </div>
@@ -834,7 +843,7 @@ function SalesOrderPage() {
 
       <div className="container-fluid">
         <div className="row">
-          <div className={sidebarOpen ? 'col-md-9' : 'col-md-12'}>
+          <div className={isRightSidebarOpen ? 'col-md-9' : 'col-md-12'}>
 
             {/* ══ HEADER CARD — SAP B1 layout ══════════════════════════════ */}
             <div className="card p-3 mb-3">
@@ -1523,20 +1532,21 @@ function SalesOrderPage() {
             formSettings={formSettings}
             values={headerUdfs}
             onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="col-xl-3 col-lg-4 align-self-start"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={MATRIX_COLS}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
           />
         </div>
       </div>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={MATRIX_COLS}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       {addressModal && (

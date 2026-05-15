@@ -122,7 +122,7 @@ const updateARCreditMemo = async (req, res) => {
 
 const getDocumentSeries = async (req, res) => {
   try {
-    const data = await arCreditMemoService.getDocumentSeries();
+    const data = await arCreditMemoService.getDocumentSeries(req.query.date);
     console.log('[ARCreditMemoController] /series payload:', data);
     res.json(data);
   } catch (error) {

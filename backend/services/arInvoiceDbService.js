@@ -121,7 +121,8 @@ const getSalesEmployees = () => safe(db.query(`
 
 // ── Document Series (ObjectCode = '18' for A/R Invoice) ───────────────────────────────────────────────────────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
+  const effectiveTargetDate = targetDate || new Date().toISOString().split('T')[0];
   const result = await safe(db.query(`
     SELECT 
     T0.Series,
@@ -136,9 +137,9 @@ INNER JOIN OFPR T1
     ON T0.Indicator = T1.Indicator
 WHERE T0.ObjectCode = '13'
     AND T0.Locked = 'N'
-    AND GETDATE() BETWEEN T1.F_RefDate AND T1.T_RefDate
+    AND CAST(@targetDate AS date) BETWEEN T1.F_RefDate AND T1.T_RefDate
 ORDER BY T0.SeriesName
-  `));
+  `, { targetDate: effectiveTargetDate }));
 
   return result.map(s => ({
     Series: s.Series,
@@ -508,6 +509,8 @@ const getARInvoice = async (docEntry) => {
       T0.DocEntry,
       T0.DocNum,
       T0.Series,
+      NNM.SeriesName,
+      NNM.Indicator AS SeriesIndicator,
       T0.CardCode,
       T0.CardName,
       T0.CntctCode AS ContactPersonCode,
@@ -533,6 +536,7 @@ const getARInvoice = async (docEntry) => {
       END AS DocumentStatus
     FROM OINV T0
     LEFT JOIN OSLP SLP ON SLP.SlpCode = T0.SlpCode
+    LEFT JOIN NNM1 NNM ON NNM.ObjectCode = '13' AND NNM.Series = T0.Series
     WHERE T0.DocEntry = @docEntry
   `, { docEntry }));
 
@@ -582,6 +586,8 @@ const getARInvoice = async (docEntry) => {
         docNo: header.DocNum ? String(header.DocNum) : '',
         status: header.DocumentStatus || 'Open',
         series: header.Series ? String(header.Series) : '',
+        seriesName: header.SeriesName || '',
+        seriesIndicator: header.SeriesIndicator || '',
         postingDate: header.PostingDate ? header.PostingDate.toISOString().split('T')[0] : '',
         deliveryDate: header.DeliveryDate ? header.DeliveryDate.toISOString().split('T')[0] : '',
         documentDate: header.DocumentDate ? header.DocumentDate.toISOString().split('T')[0] : '',

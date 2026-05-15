@@ -28,7 +28,7 @@ export default function ContentsTab({
         <div className="po-section-title" style={{ marginBottom: 0 }}>Item Matrix</div>
         <button type="button" className="po-btn po-btn--primary" onClick={onAddLine}>+ Add Line</button>
       </div>
-      <div className="po-grid-wrap">
+      <div className="po-grid-wrap" style={{ overflowX: 'auto', overflowY: 'visible' }}>
         <table className="po-grid">
           <thead>
             <tr>

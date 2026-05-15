@@ -5,6 +5,8 @@ export default function LogisticsTab({
   onHeaderChange,
   effectiveWhseAddrs,
   vendorPayToAddresses,
+  vendorShipToAddresses,
+  vendorBillToAddresses,
   shipTypeOpts,
   onOpenAddressModal,
   isEditable = true,
@@ -30,13 +32,13 @@ export default function LogisticsTab({
                 disabled={!isEditable}
               >
                 <option value="">Select</option>
-                {vendorPayToAddresses.map(a => (
+                {(vendorShipToAddresses.length ? vendorShipToAddresses : vendorPayToAddresses).map(a => (
                   <option key={a.Address} value={a.Address}>
                     {a.Address}
                   </option>
                 ))}
                 {/* Show current value if not in list */}
-                {header.shipToCode && !vendorPayToAddresses.some(a => a.Address === header.shipToCode) && (
+                {header.shipToCode && !(vendorShipToAddresses.length ? vendorShipToAddresses : vendorPayToAddresses).some(a => a.Address === header.shipToCode) && (
                   <option value={header.shipToCode}>{header.shipToCode}</option>
                 )}
               </select>
@@ -79,13 +81,13 @@ export default function LogisticsTab({
                 disabled={!isEditable}
               >
                 <option value="">Select</option>
-                {vendorPayToAddresses.map(a => (
+                {(vendorBillToAddresses.length ? vendorBillToAddresses : vendorPayToAddresses).map(a => (
                   <option key={a.Address} value={a.Address}>
                     {a.Address}
                   </option>
                 ))}
                 {/* Show current value if not in list */}
-                {header.billToCode && !vendorPayToAddresses.some(a => a.Address === header.billToCode) && (
+                {header.billToCode && !(vendorBillToAddresses.length ? vendorBillToAddresses : vendorPayToAddresses).some(a => a.Address === header.billToCode) && (
                   <option value={header.billToCode}>{header.billToCode}</option>
                 )}
               </select>

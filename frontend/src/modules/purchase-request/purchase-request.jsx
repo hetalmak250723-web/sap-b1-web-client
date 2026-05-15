@@ -901,6 +901,14 @@ function PurchaseRequest() {
   const handleHeaderUdfChange = (k, v) => setHeaderUdfs(p => ({ ...p, [k]: v }));
   const handleRowUdfChange = (i, k, v) => setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Series and Auto-Numbering handlers ────────────────────────────────────
   const handleSeriesChange = async (seriesValue) => {
@@ -1239,13 +1247,15 @@ function PurchaseRequest() {
     setFreightModal({ open: false, freightCharges: [], loading: false });
   };
 
+  const hasBuyerCode = Boolean(String(header.vendor || '').trim());
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
   const visibleColumns = BASE_MATRIX_COLUMNS.filter(c => formSettings.matrixColumns?.[c.key]?.visible !== false);
   const visibleRowUdfs = ROW_UDF_DEFINITIONS.filter(f => formSettings.rowUdfs?.[f.key]?.visible !== false);
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page sap-document-page" onSubmit={handleSubmit}>
+    <form className={`po-page sap-document-page${isRightSidebarOpen ? ' po-page--sidebar-open' : ''}`} onSubmit={handleSubmit}>
 
       {/* toolbar */}
       <div className="po-toolbar sap-document-toolbar">
@@ -1259,10 +1269,10 @@ function PurchaseRequest() {
         <button type="button" className="po-btn" onClick={resetForm}>
           Cancel
         </button>
-        <button type="button" className="po-btn" onClick={() => setSidebarOpen(p => !p)}>
+        <button type="button" className="po-btn" onClick={toggleHeaderUdfs}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="po-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="po-btn" onClick={toggleFormSettings}>
           Form Settings
         </button>
         <button type="button" className="po-btn" onClick={() => navigate('/purchase-request/find')}>Find</button>
@@ -1284,8 +1294,8 @@ function PurchaseRequest() {
 
       <fieldset disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
       <div style={{ padding: '0 12px' }}>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <div style={{ flex: sidebarOpen ? '0 0 calc(75% - 6px)' : '1' }}>
+        <div className={`po-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`} style={{ padding: 0 }}>
+          <div className="po-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
             <div className="po-header-card">
@@ -1691,27 +1701,30 @@ function PurchaseRequest() {
           </div>{/* end main col */}
 
           <HeaderUdfSidebar
+            className="po-layout__sidebar"
             isOpen={sidebarOpen}
             fields={visHdrUdfs}
             formSettings={formSettings}
             values={headerUdfs}
+            disabled={!hasBuyerCode}
             onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="po-layout__sidebar"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={BASE_MATRIX_COLUMNS}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
           />
         </div>
       </div>
 
       </fieldset>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={BASE_MATRIX_COLUMNS}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       <AddressModal

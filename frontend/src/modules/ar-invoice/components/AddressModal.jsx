@@ -24,8 +24,8 @@ export default function AddressModal({
               <label className="del-field__label">Street / PO Box *</label>
               <input
                 className="del-field__input"
-                name="streetNo"
-                value={addressForm.streetNo}
+                name="streetPoBox"
+                value={addressForm.streetPoBox}
                 onChange={onFormChange}
               />
             </div>
@@ -33,7 +33,12 @@ export default function AddressModal({
             {/* Street No. */}
             <div className="del-field">
               <label className="del-field__label">Street No.</label>
-              <input className="del-field__input" />
+              <input
+                className="del-field__input"
+                name="streetNo"
+                value={addressForm.streetNo}
+                onChange={onFormChange}
+              />
             </div>
 
             {/* Building/Floor/Room */}

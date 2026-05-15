@@ -449,9 +449,9 @@ const getDelivery = async (docEntry) => {
 
 // ───────── DOCUMENT SERIES (USING ODBC) ─────────
 
-const getDocumentSeries = async () => {
+const getDocumentSeries = async (targetDate = null) => {
   try {
-    const result = await deliveryDb.getDocumentSeries();
+    const result = await deliveryDb.getDocumentSeries(targetDate);
     return result;
   } catch (error) {
     return { series: [] };

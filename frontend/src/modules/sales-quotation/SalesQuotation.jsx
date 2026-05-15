@@ -76,6 +76,32 @@ const fmtAddr = (a) => {
   [a.City, a.County, a.State, a.ZipCode], [a.Country]]
     .map(p => p.filter(Boolean).join(', ')).filter(Boolean).join('\n');
 };
+const mapAddressToModalForm = (address, existing = {}) => ({
+  shipToCode: existing.shipToCode || '',
+  shipToAddress: existing.shipToAddress || '',
+  billToCode: existing.billToCode || '',
+  billToAddress: existing.billToAddress || '',
+  streetPoBox: address?.Street || '',
+  streetNo: address?.StreetNo || '',
+  buildingFloorRoom: address?.Building || '',
+  block: address?.Block || '',
+  city: address?.City || '',
+  zipCode: address?.ZipCode || '',
+  county: address?.County || '',
+  state: address?.State || '',
+  countryRegion: address?.Country || '',
+  addressName2: address?.Address2 || '',
+  addressName3: address?.Address3 || '',
+  gln: address?.GLN || '',
+  gstin: address?.GSTIN || '',
+});
+const normalizeAddressText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 // ─── static fallbacks ────────────────────────────────────────────────────────
 const FALLBACK_PAYMENT_TERMS = [
@@ -139,6 +165,7 @@ const INIT_ATTACH = Array.from({ length: 9 }, (_, i) => ({
 function SalesQuotation() {
   const location = useLocation();
   const navigate = useNavigate();
+  const requestedEditDocEntry = location.state?.salesQuotationDocEntry || location.state?.salesOrderDocEntry;
 
   const [currentDocEntry, setCurrentDocEntry] = useState(null);
   const [header, setHeader] = useState(INIT_HEADER);
@@ -172,7 +199,8 @@ function SalesQuotation() {
   const [copyFromModal, setCopyFromModal] = useState(false);
   const [copyToModal, setCopyToModal] = useState(false);
   const [addressForm, setAddressForm] = useState({
-    streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
+    shipToCode: '', shipToAddress: '', billToCode: '', billToAddress: '',
+    streetPoBox: '', streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
     state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
   });
   const [taxInfoForm, setTaxInfoForm] = useState({
@@ -223,6 +251,33 @@ function SalesQuotation() {
   const hasBuyerCode = Boolean(String(header.vendor || '').trim());
   const hasUnsavedChanges = Boolean(currentDocEntry && isDirty);
   const updateActionLabel = hasUnsavedChanges ? 'Update' : 'OK';
+  const resolvePreferredSeries = (seriesList, postingDateValue, selectedSeries = '') => {
+    if (!Array.isArray(seriesList) || !seriesList.length) return null;
+
+    const normalizedSeries = String(selectedSeries || '').trim();
+    const matchedSeries = normalizedSeries
+      ? seriesList.find((series) => String(series.Series) === normalizedSeries)
+      : null;
+
+    if (matchedSeries) return matchedSeries;
+
+    const seriesDate = postingDateValue ? new Date(`${postingDateValue}T00:00:00`) : new Date();
+    return getDefaultSeriesForCurrentYear(seriesList, seriesDate) || seriesList[0];
+  };
+  const resolveSalesQuotationAddress = useCallback((code, addresses = [], fallbackText = '') => {
+    const normalizedCode = String(code || '').trim();
+    if (normalizedCode) {
+      const exactMatch = addresses.find((address) => String(address?.Address || '').trim() === normalizedCode);
+      if (exactMatch) return exactMatch;
+    }
+
+    const normalizedFallbackText = normalizeAddressText(fallbackText);
+    if (normalizedFallbackText) {
+      return addresses.find((address) => normalizeAddressText(fmtAddr(address)) === normalizedFallbackText) || null;
+    }
+
+    return null;
+  }, []);
   const primaryActionLabel = pageState.posting
     ? 'Saving…'
     : currentDocEntry
@@ -252,9 +307,8 @@ function SalesQuotation() {
     const load = async () => {
       setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
       try {
-        const [refDataRes, seriesRes, hsnRes] = await Promise.all([
+        const [refDataRes, hsnRes] = await Promise.all([
           fetchSalesQuotationReferenceData(SALES_ORDER_COMPANY_ID),
-          fetchDocumentSeries(),
           fetchHSNCodes(),
         ]);
         
@@ -269,7 +323,7 @@ function SalesQuotation() {
         console.log('  - Shipping Types:', refDataRes.data.shipping_types?.length || 0);
         console.log('  - Branches:', refDataRes.data.branches?.length || 0);
         console.log('  - States:', refDataRes.data.states?.length || 0);
-        console.log('  - Series:', seriesRes.data.series?.length || 0);
+        console.log('  - Series:', refData.series?.length || 0);
         console.log('  - HSN Codes:', hsnRes.data?.length || 0);
         console.log('  - Sales Employees:', refDataRes.data.sales_employees?.length || 0);
         console.log('  - Owners:', refDataRes.data.owners?.length || 0);
@@ -297,7 +351,8 @@ function SalesQuotation() {
         console.log('═══════════════════════════════════════════════════');
         
         if (!ignore) {
-          setRefData({
+          setRefData(prev => ({
+            ...prev,
             company: refDataRes.data.company || '',
             vendors: refDataRes.data.vendors || [],
             contacts: refDataRes.data.contacts || [],
@@ -319,15 +374,8 @@ function SalesQuotation() {
             owners: refDataRes.data.owners || [],
             decimal_settings: { ...DEC, ...(refDataRes.data.decimal_settings || {}) },
             warnings: refDataRes.data.warnings || [],
-            series: seriesRes.data.series || [],
-          });
-          
-          if (seriesRes.data.series && seriesRes.data.series.length > 0 && !currentDocEntry) {
-            const defaultSeries = getDefaultSeriesForCurrentYear(seriesRes.data.series);
-            if (defaultSeries?.Series != null) {
-              handleSeriesChange(defaultSeries.Series);
-            }
-          }
+            series: Array.isArray(prev.series) ? prev.series : [],
+          }));
         }
       } catch (e) {
         console.error('❌ Error loading reference data:', e);
@@ -342,7 +390,50 @@ function SalesQuotation() {
 
   // ── load existing order ───────────────────────────────────────────────────
   useEffect(() => {
-    const docEntry = location.state?.salesQuotationDocEntry || location.state?.salesOrderDocEntry;
+    if (currentDocEntry || requestedEditDocEntry) return;
+
+    const seriesDate = String(header.postingDate || '').trim();
+    if (!seriesDate) {
+      setRefData(prev => ({ ...prev, series: [] }));
+      setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+      return;
+    }
+
+    let ignore = false;
+
+    const loadSeriesForPostingDate = async () => {
+      try {
+        const seriesResponse = await fetchDocumentSeries(seriesDate);
+        const availableSeries = seriesResponse.data?.series || [];
+
+        if (ignore || requestedEditDocEntry) return;
+
+        setRefData(prev => ({ ...prev, series: availableSeries }));
+
+        if (!availableSeries.length) {
+          setHeader(prev => ({ ...prev, series: '', nextNumber: '' }));
+          return;
+        }
+
+        const currentSeries = String(header.series || '');
+        const defaultSeries = resolvePreferredSeries(availableSeries, seriesDate, currentSeries);
+
+        if (!defaultSeries?.Series) return;
+
+        if (String(defaultSeries.Series) !== currentSeries || !String(header.nextNumber || '').trim()) {
+          handleSeriesChange(defaultSeries.Series);
+        }
+      } catch (e) {
+        if (!ignore) setPageState(p => ({ ...p, error: getErrMsg(e, 'Failed to load document series.') }));
+      }
+    };
+
+    loadSeriesForPostingDate();
+    return () => { ignore = true; };
+  }, [currentDocEntry, requestedEditDocEntry, header.postingDate]);
+
+  useEffect(() => {
+    const docEntry = requestedEditDocEntry;
     if (!docEntry) return;
     let ignore = false;
     const load = async () => {
@@ -350,6 +441,14 @@ function SalesQuotation() {
       try {
         const r = await fetchSalesQuotationByDocEntry(docEntry);
         const so = r.data.sales_quotation;
+        let editSeries = [];
+        try {
+          const seriesDate = so?.header?.postingDate || so?.header?.documentDate || '';
+          const seriesResponse = await fetchDocumentSeries(seriesDate);
+          editSeries = seriesResponse.data?.series || [];
+        } catch (_seriesError) {
+          editSeries = [];
+        }
         
         
         if (ignore || !so) return;
@@ -357,8 +456,27 @@ function SalesQuotation() {
         
         // Get warehouse from first line if available
         const firstLineWarehouse = so.lines && so.lines.length > 0 ? so.lines[0].whse : '';
-        
-        
+        const savedSeriesValue = String(so.header?.series || '');
+        const savedSeriesOption = savedSeriesValue
+          ? {
+              Series: savedSeriesValue,
+              SeriesName: so.header?.seriesName || savedSeriesValue,
+              Indicator: so.header?.seriesIndicator || '',
+            }
+          : null;
+        const mergedEditSeries = savedSeriesOption
+          ? [
+              savedSeriesOption,
+              ...editSeries.filter((series) => String(series.Series) !== savedSeriesValue),
+            ]
+          : editSeries;
+        if (mergedEditSeries.length) {
+          setRefData(prev => ({
+            ...prev,
+            series: mergedEditSeries,
+          }));
+        }
+
         const newHeader = {
           ...INIT_HEADER,
           vendor: so.header?.customerCode || '',
@@ -390,7 +508,8 @@ function SalesQuotation() {
           deliveryDate: so.header?.deliveryDate || '',
           documentDate: so.header?.documentDate || '',
           customerRefNo: so.header?.customerRefNo || '',
-          docNum: so.header?.docNum || '',
+          docNo: String(so.header?.docNum || so.header?.docNo || ''),
+          nextNumber: String(so.header?.docNum || so.header?.docNo || ''),
           status: so.header?.status || '',
           shippingType: so.header?.shippingType || '',
           confirmed: so.header?.confirmed || false,
@@ -400,12 +519,6 @@ function SalesQuotation() {
         
         console.log('📥 Final header state:', newHeader);
         setHeader(newHeader);
-
-        // If series is loaded, fetch the next number for display
-        if (so.header?.series) {
-          handleSeriesChange(so.header.series);
-        }
-
         setLines(
           Array.isArray(so.lines) && so.lines.length
             ? so.lines.map((l, index) => {
@@ -447,7 +560,7 @@ function SalesQuotation() {
     };
     load();
     return () => { ignore = true; };
-  }, [location.pathname, location.state, navigate]);
+  }, [location.pathname, requestedEditDocEntry, navigate]);
 
   useEffect(() => {
     if (!currentDocEntry) {
@@ -1218,13 +1331,37 @@ function SalesQuotation() {
     setLines(p => p.map((l, idx) => idx === i ? { ...l, udf: { ...(l.udf || {}), [k]: v } } : l));
   };
   const updateFormSetting = (g, k, prop, val) => setFormSettings(p => ({ ...p, [g]: { ...p[g], [k]: { ...p[g][k], [prop]: val } } }));
+  const toggleHeaderUdfs = () => {
+    setFormSettingsOpen(false);
+    setSidebarOpen(p => !p);
+  };
+  const toggleFormSettings = () => {
+    setSidebarOpen(false);
+    setFormSettingsOpen(p => !p);
+  };
 
   // ── Address Modal handlers ────────────────────────────────────────────────
   const openAddressModal = (type) => {
-    setAddressForm({
-      streetNo: '', buildingFloorRoom: '', block: '', city: '', zipCode: '', county: '',
-      state: '', countryRegion: '', addressName2: '', addressName3: '', gln: '', gstin: ''
-    });
+    const shipAddress = resolveSalesQuotationAddress(
+      header.shipToCode,
+      vendorEffectiveShipToAddresses,
+      header.shipToAddress || header.shipTo,
+    );
+    const billAddress = resolveSalesQuotationAddress(
+      header.billToCode || header.payToCode,
+      vendorEffectiveBillToAddresses,
+      header.billToAddress || header.payTo,
+    );
+    const activeAddress = type === 'billTo' ? billAddress : shipAddress;
+
+    setAddressForm(
+      mapAddressToModalForm(activeAddress, {
+        shipToCode: header.shipToCode || shipAddress?.Address || '',
+        shipToAddress: header.shipToAddress || header.shipTo || (shipAddress ? fmtAddr(shipAddress) : ''),
+        billToCode: header.billToCode || header.payToCode || billAddress?.Address || '',
+        billToAddress: header.billToAddress || header.payTo || (billAddress ? fmtAddr(billAddress) : ''),
+      }),
+    );
     setAddressModal({ type });
   };
 
@@ -1234,16 +1371,39 @@ function SalesQuotation() {
 
   const saveAddressModal = () => {
     const formatted = [
-      [addressForm.streetNo, addressForm.buildingFloorRoom].filter(Boolean).join(', '),
+      [addressForm.streetPoBox, addressForm.streetNo].filter(Boolean).join(', '),
+      addressForm.buildingFloorRoom,
       [addressForm.block, addressForm.city].filter(Boolean).join(', '),
       [addressForm.county, addressForm.state, addressForm.zipCode].filter(Boolean).join(', '),
-      addressForm.countryRegion
+      addressForm.countryRegion,
+      addressForm.addressName2,
+      addressForm.addressName3,
     ].filter(Boolean).join('\n');
 
     if (addressModal.type === 'shipTo') {
-      setHeader(p => ({ ...p, shipToAddress: formatted, shipTo: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode || p.shipToCode,
+        shipToAddress: addressForm.shipToAddress || formatted,
+        shipTo: addressForm.shipToAddress || formatted,
+        billToCode: addressForm.billToCode || p.billToCode,
+        payToCode: addressForm.billToCode || p.payToCode,
+        billToAddress: addressForm.billToAddress || p.billToAddress,
+        payTo: addressForm.billToAddress || p.payTo,
+        placeOfSupply: addressForm.state || p.placeOfSupply,
+      }));
     } else {
-      setHeader(p => ({ ...p, billToAddress: formatted, payTo: formatted }));
+      setHeader(p => ({
+        ...p,
+        shipToCode: addressForm.shipToCode || p.shipToCode,
+        shipToAddress: addressForm.shipToAddress || p.shipToAddress,
+        shipTo: addressForm.shipToAddress || p.shipTo,
+        billToCode: addressForm.billToCode || p.billToCode,
+        payToCode: addressForm.billToCode || p.payToCode,
+        billToAddress: addressForm.billToAddress || formatted,
+        payTo: addressForm.billToAddress || formatted,
+        placeOfSupply: header.useBillToForTax ? addressForm.state || p.placeOfSupply : p.placeOfSupply,
+      }));
     }
     closeAddressModal();
   };
@@ -1784,12 +1944,13 @@ function SalesQuotation() {
   };
 
   const visHdrUdfs = HEADER_UDF_DEFINITIONS.filter(f => formSettings.headerUdfs?.[f.key]?.visible !== false);
+  const isRightSidebarOpen = sidebarOpen || formSettingsOpen;
 
   // Continue in next part with render...
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="so-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className={`so-page sap-document-page${isRightSidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
       <div className="so-toolbar sap-document-toolbar">
@@ -1803,10 +1964,10 @@ function SalesQuotation() {
         <button type="button" className="so-btn" onClick={resetForm}>
           Cancel
         </button>
-        <button type="button" className="so-btn" onClick={() => setSidebarOpen(p => !p)}>
+        <button type="button" className="so-btn" onClick={toggleHeaderUdfs}>
           {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
-        <button type="button" className="so-btn" onClick={() => setFormSettingsOpen(p => !p)}>
+        <button type="button" className="so-btn" onClick={toggleFormSettings}>
           Form Settings
         </button>
         <button type="button" className="so-btn" onClick={() => setCopyFromModal(true)}>
@@ -1838,7 +1999,7 @@ function SalesQuotation() {
       )}
 
       <fieldset className="so-fieldset" disabled={!isDocumentEditable} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
-      <div className={`so-layout${sidebarOpen ? ' is-sidebar-open' : ''}`}>
+      <div className={`so-layout${isRightSidebarOpen ? ' is-sidebar-open' : ''}`}>
         <div className="so-layout__main">
 
             {/* ══ HEADER CARD ══════════════════════════════════════════════ */}
@@ -2021,7 +2182,7 @@ function SalesQuotation() {
                       <input 
                         name="nextNumber" 
                         className="so-field__input" 
-                        value={header.nextNumber || ''} 
+                        value={currentDocEntry ? (header.docNo || header.nextNumber || '') : (header.nextNumber || '')}
                         readOnly 
                         style={{ background: '#f0f2f5' }}
                       />
@@ -2309,34 +2470,30 @@ function SalesQuotation() {
 
           </div>{/* end main col */}
 
-          <fieldset
-            className="so-fieldset"
+          <HeaderUdfSidebar
+            className="so-layout__sidebar"
+            isOpen={sidebarOpen}
+            fields={visHdrUdfs}
+            formSettings={formSettings}
+            values={headerUdfs}
             disabled={!hasBuyerCode}
-            style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
-          >
-            <HeaderUdfSidebar
-              className="so-layout__sidebar"
-              isOpen={sidebarOpen}
-              fields={visHdrUdfs}
-              formSettings={formSettings}
-              values={headerUdfs}
-              onFieldChange={handleHeaderUdfChange}
-            />
-          </fieldset>
+            onFieldChange={handleHeaderUdfChange}
+            onClose={() => setSidebarOpen(false)}
+          />
+          <FormSettingsPanel
+            variant="sidebar"
+            className="so-layout__sidebar"
+            isOpen={formSettingsOpen}
+            onClose={() => setFormSettingsOpen(false)}
+            matrixFields={[]}
+            headerUdfFields={HEADER_UDF_DEFINITIONS}
+            rowUdfFields={ROW_UDF_DEFINITIONS}
+            formSettings={formSettings}
+            onSettingChange={updateFormSetting}
+          />
         </div>
 
       </fieldset>
-
-      {/* Form Settings Panel */}
-      <FormSettingsPanel
-        isOpen={formSettingsOpen}
-        onClose={() => setFormSettingsOpen(false)}
-        matrixFields={[]}
-        headerUdfFields={HEADER_UDF_DEFINITIONS}
-        rowUdfFields={ROW_UDF_DEFINITIONS}
-        formSettings={formSettings}
-        onSettingChange={updateFormSetting}
-      />
 
       {/* Address Component Modal */}
       <AddressModal

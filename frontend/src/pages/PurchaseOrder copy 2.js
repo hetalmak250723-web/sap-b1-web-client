@@ -729,14 +729,14 @@ function PurchaseOrderPage() {
           className="btn btn-outline-primary btn-sm"
           onClick={() => setSidebarOpen((prev) => !prev)}
         >
-          {sidebarOpen ? 'Hide UDF Sidebar' : 'Show UDF Sidebar'}
+          {sidebarOpen ? 'Hide UDFs' : 'Show UDFs'}
         </button>
         <button
           type="button"
           className="btn btn-outline-secondary btn-sm"
           onClick={() => setFormSettingsOpen((prev) => !prev)}
         >
-          {formSettingsOpen ? 'Close Form Settings' : 'Form Settings'}
+          Form Settings
         </button>
       </div>
       {/* <div className="po-system-banner">

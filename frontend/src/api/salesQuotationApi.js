@@ -23,8 +23,10 @@ const submitSalesQuotation = (payload) =>
 const updateSalesQuotation = (docEntry, payload) =>
   apiClient.patch(`/sales-quotation/${encodeURIComponent(docEntry)}`, payload);
 
-const fetchDocumentSeries = () =>
-  apiClient.get('/sales-quotation/series');
+const fetchDocumentSeries = (date = '') =>
+  apiClient.get('/sales-quotation/series', {
+    params: date ? { date } : {},
+  });
 
 const fetchNextNumber = (series) =>
   apiClient.get(`/sales-quotation/series/next?series=${series}`);
