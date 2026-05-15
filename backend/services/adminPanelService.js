@@ -88,7 +88,10 @@ const ENTITY_CONFIGS = [
     path: '/admin/role-rights',
     group: 'Security',
     lookupLabelColumns: ['Id'],
-    listColumns: ['Id', 'RoleId', 'MenuId', 'CanView', 'CanAdd', 'CanEdit', 'CanDelete'],
+    listColumns: ['Id', 'RoleId', 'MenuId', 'CanView', 'CanAdd', 'CanEdit'],
+    hiddenColumns: ['CanDelete'],
+    multiSelectColumns: ['MenuId'],
+    forcedValues: { CanDelete: false },
   },
 ];
 
@@ -231,6 +234,8 @@ const buildEntitySchema = (config, schemaRows) => {
     const isIdentity = Boolean(row.isIdentity);
     const isSensitive = SENSITIVE_FIELD_PATTERN.test(name);
     const isForeignKey = Boolean(row.referencedTable);
+    const isHidden = (config.hiddenColumns || []).includes(name);
+    const isMultiSelect = (config.multiSelectColumns || []).includes(name);
 
     return {
       name,
@@ -247,14 +252,16 @@ const buildEntitySchema = (config, schemaRows) => {
       referencedColumn: row.referencedColumn || null,
       referencedEntityKey: referencedConfig?.key || null,
       readOnly: isIdentity,
-      editable: !isIdentity,
-      inputType: '',
+      hidden: isHidden,
+      multiSelect: isMultiSelect,
+      editable: !isIdentity && !isHidden,
+      inputType: isMultiSelect ? 'multiselect' : '',
       helpText: '',
     };
   });
 
   for (const column of columns) {
-    column.inputType = getInputType(column);
+    column.inputType = column.multiSelect ? 'multiselect' : getInputType(column);
 
     if (column.isSensitive) {
       column.helpText = column.isPrimaryKey
@@ -388,6 +395,27 @@ const getEntityBootstrap = async (entityKey) => {
 const normalizeValueByColumn = async (column, value, mode) => {
   if (value === undefined) return undefined;
 
+  if (column.multiSelect) {
+    const values = Array.isArray(value)
+      ? value
+      : (value === '' || value === null ? [] : [value]);
+
+    if (!values.length) {
+      return column.nullable ? [] : undefined;
+    }
+
+    if (isNumericType(column.dataType)) {
+      const normalizedValues = values.map((entry) => Number(entry));
+      if (normalizedValues.some((entry) => !Number.isFinite(entry))) {
+        throw createHttpError(400, `${column.label} must contain valid numbers.`);
+      }
+
+      return Array.from(new Set(normalizedValues));
+    }
+
+    return Array.from(new Set(values.map((entry) => String(entry).trim()).filter(Boolean)));
+  }
+
   if (column.isSensitive) {
     const normalized = normalizeStringValue(value);
     if (!normalized.trim()) {
@@ -485,7 +513,7 @@ const validatePayload = (payload, schema, mode) => {
     const value = payload[column.name];
     if (value === undefined) continue;
 
-    if ((value === null || value === '') && !column.nullable) {
+    if ((value === null || value === '' || (Array.isArray(value) && !value.length)) && !column.nullable) {
       throw createHttpError(400, `${column.label} is required.`);
     }
   }
@@ -515,6 +543,126 @@ const buildPayload = async (schema, input = {}, mode, authContext) => {
   const payloadWithDefaults = applyAutomaticDefaults(payload, schema, mode, authContext);
   validatePayload(payloadWithDefaults, schema, mode);
   return payloadWithDefaults;
+};
+
+const applyForcedValues = (entityKey, payload) => ({
+  ...payload,
+  ...(getEntityConfig(entityKey).forcedValues || {}),
+});
+
+const insertRoleRightRows = async (db, schema, payload, currentRecordId = null, requireInsertedRows = true) => {
+  const menuIds = Array.isArray(payload.MenuId) ? payload.MenuId : [payload.MenuId];
+  const uniqueMenuIds = Array.from(new Set(menuIds.map((value) => Number(value)).filter(Number.isFinite)));
+
+  if (!uniqueMenuIds.length) {
+    throw createHttpError(400, 'Menu ID is required.');
+  }
+
+  const basePayload = {
+    ...payload,
+    CanDelete: false,
+  };
+
+  delete basePayload.MenuId;
+  delete basePayload[schema.primaryKey];
+
+  let affectedRows = 0;
+  for (const menuId of uniqueMenuIds) {
+    const duplicate = await db.queryRows(`
+      SELECT TOP 1 ${escapeIdentifier(schema.primaryKey)} AS Id
+      FROM dbo.${escapeIdentifier(schema.tableName)}
+      WHERE RoleId = @RoleId
+        AND MenuId = @MenuId
+        ${currentRecordId ? `AND ${escapeIdentifier(schema.primaryKey)} <> @CurrentRecordId` : ''}
+    `, {
+      RoleId: basePayload.RoleId,
+      MenuId: menuId,
+      ...(currentRecordId ? { CurrentRecordId: currentRecordId } : {}),
+    });
+
+    if (duplicate.length) {
+      continue;
+    }
+
+    const rowPayload = {
+      ...basePayload,
+      MenuId: menuId,
+    };
+    const query = buildInsertQuery(schema, rowPayload);
+    const result = await db.query(query.sqlText, query.params);
+    affectedRows += result.rowsAffected?.[0] || 0;
+  }
+
+  if (requireInsertedRows && !affectedRows) {
+    throw createHttpError(409, 'The selected role/menu rights already exist.');
+  }
+};
+
+const updateRoleRightRows = async (db, schema, recordId, payload) => {
+  const menuIds = Array.isArray(payload.MenuId) ? payload.MenuId : [payload.MenuId];
+  const uniqueMenuIds = Array.from(new Set(menuIds.map((value) => Number(value)).filter(Number.isFinite)));
+
+  if (!uniqueMenuIds.length) {
+    throw createHttpError(400, 'Menu ID is required.');
+  }
+
+  const currentRows = await db.queryRows(`
+    SELECT TOP 1 MenuId
+    FROM dbo.${escapeIdentifier(schema.tableName)}
+    WHERE ${escapeIdentifier(schema.primaryKey)} = @recordId
+  `, { recordId });
+
+  if (!currentRows.length) {
+    throw createHttpError(404, 'Record not found.');
+  }
+
+  const currentMenuId = Number(currentRows[0].MenuId);
+  let primaryMenuId = uniqueMenuIds.includes(currentMenuId) ? currentMenuId : null;
+
+  if (primaryMenuId === null) {
+    for (const menuId of uniqueMenuIds) {
+      const duplicate = await db.queryRows(`
+        SELECT TOP 1 ${escapeIdentifier(schema.primaryKey)} AS Id
+        FROM dbo.${escapeIdentifier(schema.tableName)}
+        WHERE RoleId = @RoleId
+          AND MenuId = @MenuId
+          AND ${escapeIdentifier(schema.primaryKey)} <> @recordId
+      `, {
+        RoleId: payload.RoleId,
+        MenuId: menuId,
+        recordId,
+      });
+
+      if (!duplicate.length) {
+        primaryMenuId = menuId;
+        break;
+      }
+    }
+  }
+
+  if (primaryMenuId === null) {
+    throw createHttpError(409, 'The selected role/menu rights already exist.');
+  }
+
+  const firstPayload = {
+    ...payload,
+    MenuId: primaryMenuId,
+    CanDelete: false,
+  };
+  const updateQuery = buildUpdateQuery(schema, firstPayload, recordId);
+  const result = await db.query(updateQuery.sqlText, updateQuery.params);
+
+  if (!result.rowsAffected?.[0]) {
+    throw createHttpError(404, 'Record not found.');
+  }
+
+  if (uniqueMenuIds.length > 1) {
+    await insertRoleRightRows(db, schema, {
+      ...payload,
+      MenuId: uniqueMenuIds.filter((menuId) => menuId !== primaryMenuId),
+      CanDelete: false,
+    }, recordId, false);
+  }
 };
 
 const buildInsertQuery = (schema, payload) => {
@@ -578,7 +726,7 @@ const buildUpdateQuery = (schema, payload, recordId) => {
 
 const createRecord = async (entityKey, input, authContext) => {
   const schema = await getEntitySchema(entityKey);
-  const payload = await buildPayload(schema, input, 'create', authContext);
+  const payload = applyForcedValues(entityKey, await buildPayload(schema, input, 'create', authContext));
   if (entityKey === 'report-menus') {
     const query = buildInsertQueryWithOutput(schema, payload);
     await authDbService.transaction(async (db) => {
@@ -589,6 +737,13 @@ const createRecord = async (entityKey, input, authContext) => {
       }
 
       await syncReportMenuSidebarMenuById(db, insertedRecordId);
+    });
+    return getEntityBootstrap(entityKey);
+  }
+
+  if (entityKey === 'role-rights') {
+    await authDbService.transaction(async (db) => {
+      await insertRoleRightRows(db, schema, payload);
     });
     return getEntityBootstrap(entityKey);
   }
@@ -605,9 +760,9 @@ const updateRecord = async (entityKey, recordId, input, authContext) => {
     throw createHttpError(400, 'A valid record ID is required for update.');
   }
 
-  const payload = await buildPayload(schema, input, 'update', authContext);
-  const query = buildUpdateQuery(schema, payload, numericRecordId);
+  const payload = applyForcedValues(entityKey, await buildPayload(schema, input, 'update', authContext));
   if (entityKey === 'report-menus') {
+    const query = buildUpdateQuery(schema, payload, numericRecordId);
     await authDbService.transaction(async (db) => {
       const result = await db.query(query.sqlText, query.params);
       if (!result.rowsAffected?.[0]) {
@@ -620,6 +775,14 @@ const updateRecord = async (entityKey, recordId, input, authContext) => {
     return getEntityBootstrap(entityKey);
   }
 
+  if (entityKey === 'role-rights') {
+    await authDbService.transaction(async (db) => {
+      await updateRoleRightRows(db, schema, numericRecordId, payload);
+    });
+    return getEntityBootstrap(entityKey);
+  }
+
+  const query = buildUpdateQuery(schema, payload, numericRecordId);
   const result = await authDbService.query(query.sqlText, query.params);
 
   if (!result.rowsAffected?.[0]) {

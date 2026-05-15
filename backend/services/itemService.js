@@ -5,7 +5,9 @@ const extractSapError = (error, fallback) =>
   error.response?.data?.error?.message?.value ||
   error.response?.data?.error?.message ||
   error.response?.data?.detail ||
+  error.response?.data ||
   error.message ||
+  error.code ||
   fallback;
 
 const createItem = async (payload) => {
@@ -22,6 +24,7 @@ const createItem = async (payload) => {
     const sapError = new Error(detail);
     sapError.response = error.response;
     sapError.code = error.code;
+    sapError.cause = error;
     throw sapError;
   }
 };
@@ -40,6 +43,7 @@ const updateItem = async (itemCode, payload) => {
     const sapError = new Error(detail);
     sapError.response = error.response;
     sapError.code = error.code;
+    sapError.cause = error;
     throw sapError;
   }
 };

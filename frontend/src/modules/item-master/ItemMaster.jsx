@@ -12,6 +12,7 @@ import AttachmentsTab    from "./components/AttachmentsTab";
 import LookupField       from "./components/LookupField";
 import ItemGroupSetup     from "./components/ItemGroupSetup";
 import ManufacturerSetup  from "./components/ManufacturerSetup";
+import { useAuth } from "../../auth/AuthContext";
 import {
   createItem, getItem, updateItem, checkItemCodeExists,
   fetchItemGroups, fetchVendors, fetchPriceLists, fetchUoMGroups, fetchItemCodePrefixes,
@@ -137,6 +138,7 @@ const EMPTY_FORM = {
 };
 
 export default function ItemMaster() {
+  const { user } = useAuth();
   const [mode, setMode]       = useState(MODES.ADD);
   const [tab, setTab]         = useState(0);
   const [form, setForm]       = useState(EMPTY_FORM);
@@ -619,14 +621,14 @@ export default function ItemMaster() {
     
     setLoading(true);
     try {
-      await createItem(buildPayload(form, prices, barcodes, uoms, prefVendors));
+      await createItem(buildPayload(form, prices, barcodes, uoms, prefVendors, user));
       showAlert("success", `Item "${form.ItemCode}" created successfully.`);
       setInitialForm(form); // Mark as saved
       setMode(MODES.UPDATE);
     } catch (err) {
       showAlert("error", extractSapError(err));
     } finally { setLoading(false); }
-  }, [form, prices, barcodes, uoms, prefVendors, validateItemForm, showAlert]);
+  }, [form, prices, barcodes, uoms, prefVendors, user, validateItemForm, showAlert]);
 
   // Handle Update logic
   const handleUpdate = useCallback(async () => {
@@ -638,13 +640,13 @@ export default function ItemMaster() {
     
     setLoading(true);
     try {
-      await updateItem(form.ItemCode.trim(), buildPayload(form, prices, barcodes, uoms, prefVendors));
+      await updateItem(form.ItemCode.trim(), buildPayload(form, prices, barcodes, uoms, prefVendors, user));
       showAlert("success", `Item "${form.ItemCode}" updated successfully.`);
       setInitialForm(form); // Mark as saved
     } catch (err) {
       showAlert("error", extractSapError(err));
     } finally { setLoading(false); }
-  }, [form, prices, barcodes, uoms, prefVendors, validateItemForm, showAlert]);
+  }, [form, prices, barcodes, uoms, prefVendors, user, validateItemForm, showAlert]);
 
   // handleSave logic
   const handleSave = useCallback(() => {
@@ -1001,12 +1003,16 @@ const extractSapError = (err) =>
   err.message ||
   "An error occurred.";
 
-function buildPayload(form, prices = [], barcodes = [], uoms = [], prefVendors = []) {
+function buildPayload(form, prices = [], barcodes = [], uoms = [], prefVendors = [], currentUser = null) {
   const opt = (v) => v !== "" && v != null;
   const num = (v) => v !== "" && v != null && !isNaN(v) ? Number(v) : undefined;
+  const currentUserName = String(currentUser?.fullName || currentUser?.username || "").trim();
+  const currentUserCode = currentUser?.userId != null ? String(currentUser.userId).trim() : "";
   const p = {};
   p.ItemCode  = form.ItemCode;
   p.ItemName  = form.ItemName;
+  if (currentUserName) p.U_WEBUSER = currentUserName;
+  if (currentUserCode) p.U_WEBUSERCODE = currentUserCode;
   if (form.ItemCodePrefix && form.ItemCodePrefix !== "Manual" && !Number.isNaN(Number(form.ItemCodePrefix))) {
     p.Series = Number(form.ItemCodePrefix);
   }

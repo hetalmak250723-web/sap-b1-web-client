@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useMatch, useNavigate, useParams } from 'react-router-dom';
 import {
   createAdminRecord,
@@ -6,6 +6,9 @@ import {
   fetchAdminEntityBootstrap,
   updateAdminRecord,
 } from '../api/adminPanelApi';
+
+const EMPTY_RECORDS = [];
+const EMPTY_LOOKUPS = {};
 
 const formatDateTimeForInput = (value) => {
   if (!value) return '';
@@ -22,6 +25,13 @@ const formatDateTimeForInput = (value) => {
 };
 
 const formatCellValue = (value, column, lookupLabels) => {
+  if (Array.isArray(value)) {
+    const labels = value
+      .map((entry) => lookupLabels?.get(String(entry)) || String(entry))
+      .filter(Boolean);
+    return labels.length ? labels.join(', ') : '-';
+  }
+
   if (lookupLabels?.has(String(value))) {
     return lookupLabels.get(String(value));
   }
@@ -49,6 +59,10 @@ const buildEmptyForm = (schema) =>
     (schema?.columns || [])
       .filter((column) => column.editable)
       .map((column) => {
+        if (column.multiSelect) {
+          return [column.name, []];
+        }
+
         if (column.dataType === 'bit') {
           return [column.name, column.nullable ? '' : false];
         }
@@ -64,6 +78,11 @@ const buildFormFromRecord = (schema, record) => {
     if (!column.editable) continue;
 
     const value = record?.[column.name];
+    if (column.multiSelect) {
+      nextForm[column.name] = value === null || value === undefined || value === '' ? [] : [String(value)];
+      continue;
+    }
+
     if (column.dataType === 'bit') {
       nextForm[column.name] = column.nullable
         ? (value === null || value === undefined ? '' : String(Boolean(value)))
@@ -82,6 +101,103 @@ const buildFormFromRecord = (schema, record) => {
   return nextForm;
 };
 
+const AdminMultiSelectDropdown = ({ column, value, options, onChange }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const selectedValues = useMemo(() => (Array.isArray(value) ? value.map(String) : []), [value]);
+  const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
+  const optionValues = useMemo(() => options.map((option) => String(option.value)), [options]);
+  const allSelected = optionValues.length > 0 && optionValues.every((optionValue) => selectedSet.has(optionValue));
+  const fieldId = `admin-field-${column.name}`;
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const closeOnOutsideClick = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeOnOutsideClick);
+  }, [isOpen]);
+
+  const updateSelection = (nextValues) => {
+    onChange(column, nextValues);
+  };
+
+  const toggleValue = (optionValue) => {
+    const nextSet = new Set(selectedSet);
+    if (nextSet.has(optionValue)) {
+      nextSet.delete(optionValue);
+    } else {
+      nextSet.add(optionValue);
+    }
+
+    updateSelection(optionValues.filter((valueItem) => nextSet.has(valueItem)));
+  };
+
+  const toggleAll = () => {
+    updateSelection(allSelected ? [] : optionValues);
+  };
+
+  const selectedLabel = (() => {
+    if (!selectedValues.length) return `Select ${column.label}`;
+    if (allSelected) return `All ${column.label} selected`;
+    if (selectedValues.length === 1) {
+      const selectedOption = options.find((option) => String(option.value) === selectedValues[0]);
+      return selectedOption?.label || selectedValues[0];
+    }
+    return `${selectedValues.length} selected`;
+  })();
+
+  return (
+    <div className="admin-multi-select" ref={dropdownRef}>
+      <button
+        id={fieldId}
+        type="button"
+        className={`admin-multi-select__button${isOpen ? ' is-open' : ''}`}
+        onClick={() => setIsOpen((current) => !current)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
+        <span className="admin-multi-select__value">{selectedLabel}</span>
+        <span className="admin-multi-select__caret" aria-hidden="true">v</span>
+      </button>
+
+      {isOpen ? (
+        <div className="admin-multi-select__panel" role="listbox" aria-labelledby={fieldId}>
+          <label className="admin-multi-select__option admin-multi-select__option--select-all">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+            />
+            <span>Select All</span>
+          </label>
+
+          {options.length ? options.map((option) => {
+            const optionValue = String(option.value);
+            return (
+              <label key={`${column.name}-${optionValue}`} className="admin-multi-select__option">
+                <input
+                  type="checkbox"
+                  checked={selectedSet.has(optionValue)}
+                  onChange={() => toggleValue(optionValue)}
+                />
+                <span>{option.label}</span>
+              </label>
+            );
+          }) : (
+            <div className="admin-multi-select__empty">No options found.</div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 const renderField = (column, value, selectedRecord, isCreating, lookups, handleFieldChange) => {
   const fieldId = `admin-field-${column.name}`;
 
@@ -95,6 +211,21 @@ const renderField = (column, value, selectedRecord, isCreating, lookups, handleF
           value={isCreating ? 'Auto generated' : selectedRecord?.[column.name] ?? ''}
           readOnly
         />
+      </div>
+    );
+  }
+
+  if (column.multiSelect) {
+    return (
+      <div key={column.name} className="admin-form-field">
+        <label htmlFor={fieldId}>{column.label}</label>
+        <AdminMultiSelectDropdown
+          column={column}
+          value={value}
+          options={lookups[column.name] || []}
+          onChange={handleFieldChange}
+        />
+        {column.helpText ? <small>{column.helpText}</small> : null}
       </div>
     );
   }
@@ -210,8 +341,8 @@ const AdminPanelEntity = () => {
 
   const schema = bootstrap?.schema || null;
   const primaryKey = schema?.primaryKey || '';
-  const records = bootstrap?.records || [];
-  const lookups = bootstrap?.lookups || {};
+  const records = bootstrap?.records || EMPTY_RECORDS;
+  const lookups = bootstrap?.lookups || EMPTY_LOOKUPS;
 
   useEffect(() => {
     if (location.state?.notice) {
@@ -264,7 +395,7 @@ const AdminPanelEntity = () => {
     const listColumnNames = bootstrap?.entity?.listColumns || schema.entity?.listColumns || [];
     return listColumnNames
       .map((columnName) => schema.columns.find((column) => column.name === columnName))
-      .filter(Boolean);
+      .filter((column) => column && !column.hidden);
   }, [bootstrap?.entity?.listColumns, schema]);
 
   const filteredRecords = useMemo(() => {
@@ -560,7 +691,9 @@ const AdminPanelEntity = () => {
 
           <form className="admin-form-grid" onSubmit={handleSubmit}>
             {(schema?.columns || []).map((column) =>
-              renderField(column, formData[column.name], selectedRecord, pageMode === 'create', lookups, handleFieldChange)
+              column.hidden
+                ? null
+                : renderField(column, formData[column.name], selectedRecord, pageMode === 'create', lookups, handleFieldChange)
             )}
 
             <div className="admin-form-actions">

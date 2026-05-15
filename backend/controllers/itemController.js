@@ -194,7 +194,14 @@ const createItem = async (req, res) => {
       || err.response?.data?.error?.message
       || err.message;
     const isHangUp = err.code === "ECONNRESET" || err.code === "EPIPE" || err.message?.includes("socket hang up");
-    console.error("[SAP createItem error]", sapError, JSON.stringify(err.response?.data));
+    console.error("[SAP createItem error]", {
+      message: sapError,
+      code: err.code,
+      status: err.response?.status,
+      response: err.response?.data,
+      causeMessage: err.cause?.message,
+      causeCode: err.cause?.code,
+    });
     res.status(err.response?.status || (isHangUp ? 502 : 500)).json({
       message: isHangUp
         ? "SAP server closed the connection. The payload may contain an invalid field value. Check server logs."
@@ -370,7 +377,14 @@ const updateItem = async (req, res) => {
       || err.response?.data?.error?.message
       || err.message;
     const isHangUp = err.code === "ECONNRESET" || err.code === "EPIPE" || err.message?.includes("socket hang up");
-    console.error("[SAP updateItem error]", sapError, JSON.stringify(err.response?.data));
+    console.error("[SAP updateItem error]", {
+      message: sapError,
+      code: err.code,
+      status: err.response?.status,
+      response: err.response?.data,
+      causeMessage: err.cause?.message,
+      causeCode: err.cause?.code,
+    });
     res.status(err.response?.status || (isHangUp ? 502 : 500)).json({
       message: isHangUp
         ? "SAP server closed the connection. The payload may contain an invalid field value. Check server logs."
