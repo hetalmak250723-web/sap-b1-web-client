@@ -1462,10 +1462,10 @@ function PurchaseOrder() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className="po-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
-      <div className="po-toolbar">
+      <div className="po-toolbar sap-document-toolbar">
         <span className="po-toolbar__title">Purchase Quotation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
           {primaryActionLabel}

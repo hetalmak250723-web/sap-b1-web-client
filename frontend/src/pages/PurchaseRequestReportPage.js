@@ -345,14 +345,14 @@ function PurchaseRequestReportPage() {
   };
 
   return (
-    <div className="prr-page">
+    <div className="prr-page sap-report-page">
       {!isShowingResults ? (
         <div
-          className={`prr-window${criteriaWindow.isMinimized ? " is-minimized" : ""}${criteriaWindow.isMaximized ? " is-maximized" : ""}`}
+          className={`prr-window sap-report-window${criteriaWindow.isMinimized ? " is-minimized" : ""}${criteriaWindow.isMaximized ? " is-maximized" : ""}`}
           {...criteriaWindow.windowProps}
           style={criteriaWindowStyle}
         >
-          <div className="prr-titlebar" {...criteriaWindow.titleBarProps}>
+          <div className="prr-titlebar sap-report-titlebar" {...criteriaWindow.titleBarProps}>
             <span>Purchase Request Report - Selection Criteria</span>
             <div className="prr-titlebar-actions">
               <button
@@ -363,7 +363,7 @@ function PurchaseRequestReportPage() {
               />
               <button
                 type="button"
-                aria-label={criteriaWindow.isMaximized ? "Restore Down" : "Maximize"}
+                aria-label={criteriaWindow.isMaximized ? "Restore" : "Maximize"} title={criteriaWindow.isMaximized ? "Restore" : "Maximize"}
                 className="prr-titlebar-btn"
                 onClick={criteriaWindow.toggleMaximize}
               />
@@ -778,11 +778,11 @@ function PurchaseRequestReportPage() {
 
       {isShowingResults ? (
         <div
-          className={`prr-window${reportWindow.isMinimized ? " is-minimized" : ""}${reportWindow.isMaximized ? " is-maximized" : ""}`}
+          className={`prr-window sap-report-window${reportWindow.isMinimized ? " is-minimized" : ""}${reportWindow.isMaximized ? " is-maximized" : ""}`}
           {...reportWindow.windowProps}
           style={reportWindowStyle}
         >
-          <div className="prr-titlebar" {...reportWindow.titleBarProps}>
+          <div className="prr-titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
             <span>Purchase Request Report</span>
             <div className="prr-titlebar-actions">
               <button
@@ -793,7 +793,7 @@ function PurchaseRequestReportPage() {
               />
               <button
                 type="button"
-                aria-label={reportWindow.isMaximized ? "Restore Down" : "Maximize"}
+                aria-label={reportWindow.isMaximized ? "Restore" : "Maximize"} title={reportWindow.isMaximized ? "Restore" : "Maximize"}
                 className="prr-titlebar-btn"
                 onClick={reportWindow.toggleMaximize}
               />

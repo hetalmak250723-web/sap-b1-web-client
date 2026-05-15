@@ -1748,10 +1748,10 @@ function ARInvoicePage() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="del-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className="del-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
-      <div className="del-toolbar">
+      <div className="del-toolbar sap-document-toolbar">
         <span className="del-toolbar__title">A/R Invoice{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="del-btn del-btn--primary" disabled={pageState.posting || !isDocumentEditable}>
           {primaryActionLabel}

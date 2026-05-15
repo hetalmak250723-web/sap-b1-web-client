@@ -46,8 +46,26 @@ const APP_MENU_DEFINITIONS = [
   { key: 'inventory-transfer', parentKey: 'inventory', menuName: 'Inventory Transfer', menuPath: '/inventory-transfer', icon: 'transfer', sortOrder: 4 },
 
   { key: 'banking', menuName: 'Banking', icon: 'banking', sortOrder: 6 },
-  { key: 'incoming-payments', parentKey: 'banking', menuName: 'Incoming Payments', menuPath: '/incoming-payments', icon: 'payments', sortOrder: 1 },
-  { key: 'outgoing-payments', parentKey: 'banking', menuName: 'Outgoing Payments', menuPath: '/outgoing-payments', icon: 'payments', sortOrder: 2 },
+  {
+    key: 'incoming-payments',
+    parentKey: 'banking',
+    menuName: 'Incoming Payments',
+    aliases: ['Incoming Payment'],
+    menuPath: '/incoming-payments',
+    legacyPaths: ['/incoming-payment', '/banking/incoming-payment', '/banking/incoming-payments'],
+    icon: 'payments',
+    sortOrder: 1,
+  },
+  {
+    key: 'outgoing-payments',
+    parentKey: 'banking',
+    menuName: 'Outgoing Payments',
+    aliases: ['Outgoing Payment'],
+    menuPath: '/outgoing-payments',
+    legacyPaths: ['/outgoing-payment', '/banking/outgoing-payment', '/banking/outgoing-payments'],
+    icon: 'payments',
+    sortOrder: 2,
+  },
 
   { key: 'reports', menuName: 'Reports', icon: 'reports', sortOrder: 7 },
   { key: 'sales-analysis', parentKey: 'reports', menuName: 'Sales Analysis', menuPath: '/reports/sales/analysis', icon: 'report', sortOrder: 1 },
@@ -77,13 +95,13 @@ const getExistingMenus = async (db) => db.queryRows(`
 `);
 
 const findExistingMenu = (menus, definition) => {
-  const menuPath = normalizePath(definition.menuPath);
-  if (menuPath) {
-    return menus.find((menu) => normalizePath(menu.MenuPath) === menuPath) || null;
+  const menuPaths = new Set([definition.menuPath, ...(definition.legacyPaths || [])].map(normalizePath).filter(Boolean));
+  if (menuPaths.size) {
+    return menus.find((menu) => menuPaths.has(normalizePath(menu.MenuPath))) || null;
   }
 
   const menuNames = new Set([definition.menuName, ...(definition.aliases || [])].map(normalizeName));
-  return menus.find((menu) => !normalizePath(menu.MenuPath) && menuNames.has(normalizeName(menu.MenuName))) || null;
+  return menus.find((menu) => menuNames.has(normalizeName(menu.MenuName))) || null;
 };
 
 const insertMenu = async (db, definition, parentId) => {
@@ -114,9 +132,11 @@ const insertMenu = async (db, definition, parentId) => {
   return inserted.recordset?.[0] || null;
 };
 
-const updateMenuMetadata = async (db, menu, definition, parentId) => {
+const updateMenuMetadata = async (db, menu, definition, parentId, shouldUseCanonicalPath) => {
   const nextMenuName = normalizeText(menu.MenuName) || normalizeText(definition.menuName);
-  const nextMenuPath = normalizeText(menu.MenuPath) || normalizeText(definition.menuPath) || null;
+  const nextMenuPath = shouldUseCanonicalPath
+    ? (normalizeText(definition.menuPath) || null)
+    : (normalizeText(menu.MenuPath) || normalizeText(definition.menuPath) || null);
   const nextIcon = normalizeText(menu.Icon) || normalizeText(definition.icon) || null;
   const nextSortOrder = Number.isFinite(Number(menu.SortOrder))
     ? Number(menu.SortOrder)
@@ -177,8 +197,13 @@ const syncApplicationSidebarMenus = async (db) => {
     }
 
     const existingMenu = findExistingMenu(existingMenus, definition);
+    const shouldUseCanonicalPath = Boolean(
+      existingMenu
+      && definition.menuPath
+      && normalizePath(existingMenu.MenuPath) !== normalizePath(definition.menuPath),
+    );
     const syncedMenu = existingMenu
-      ? await updateMenuMetadata(db, existingMenu, definition, parentId)
+      ? await updateMenuMetadata(db, existingMenu, definition, parentId, shouldUseCanonicalPath)
       : await insertMenu(db, definition, parentId);
 
     if (!existingMenu) {

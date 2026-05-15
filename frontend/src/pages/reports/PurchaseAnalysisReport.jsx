@@ -842,12 +842,12 @@ export default function PurchaseAnalysisReport() {
 
     return (
       <div
-        className={`sales-analysis-window sales-analysis-window--report${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
+        className={`sales-analysis-window sales-analysis-window--report sap-report-window${reportWindow.isMinimized ? ' is-minimized' : ''}${reportWindow.isMaximized ? ' is-maximized' : ''}`}
         {...reportWindow.windowProps}
         style={reportStyle}
       >
-        <div className="sales-analysis-window__titlebar" {...reportWindow.titleBarProps}>
-          <div className="sales-analysis-window__title">
+        <div className="sales-analysis-window__titlebar sap-report-titlebar" {...reportWindow.titleBarProps}>
+          <div className="sales-analysis-window__title sap-report-title">
             {result?.title || 'Purchase Analysis Report'}
           </div>
           <div className="sales-analysis-window__controls">
@@ -858,7 +858,7 @@ export default function PurchaseAnalysisReport() {
             >
               {reportWindow.isMinimized ? '□' : '-'}
             </button>
-            <button type="button" aria-label={reportWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
+            <button type="button" aria-label={reportWindow.isMaximized ? 'Restore' : 'Maximize'} title={reportWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={reportWindow.toggleMaximize}>[]</button>
             <button type="button" aria-label="Close" onClick={handleCloseReportWindow}>x</button>
           </div>
         </div>
@@ -885,18 +885,18 @@ export default function PurchaseAnalysisReport() {
   };
 
   return (
-    <div className="sar-page" style={{ overflow: 'hidden', position: 'relative', width: '100%', height: '100%' }}>
+    <div className="sar-page sap-report-page" style={{ overflow: 'hidden', position: 'relative', width: '100%', height: '100%' }}>
       {message && <div className="im-alert im-alert--error" style={{ margin: "10px 12px 0", position: "absolute", zIndex: 1000, top: 0, left: 0, right: 0 }}>{message}</div>}
 
       <div
-        className={`sales-analysis-window${criteriaWindow.isMinimized ? ' is-minimized' : ''}${criteriaWindow.isMaximized ? ' is-maximized' : ''}`}
+        className={`sales-analysis-window sap-report-window${criteriaWindow.isMinimized ? ' is-minimized' : ''}${criteriaWindow.isMaximized ? ' is-maximized' : ''}`}
         {...criteriaWindow.windowProps}
         style={{
           ...(criteriaWindow.windowProps?.style || {}),
         }}
       >
-        <div className="sales-analysis-window__titlebar" {...criteriaWindow.titleBarProps}>
-          <div className="sales-analysis-window__title">Purchase Analysis Report - Selection Criteria</div>
+        <div className="sales-analysis-window__titlebar sap-report-titlebar" {...criteriaWindow.titleBarProps}>
+          <div className="sales-analysis-window__title sap-report-title">Purchase Analysis Report - Selection Criteria</div>
           <div className="sales-analysis-window__controls">
             <button
               type="button"
@@ -905,7 +905,7 @@ export default function PurchaseAnalysisReport() {
             >
               {criteriaWindow.isMinimized ? '□' : '-'}
             </button>
-            <button type="button" aria-label={criteriaWindow.isMaximized ? 'Restore Down' : 'Maximize'} onClick={criteriaWindow.toggleMaximize}>[]</button>
+            <button type="button" aria-label={criteriaWindow.isMaximized ? 'Restore' : 'Maximize'} title={criteriaWindow.isMaximized ? 'Restore' : 'Maximize'} onClick={criteriaWindow.toggleMaximize}>[]</button>
             <button type="button" aria-label="Close" onClick={handleCloseCriteriaWindow}>x</button>
           </div>
         </div>

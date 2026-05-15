@@ -1391,11 +1391,11 @@ function APCreditMemo() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="po-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className="po-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* ── Toolbar ── */}
-      <div className="po-toolbar">
-        <span className="po-toolbar__title">A/P Credit Memo{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
+      <div className="po-toolbar sap-document-toolbar">
+        <span className="po-toolbar__title sap-document-toolbar__title">A/P Credit Memo{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
           {primaryActionLabel}
         </button>
@@ -1729,7 +1729,7 @@ function APCreditMemo() {
 
             {/* ══ ACTION BUTTONS ════════════════════════════════════════════ */}
             {false && (
-            <div className="po-toolbar" style={{ justifyContent: 'space-between', marginTop: 10 }}>
+            <div className="po-toolbar sap-document-toolbar" style={{ justifyContent: 'space-between', marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button type="submit" className="po-btn po-btn--primary" disabled={pageState.posting}>
                   {secondaryActionLabel}

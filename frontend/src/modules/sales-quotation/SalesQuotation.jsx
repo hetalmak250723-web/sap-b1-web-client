@@ -1789,10 +1789,10 @@ function SalesQuotation() {
 
   // ── render ────────────────────────────────────────────────────────────────
   return (
-    <form className="so-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
+    <form className="so-page sap-document-page" onSubmit={handleSubmit} onChangeCapture={markDirty}>
 
       {/* toolbar */}
-      <div className="so-toolbar">
+      <div className="so-toolbar sap-document-toolbar">
         <span className="so-toolbar__title">Sales Quotation{currentDocEntry ? ` — #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="so-btn so-btn--primary" disabled={pageState.posting}>
           {primaryActionLabel}

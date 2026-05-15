@@ -235,7 +235,7 @@ const SidebarMenuNode = ({ menu, collapsed, openState, setOpenState, pathname, d
 export default function Sidebar() {
   const location = useLocation();
   const { menus, company } = useAuth();
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = false;
   const [openState, setOpenState] = useState({});
 
   const sidebarMenus = useMemo(
@@ -247,24 +247,13 @@ export default function Sidebar() {
     <aside className={`sidebar-shell${collapsed ? ' is-collapsed' : ''}`}>
       <div className="sidebar">
         <div className="sidebar__top">
-          <button
-            type="button"
-            className="sidebar__collapse-btn"
-            onClick={() => setCollapsed((value) => !value)}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <span className="sidebar__collapse-icon">{collapsed ? '>' : '<'}</span>
-          </button>
-
-          {!collapsed ? (
-            <div className="sidebar__brand">
-              <div className="sidebar__brand-mark">SB</div>
-              <div>
-                <div className="sidebar__brand-title">SAP Client</div>
-                <div className="sidebar__brand-subtitle">{company?.dbName || 'Business One'}</div>
-              </div>
+          <div className="sidebar__brand">
+            <div className="sidebar__brand-mark">SB</div>
+            <div>
+              <div className="sidebar__brand-title">SAP Client</div>
+              <div className="sidebar__brand-subtitle">{company?.dbName || 'Business One'}</div>
             </div>
-          ) : null}
+          </div>
         </div>
 
         <div className="sidebar__content">

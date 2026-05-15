@@ -478,8 +478,8 @@ function ReportsStudioPage() {
   }, []);
 
   return (
-    <div className="rs-window">
-      <div className="rs-window__titlebar">
+    <div className="rs-window sap-report-page sap-report-window">
+      <div className="rs-window__titlebar sap-report-titlebar">
         <span>Report Layout Manager - SAP B1 Dynamic Report Manager</span>
       </div>
 

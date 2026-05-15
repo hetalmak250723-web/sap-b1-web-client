@@ -62,6 +62,7 @@ const LoginPage = () => {
 
   const selectedCompany =
     (Array.isArray(publicCompanies) ? publicCompanies : []).find((company) => company.companyId === selectedCompanyId) || null;
+  const canSubmitLogin = form.username.trim() && form.password && !isSigningIn;
 
   const filteredCompanies = useMemo(() => {
     const companies = Array.isArray(publicCompanies) ? publicCompanies : [];
@@ -199,7 +200,8 @@ const LoginPage = () => {
               <button
                 type="submit"
                 className="sap-button sap-button--primary"
-                disabled={isSigningIn || isLoadingCompanies || !form.username || !form.password}
+                disabled={!canSubmitLogin}
+                aria-busy={isSigningIn}
               >
                 {isSigningIn ? 'Working...' : 'OK'}
               </button>
@@ -217,7 +219,7 @@ const LoginPage = () => {
                 type="button"
                 className="sap-button"
                 onClick={() => setIsChooserOpen(true)}
-                disabled={isSigningIn || isLoadingCompanies}
+                disabled={isSigningIn}
               >
                 Change Company
               </button>
@@ -310,7 +312,8 @@ const LoginPage = () => {
                 type="button"
                 className="sap-button sap-button--primary"
                 onClick={handleChooserConfirm}
-                disabled={isSigningIn || !form.username || !form.password || !selectedCompanyId}
+                disabled={!canSubmitLogin || !selectedCompanyId}
+                aria-busy={isSigningIn}
               >
                 {isSigningIn ? 'Working...' : 'OK'}
               </button>
