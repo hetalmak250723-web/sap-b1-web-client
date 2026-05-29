@@ -562,6 +562,156 @@
 }
 .po-grid__input--sm { width: 60px; }
 
+/* Purchase Order Contents uses the same matrix class family as Sales pages.
+   Keep these scoped so the PO route is stable even when Sales CSS is lazy-loaded separately. */
+.po-page .so-tab-panel {
+  margin: 0 12px 12px;
+  background: #fff;
+  border: 1px solid #c8d0da;
+  border-top: none;
+  border-radius: 0 0 3px 3px;
+  padding: 14px;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: visible;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.po-page .so-grid-wrap {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.po-page .so-grid-wrap--contents {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #d7dde5;
+  border-radius: 3px;
+  position: relative;
+}
+
+.po-page .so-grid-wrap__scroller {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+}
+
+.po-page .so-grid-wrap__scroller::-webkit-scrollbar {
+  height: 12px;
+  width: 12px;
+}
+
+.po-page .so-grid-wrap__scroller::-webkit-scrollbar-track {
+  background: #eef3f8;
+}
+
+.po-page .so-grid-wrap__scroller::-webkit-scrollbar-thumb {
+  background: #a0aab4;
+  border: 2px solid #eef3f8;
+  border-radius: 6px;
+}
+
+.po-page .so-grid {
+  border-collapse: collapse;
+  color: #172334;
+  font-family: "Bahnschrift", "Segoe UI", "Trebuchet MS", Arial, sans-serif;
+  font-size: 11px;
+  box-sizing: border-box;
+}
+
+.po-page .so-grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #e9eff5;
+  border: 1px solid #c8d2dc;
+  padding: 3px 6px;
+  text-align: left;
+  font-weight: 700;
+  color: #123b63;
+  white-space: nowrap;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.po-page .so-grid td {
+  border: 1px solid #dfe6ee;
+  padding: 2px 4px;
+  vertical-align: middle;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.po-page .so-grid tbody tr:nth-child(even) {
+  background: #fafbfd;
+}
+
+.po-page .so-grid tbody tr:hover,
+.po-page .so-grid tbody tr:nth-child(even):hover {
+  background: #f3f8fd;
+}
+
+.po-page .so-grid__input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 22px;
+  padding: 0 4px;
+  font-size: 12px;
+  font-family: "Bahnschrift", "Segoe UI", "Trebuchet MS", Arial, sans-serif;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 2px;
+  color: #172334;
+  text-align: right;
+  box-sizing: border-box;
+}
+
+.po-page select.so-grid__input {
+  min-width: 0;
+  text-align: left;
+}
+
+.po-page .so-grid__input:focus {
+  outline: none;
+  border-color: #006fb8;
+  background: #fff;
+  box-shadow: none;
+}
+
+.po-page .so-grid__input:disabled,
+.po-page .so-grid__input:read-only {
+  background: #f5f8fc;
+  color: #5d6f82;
+}
+
+.po-page .so-grid__cell--muted {
+  color: #6d7782;
+}
+
+.po-page .so-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #003366;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e0e6ed;
+}
+
 @media (max-width: 1199.98px) {
   .po-layout.is-sidebar-open {
     grid-template-columns: minmax(0, 1fr);
