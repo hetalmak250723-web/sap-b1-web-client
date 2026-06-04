@@ -1,0 +1,466 @@
+.pm-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 100100;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 72px 16px 24px;
+  background: rgba(0, 0, 0, 0.32);
+  color: #1a1a1a;
+  font-family: "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+}
+
+.pm-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #9da7b2;
+  border-radius: 2px;
+  background: #f0f2f5;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+}
+
+.pm-titlebar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 30px;
+  padding: 3px 4px 3px 10px;
+  border-bottom: 4px solid #e4a200;
+  background: linear-gradient(180deg, #f8fbfd 0%, #dfe6ee 100%);
+  color: #1d2c40;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pm-window-controls {
+  display: flex;
+  gap: 2px;
+}
+
+.pm-window-controls button {
+  width: 22px;
+  height: 20px;
+  border: 1px solid #9099a3;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffffff 0%, #dbe3ea 100%);
+  color: #202a36;
+  font: inherit;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0;
+}
+
+.pm-body {
+  min-height: 0;
+  padding: 8px 10px 0;
+  overflow: auto;
+  background: #f6f7f9;
+}
+
+.pm-field {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  margin: 0 0 4px;
+}
+
+.pm-field > span {
+  color: #111;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.pm-field input,
+.pm-field select,
+.pm-table input,
+.pm-total-line input,
+.pm-paid-field input {
+  width: 100%;
+  height: 22px;
+  min-height: 22px;
+  border: 1px solid #a0aab4;
+  border-radius: 2px;
+  background: #ffffff;
+  color: #1a1a1a;
+  font: inherit;
+  font-size: 12px;
+  line-height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+}
+
+.pm-field input:read-only,
+.pm-paid-field input:read-only {
+  background: #edf0f3;
+  color: #333;
+}
+
+.pm-money-input,
+.pm-total-line input,
+.pm-paid-field input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pm-tabs {
+  display: flex;
+  align-items: flex-end;
+  height: 27px;
+  margin-top: 8px;
+  border-bottom: 1px solid #7f8790;
+}
+
+.pm-tabs button {
+  min-width: 104px;
+  height: 27px;
+  border: 1px solid #a0aab4;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #f9fbfd 0%, #dce3ea 100%);
+  color: #111;
+  font: inherit;
+  cursor: pointer;
+}
+
+.pm-tabs button.is-active {
+  height: 29px;
+  margin-bottom: -1px;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.pm-panel-shell {
+  min-height: 266px;
+  border: 1px solid #7f8790;
+  border-top: 0;
+  background: #ffffff;
+}
+
+.pm-tab-panel {
+  position: relative;
+  min-height: 266px;
+  padding: 10px;
+  box-sizing: border-box;
+}
+
+.pm-account-with-name {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.pm-account-with-name > span {
+  min-width: 0;
+  color: #111;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-inline-lookup.sap-lookup {
+  width: 160px;
+}
+
+.pm-checkbox-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  margin: 0 0 6px;
+  color: #111;
+  font-weight: 400;
+}
+
+.pm-checkbox-line input,
+.pm-table input[type="checkbox"] {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  padding: 0;
+}
+
+.pm-table-wrap {
+  height: 150px;
+  overflow: auto;
+  border: 1px solid #c5ccd4;
+  background: #ffffff;
+}
+
+.pm-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.pm-table th,
+.pm-table td {
+  height: 24px;
+  border: 1px solid #d7dde4;
+  padding: 1px 3px;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.pm-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #e8edf2;
+  color: #1a1a1a;
+  font-size: 11px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.pm-table td:first-child,
+.pm-table th:first-child {
+  width: 34px;
+  min-width: 34px;
+  text-align: center;
+}
+
+.pm-check-table th:nth-child(2),
+.pm-check-table td:nth-child(2) { min-width: 118px; }
+.pm-check-table th:nth-child(3),
+.pm-check-table td:nth-child(3) { min-width: 110px; }
+.pm-check-table th:nth-child(4),
+.pm-check-table td:nth-child(4) { min-width: 118px; }
+.pm-check-table th:nth-child(5),
+.pm-check-table td:nth-child(5) { min-width: 176px; }
+.pm-check-table th:nth-child(6),
+.pm-check-table td:nth-child(6) { min-width: 96px; }
+.pm-check-table th:nth-child(7),
+.pm-check-table td:nth-child(7) { min-width: 110px; }
+.pm-check-table th:nth-child(8),
+.pm-check-table td:nth-child(8) { min-width: 96px; }
+.pm-check-table th:nth-child(9),
+.pm-check-table td:nth-child(9),
+.pm-check-table th:nth-child(10),
+.pm-check-table td:nth-child(10) {
+  min-width: 58px;
+  text-align: center;
+}
+
+.pm-table-lookup.sap-lookup {
+  width: 170px;
+  grid-template-columns: minmax(0, 1fr) 24px;
+}
+
+.pm-table-lookup.sap-lookup input {
+  height: 20px;
+  min-height: 20px;
+}
+
+.pm-table-lookup .sap-lookup__arrow {
+  width: 24px;
+  min-height: 20px;
+  height: 20px;
+  line-height: 18px;
+}
+
+.pm-row-btn {
+  width: 22px;
+  height: 20px;
+  border: 1px solid #a0aab4;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #ffffff 0%, #e8ecf0 100%);
+  color: #9a1b12;
+  font: inherit;
+  line-height: 18px;
+  padding: 0;
+}
+
+.pm-add-row {
+  margin-top: 8px;
+}
+
+.pm-bank-panel .pm-field,
+.pm-cash-panel .pm-field {
+  width: min(430px, 100%);
+}
+
+.pm-total-line {
+  position: absolute;
+  right: 10px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: 78px 150px;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-total-line > span {
+  text-align: right;
+  font-weight: 700;
+}
+
+.pm-credit-panel {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(220px, 260px);
+  gap: 12px;
+}
+
+.pm-credit-panel .pm-field {
+  grid-template-columns: 118px minmax(0, 1fr);
+}
+
+.pm-credit-right {
+  position: relative;
+  min-height: 244px;
+  padding-bottom: 42px;
+}
+
+.pm-voucher-title {
+  height: 20px;
+  font-weight: 700;
+}
+
+.pm-voucher-grid {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  height: 126px;
+  overflow: hidden;
+  border: 1px solid #c5ccd4;
+  margin-bottom: 12px;
+}
+
+.pm-voucher-grid > div {
+  min-height: 21px;
+  border-right: 1px solid #d7dde4;
+  border-bottom: 1px solid #d7dde4;
+  padding: 2px 5px;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.pm-general-area {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(180px, 1fr);
+  gap: 18px;
+  padding: 8px 0 10px;
+}
+
+.pm-general-left .pm-field {
+  grid-template-columns: 116px 128px;
+}
+
+.pm-paid-field {
+  align-self: end;
+  justify-self: end;
+  display: grid;
+  grid-template-columns: 48px 150px;
+  align-items: center;
+  gap: 8px;
+}
+
+.pm-paid-field > span {
+  text-align: right;
+  font-weight: 700;
+}
+
+.pm-balance-warning {
+  color: #9a1b12 !important;
+  font-weight: 700 !important;
+}
+
+.pm-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  background: #f0f2f5;
+}
+
+.sap-total-lookup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+}
+
+.sap-total-lookup input {
+  border-radius: 2px 0 0 2px;
+}
+
+.sap-payment-means-btn {
+  width: 32px;
+  min-height: 22px;
+  border: 1px solid #a0aab4;
+  border-left: 0;
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(180deg, #ffffff 0%, #e8ecf0 100%);
+  color: #003366;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sap-payment-means-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ffffff 0%, #d7e4ef 100%);
+}
+
+.ip-lookup-modal-layer {
+  z-index: 100400 !important;
+}
+
+.modal.show.d-block.ip-lookup-modal-layer.ip-lookup-modal-layer--front,
+.ip-lookup-modal-layer.ip-lookup-modal-layer--front {
+  z-index: 100900 !important;
+}
+
+@media (max-width: 760px) {
+  .pm-modal-layer {
+    padding-top: 24px;
+  }
+
+  .pm-dialog {
+    max-height: calc(100vh - 48px);
+  }
+
+  .pm-tabs {
+    overflow-x: auto;
+  }
+
+  .pm-tabs button {
+    min-width: 98px;
+  }
+
+  .pm-credit-panel,
+  .pm-general-area {
+    grid-template-columns: 1fr;
+  }
+
+  .pm-credit-right {
+    min-height: 200px;
+  }
+
+  .pm-account-with-name {
+    grid-template-columns: 1fr;
+  }
+
+  .pm-inline-lookup.sap-lookup,
+  .pm-bank-panel .pm-field,
+  .pm-cash-panel .pm-field {
+    width: 100%;
+  }
+
+  .pm-total-line {
+    position: static;
+    margin-top: 12px;
+    grid-template-columns: 80px minmax(120px, 1fr);
+  }
+
+  .pm-paid-field {
+    justify-self: stretch;
+    grid-template-columns: 80px minmax(120px, 1fr);
+  }
+}

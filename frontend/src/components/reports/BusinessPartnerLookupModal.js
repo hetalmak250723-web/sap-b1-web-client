@@ -39,7 +39,7 @@ function BusinessPartnerLookupModal({ isOpen, onClose, onSelect }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 36 });
+  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 36, allowPersistedMinimized: false });
 
   const loadRows = async (query = '') => {
     setLoading(true);
@@ -114,14 +114,6 @@ function BusinessPartnerLookupModal({ isOpen, onClose, onSelect }) {
         <div className="bp-lookup-modal__titlebar" {...windowFrame.titleBarProps}>
           <div className="bp-lookup-modal__title">List of Business Partners</div>
           <div className="bp-lookup-modal__controls">
-            <button
-              type="button"
-              aria-label={windowFrame.isMinimized ? 'Restore' : 'Minimize'}
-              onClick={windowFrame.toggleMinimize}
-            >
-              {windowFrame.isMinimized ? '□' : '-'}
-            </button>
-            <button type="button" aria-label="Restore" onClick={windowFrame.restoreWindow}>□</button>
             <button type="button" aria-label="Close" onClick={onClose}>x</button>
           </div>
         </div>

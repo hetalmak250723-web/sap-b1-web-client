@@ -6,9 +6,12 @@ import {
   fetchIncomingPaymentReferenceData,
   searchIncomingPayments,
   searchIncomingPaymentBusinessPartners,
+  searchIncomingPaymentCashAccounts,
   searchIncomingPaymentControlAccounts,
   submitIncomingPayment,
 } from "../../api/incomingPaymentsApi";
+import { fetchBPBanks, fetchBPCreditCards } from "../../api/businessPartnerApi";
+import PaymentMeansDialog, { getPaymentMeansPaid } from "../payment-means/PaymentMeansDialog";
 import "./incomingPayments.css";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -70,6 +73,7 @@ function SapLookupField({
   buttonLabel = "...",
   triggerOpen = 0,
   onBlur = () => {},
+  modalZIndex,
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -124,7 +128,8 @@ function SapLookupField({
 
       {open ? createPortal(
         <div
-          className="modal show d-block ip-lookup-modal-layer"
+          className={`modal show d-block ip-lookup-modal-layer${modalZIndex ? " ip-lookup-modal-layer--front" : ""}`}
+          style={modalZIndex ? { zIndex: modalZIndex } : undefined}
           tabIndex="-1"
           role="dialog"
           onMouseDown={() => setOpen(false)}
@@ -134,8 +139,6 @@ function SapLookupField({
               <div className="modal-header ip-lookup-header">
                 <h6 className="modal-title mb-0">List of {title}</h6>
                 <div className="ip-lookup-window-controls" aria-label="Window controls">
-                  <button type="button" className="ip-lookup-window-btn" aria-label="Minimize" disabled>-</button>
-                  <button type="button" className="ip-lookup-window-btn" aria-label="Maximize" disabled>[]</button>
                   <button type="button" className="ip-lookup-window-btn ip-lookup-close" aria-label="Close" onClick={() => setOpen(false)}>x</button>
                 </div>
               </div>
@@ -316,6 +319,14 @@ export default function IncomingPaymentsPage() {
   const [journalRemarks, setJournalRemarks] = useState("");
   const [bpLookupTrigger, setBpLookupTrigger] = useState(0);
   const [documentFindTrigger, setDocumentFindTrigger] = useState(0);
+  const [paymentMeans, setPaymentMeans] = useState(null);
+  const [paymentMeansOpen, setPaymentMeansOpen] = useState(false);
+  const [paymentMeansDefaults, setPaymentMeansDefaults] = useState({
+    cashAccount: "",
+    cashAccountName: "",
+    bankTransferAccount: "",
+    bankTransferAccountName: "",
+  });
 
   useEffect(() => {
     let mounted = true;
@@ -333,6 +344,12 @@ export default function IncomingPaymentsPage() {
         setDocumentSeries(seriesRows);
         setDistributionRules(normalizeDistributionRules(data.distributionRules || data.distribution_rules || []));
         setLocations(normalizeLocations(data.locations || []));
+        setPaymentMeansDefaults({
+          cashAccount: data.defaultCashAccount || "",
+          cashAccountName: data.defaultCashAccountName || "",
+          bankTransferAccount: data.defaultBankTransferAccount || "",
+          bankTransferAccountName: data.defaultBankTransferAccountName || "",
+        });
         setHeader((current) => {
           const selectedBranch = current.branch || branchRows[0]?.code || "";
           return {
@@ -344,6 +361,7 @@ export default function IncomingPaymentsPage() {
             branch: selectedBranch,
             branchRegNo: getBranchRegNo(branchRows, selectedBranch),
             cashAccount: data.defaultCashAccount || current.cashAccount,
+            cashAccountName: data.defaultCashAccountName || current.cashAccountName,
           };
         });
       })
@@ -374,7 +392,10 @@ export default function IncomingPaymentsPage() {
   const totalAmountDue = accountRows.length
     ? accountRowsTotal
     : selectedTotal + paymentOnAccountDue;
-  const openBalance = Math.max(0, paymentOnAccountDue);
+  const paymentMeansPaid = useMemo(() => getPaymentMeansPaid(paymentMeans), [paymentMeans]);
+  const openBalance = paymentMeans
+    ? Math.max(0, totalAmountDue - paymentMeansPaid)
+    : Math.max(0, paymentOnAccountDue);
 
   const getPayableInvoiceTotal = (rows = invoices) =>
     rows.reduce((sum, invoice) => {
@@ -420,6 +441,7 @@ export default function IncomingPaymentsPage() {
     setSuccessMessage("");
     setInvoices([]);
     setAccountRows([]);
+    setPaymentMeans(null);
     setPaymentOnAccount(bpType === "Account");
     setPaymentOnAccountAmount("0.00");
     setAccountDistributionRule("");
@@ -513,6 +535,7 @@ export default function IncomingPaymentsPage() {
     setLoadError("");
     setSuccessMessage("");
     setInvoices([]);
+    setPaymentMeans(null);
     setPaymentOnAccount(true);
     setAccountDistributionRule("");
     setAccountLocation("");
@@ -730,6 +753,7 @@ export default function IncomingPaymentsPage() {
         branchRegNo: getBranchRegNo(branches, selectedBranch || current.branch),
         controlAccount: postedAccountRows[0]?.accountCode || current.controlAccount,
         controlAccountName: postedAccountRows[0]?.accountName || current.controlAccountName,
+        cashAccount: payment.cashAccount || current.cashAccount,
       }));
       const postedInvoices = (payment.invoices || []).map((invoice) => ({
         ...invoice,
@@ -739,6 +763,7 @@ export default function IncomingPaymentsPage() {
       }));
       setInvoices(postedInvoices);
       setAccountRows(postedAccountRows);
+      setPaymentMeans(payment.paymentMeans || null);
       setCurrentDocEntry(payment.docEntry || row.docEntry || null);
       setJournalRemarks(payment.journalRemarks || `Incoming Payments - ${payment.businessPartnerCode || payment.code}`);
       setRemarks(payment.remarks || "");
@@ -771,6 +796,8 @@ export default function IncomingPaymentsPage() {
     setWtTaxAmount("");
     setRemarks("");
     setJournalRemarks("");
+    setPaymentMeans(null);
+    setPaymentMeansOpen(false);
     setLoadError("");
     setSuccessMessage("");
   };
@@ -801,6 +828,8 @@ export default function IncomingPaymentsPage() {
     setWtTaxAmount("");
     setRemarks("");
     setJournalRemarks("");
+    setPaymentMeans(null);
+    setPaymentMeansOpen(false);
     setLoadError("");
     setSuccessMessage(message);
   };
@@ -874,6 +903,12 @@ export default function IncomingPaymentsPage() {
       return;
     }
 
+    if (paymentMeans && Math.abs(getPaymentMeansPaid(paymentMeans) - payableTotal) > 0.01) {
+      setLoadError(`Payment Means Paid amount must equal Total Amount Due. Paid: INR ${money(getPaymentMeansPaid(paymentMeans))}, Due: INR ${money(payableTotal)}.`);
+      setPaymentMeansOpen(true);
+      return;
+    }
+
     const invalidPayment = invoices.some(
       (invoice) => invoice.selected && clampPayment(invoice.totalPayment, invoice.balanceDue) <= 0,
     );
@@ -917,6 +952,7 @@ export default function IncomingPaymentsPage() {
       wtTaxAmount,
       remarks,
       journalRemarks,
+      paymentMeans,
     };
 
     setPosting(true);
@@ -998,6 +1034,37 @@ export default function IncomingPaymentsPage() {
           triggerOpen={documentFindTrigger}
         />
       </span>
+      <PaymentMeansDialog
+        open={paymentMeansOpen}
+        value={paymentMeans}
+        amountDue={totalAmountDue}
+        currency={header.docCurrency || "INR"}
+        postingDate={header.postingDate}
+        paymentDirection="incoming"
+        defaultCashAccount={header.cashAccount || paymentMeansDefaults.cashAccount}
+        defaultCashAccountName={header.cashAccountName || paymentMeansDefaults.cashAccountName}
+        defaultBankTransferAccount={paymentMeansDefaults.bankTransferAccount}
+        defaultBankTransferAccountName={paymentMeansDefaults.bankTransferAccountName}
+        LookupField={SapLookupField}
+        accountLookup={searchIncomingPaymentControlAccounts}
+        cashAccountLookup={searchIncomingPaymentCashAccounts}
+        bankLookup={fetchBPBanks}
+        creditCardLookup={fetchBPCreditCards}
+        onApply={(nextPaymentMeans) => {
+          setPaymentMeans(nextPaymentMeans);
+          setPaymentMeansOpen(false);
+          setLoadError("");
+          setSuccessMessage("");
+          if (nextPaymentMeans.cash?.glAccount) {
+            setHeader((current) => ({
+              ...current,
+              cashAccount: nextPaymentMeans.cash.glAccount,
+              cashAccountName: nextPaymentMeans.cash.glAccountName || current.cashAccountName,
+            }));
+          }
+        }}
+        onClose={() => setPaymentMeansOpen(false)}
+      />
       {loadError ? <div className="sap-alert sap-alert--top">{loadError}</div> : null}
       {successMessage ? <div className="sap-alert sap-alert--success sap-alert--top">{successMessage}</div> : null}
 
@@ -1401,7 +1468,17 @@ export default function IncomingPaymentsPage() {
               <input value={wtTaxAmount} onChange={(event) => setWtTaxAmount(event.target.value)} onBlur={() => setWtTaxAmount(money(parseAmount(wtTaxAmount)))} />
             </FieldRow>
             <FieldRow label="Total Amount Due">
-              <input value={`INR ${money(totalAmountDue)}`} readOnly />
+              <div className="sap-total-lookup">
+                <input value={`INR ${money(totalAmountDue)}`} readOnly />
+                <button
+                  type="button"
+                  className="sap-payment-means-btn"
+                  title="Payment Means"
+                  onClick={() => setPaymentMeansOpen(true)}
+                >
+                  ...
+                </button>
+              </div>
             </FieldRow>
             <FieldRow label="Open Balance">
               <input value={openBalance ? `INR ${money(openBalance)}` : ""} readOnly />

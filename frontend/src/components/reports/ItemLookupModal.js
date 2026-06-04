@@ -16,7 +16,7 @@ function ItemLookupModal({ isOpen, onClose, onSelect }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 42 });
+  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 42, allowPersistedMinimized: false });
 
   const loadRows = async (query = '') => {
     setLoading(true);
@@ -92,14 +92,6 @@ function ItemLookupModal({ isOpen, onClose, onSelect }) {
         <div className="item-lookup-modal__titlebar" {...windowFrame.titleBarProps}>
           <div className="item-lookup-modal__title">List of Items</div>
           <div className="item-lookup-modal__controls">
-            <button
-              type="button"
-              aria-label={windowFrame.isMinimized ? 'Restore' : 'Minimize'}
-              onClick={windowFrame.toggleMinimize}
-            >
-              {windowFrame.isMinimized ? '□' : '-'}
-            </button>
-            <button type="button" aria-label="Restore" onClick={windowFrame.restoreWindow}>□</button>
             <button type="button" aria-label="Close" onClick={onClose}>x</button>
           </div>
         </div>

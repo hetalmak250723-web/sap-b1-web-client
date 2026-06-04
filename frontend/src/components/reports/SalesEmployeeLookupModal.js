@@ -14,7 +14,7 @@ function SalesEmployeeLookupModal({ isOpen, onClose, onSelect }) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 48 });
+  const windowFrame = useFloatingWindow({ isOpen, defaultTop: 48, allowPersistedMinimized: false });
 
   const loadRows = async (query = '') => {
     setLoading(true);
@@ -91,14 +91,6 @@ function SalesEmployeeLookupModal({ isOpen, onClose, onSelect }) {
         <div className="sales-employee-lookup-modal__titlebar" {...windowFrame.titleBarProps}>
           <div className="sales-employee-lookup-modal__title">List of Sales Employee</div>
           <div className="sales-employee-lookup-modal__controls">
-            <button
-              type="button"
-              aria-label={windowFrame.isMinimized ? 'Restore' : 'Minimize'}
-              onClick={windowFrame.toggleMinimize}
-            >
-              {windowFrame.isMinimized ? '□' : '-'}
-            </button>
-            <button type="button" aria-label="Restore" onClick={windowFrame.restoreWindow}>□</button>
             <button type="button" aria-label="Close" onClick={onClose}>x</button>
           </div>
         </div>

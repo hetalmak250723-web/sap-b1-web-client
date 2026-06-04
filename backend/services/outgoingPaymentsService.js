@@ -1,6 +1,7 @@
 const db = require("./dbService");
 const env = require("../config/env");
 const masterDataDbService = require("./masterDataDbService");
+const { buildPaymentMeansPayload, mapPaymentMeansFromDb } = require("./paymentMeansPayload");
 const sapService = require("./sapService");
 
 const queryRows = async (sql, params = {}) => {
@@ -206,15 +207,64 @@ const lookupPaymentMeansAccounts = async (query = "") => {
   }));
 };
 
-const getDefaultCashAccount = async () => {
+const getAccountByCodeOrName = async (code = "", name = "") => {
+  const rows = await queryRows(`
+    SELECT TOP 1 AcctCode, AcctName
+    FROM OACT
+    WHERE Postable = 'Y'
+      AND ISNULL(FrozenFor, 'N') <> 'Y'
+      AND (
+        (@code <> '' AND AcctCode = @code)
+        OR (@name <> '' AND AcctName = @name)
+      )
+    ORDER BY
+      CASE WHEN @code <> '' AND AcctCode = @code THEN 0 ELSE 1 END,
+      AcctCode
+  `, { code: String(code || "").trim(), name: String(name || "").trim() });
+
+  return rows[0] ? { code: rows[0].AcctCode, name: rows[0].AcctName } : null;
+};
+
+const getDefaultCashAccountDetails = async () => {
   const configured = String(env.outgoingPaymentCashAccount || env.incomingPaymentCashAccount || "").trim();
-  if (configured) return configured;
+  if (configured) {
+    const account = await getAccountByCodeOrName(configured, "");
+    if (account) return account;
+    return { code: configured, name: "" };
+  }
 
   const cashBoxRows = await lookupCashAccounts("");
-  if (cashBoxRows[0]?.code) return cashBoxRows[0].code;
+  if (cashBoxRows[0]?.code) return cashBoxRows[0];
+
+  const sapCashAccount = await getAccountByCodeOrName("161000", "Cash Account");
+  if (sapCashAccount) return sapCashAccount;
 
   const paymentMeansRows = await lookupPaymentMeansAccounts("");
-  return paymentMeansRows[0]?.code || "";
+  return paymentMeansRows.find((account) => /cash/i.test(account.name)) || paymentMeansRows[0] || { code: "", name: "" };
+};
+
+const getDefaultCashAccount = async () => {
+  const account = await getDefaultCashAccountDetails();
+  return account?.code || "";
+};
+
+const getDefaultBankTransferAccountDetails = async () => {
+  const sapTransferAccount = await getAccountByCodeOrName("144080", "Advance Payments (Adj. a/c)");
+  if (sapTransferAccount) return sapTransferAccount;
+
+  const recentRows = await queryRows(`
+    SELECT TOP 1 T0.TrsfrAcct, T1.AcctName
+    FROM OVPM T0
+    LEFT JOIN OACT T1 ON T1.AcctCode = T0.TrsfrAcct
+    WHERE ISNULL(T0.TrsfrAcct, '') <> ''
+      AND T0.Canceled <> 'Y'
+      AND T1.Postable = 'Y'
+      AND ISNULL(T1.FrozenFor, 'N') <> 'Y'
+    GROUP BY T0.TrsfrAcct, T1.AcctName
+    ORDER BY MAX(T0.DocDate) DESC, COUNT(*) DESC
+  `);
+
+  return recentRows[0] ? { code: recentRows[0].TrsfrAcct, name: recentRows[0].AcctName || "" } : { code: "", name: "" };
 };
 
 const getPaymentSeries = async () => {
@@ -318,7 +368,15 @@ const getOutgoingPaymentByDocEntry = async (docEntry) => {
       T0.Comments,
       T0.DocTotal,
       T0.NoDocSum,
-      T0.CashAcct
+      T0.DocCurr,
+      T0.BcgSum,
+      T0.CashAcct,
+      T0.CashSum,
+      T0.TrsfrAcct,
+      T0.TrsfrDate,
+      T0.TrsfrRef,
+      T0.TrsfrSum,
+      T0.CheckAcct
     FROM OVPM T0
     WHERE T0.DocEntry = @docEntry
   `, { docEntry: docEntryNumber });
@@ -365,6 +423,54 @@ const getOutgoingPaymentByDocEntry = async (docEntry) => {
     ORDER BY T1.AcctCode, T1.Descrip
   `, { docEntry: docEntryNumber });
 
+  const checkRows = await queryRows(`
+    SELECT
+      T1.CheckAct,
+      T1.DueDate,
+      T1.CheckSum,
+      T1.CountryCod,
+      T1.BankCode,
+      T2.BankName,
+      T1.Branch,
+      T1.AcctNum,
+      T1.CheckNum,
+      T1.Trnsfrable,
+      T1.ManualChk,
+      T1.OrigIssdBy,
+      T1.FiscalID AS FiscalId
+    FROM VPM1 T1
+    LEFT JOIN ODSC T2
+      ON T2.BankCode = T1.BankCode
+     AND (T1.CountryCod IS NULL OR T1.CountryCod = '' OR T2.CountryCod = T1.CountryCod)
+    WHERE T1.DocNum = @docEntry
+    ORDER BY T1.LineID
+  `, { docEntry: docEntryNumber });
+
+  const creditRows = await queryRows(`
+    SELECT
+      T1.CreditCard,
+      T2.CardName,
+      T1.CreditAcct,
+      T1.CrCardNum,
+      T1.CardValid,
+      T1.OwnerIdNum,
+      T1.OwnerPhone,
+      T1.CrTypeCode,
+      T1.CreditSum,
+      T1.NumOfPmnts,
+      T1.FirstDue,
+      T1.FirstSum,
+      T1.AddPmntSum,
+      T1.VoucherNum,
+      T1.CreditType,
+      T2.Phone,
+      T2.CompanyId
+    FROM VPM3 T1
+    LEFT JOIN OCRC T2 ON T2.CreditCard = T1.CreditCard
+    WHERE T1.DocNum = @docEntry
+    ORDER BY T1.LineID
+  `, { docEntry: docEntryNumber });
+
   return {
     code: String(header.DocNum || ""),
     docEntry: header.DocEntry,
@@ -383,6 +489,12 @@ const getOutgoingPaymentByDocEntry = async (docEntry) => {
     totalAmount: toNumber(header.DocTotal),
     paymentOnAccountAmount: toNumber(header.NoDocSum),
     cashAccount: header.CashAcct || "",
+    paymentMeans: mapPaymentMeansFromDb({
+      header,
+      checkRows,
+      creditRows,
+      paymentDirection: "outgoing",
+    }),
     invoices: invoiceRows.map((row, index) => ({
       id: `posted-${row.BaseDocEntry || index}-${index}`,
       docEntry: row.BaseDocEntry,
@@ -418,10 +530,11 @@ const getOutgoingPaymentByDocEntry = async (docEntry) => {
 };
 
 const getReferenceData = async () => {
-  const [branches, series, defaultCashAccount, distributionRules, locations] = await Promise.all([
+  const [branches, series, defaultCashAccountDetails, defaultBankTransferAccount, distributionRules, locations] = await Promise.all([
     masterDataDbService.lookupBusinessPlaces(),
     getPaymentSeries(),
-    getDefaultCashAccount(),
+    getDefaultCashAccountDetails(),
+    getDefaultBankTransferAccountDetails(),
     masterDataDbService.lookupDistributionRules(),
     masterDataDbService.lookupWarehouseLocations(),
   ]);
@@ -434,7 +547,10 @@ const getReferenceData = async () => {
     defaultSeriesName: defaultSeries?.name || "",
     nextDocumentNumber: defaultSeries?.nextNumber || "",
     nextTransactionNumber: defaultSeries?.nextNumber || "",
-    defaultCashAccount,
+    defaultCashAccount: defaultCashAccountDetails?.code || "",
+    defaultCashAccountName: defaultCashAccountDetails?.name || "",
+    defaultBankTransferAccount: defaultBankTransferAccount?.code || "",
+    defaultBankTransferAccountName: defaultBankTransferAccount?.name || "",
     distributionRules: (distributionRules || []).map((rule) => ({
       code: String(rule.code || rule.FactorCode || rule.OcrCode || ""),
       name: rule.name || rule.FactorDescription || rule.OcrName || "",
@@ -508,9 +624,6 @@ const createOutgoingPayment = async (payload = {}) => {
   if (!cardCode) {
     throw new Error("Vendor, customer, or account code is required.");
   }
-  if (!cashAccount) {
-    throw new Error("Cash Account is required for SAP Outgoing Payments. Select a cash account or set OUTGOING_PAYMENT_CASH_ACCOUNT in backend/.env.");
-  }
 
   const selectedInvoices = invoices
     .map((invoice) => ({
@@ -547,6 +660,14 @@ const createOutgoingPayment = async (payload = {}) => {
     await assertPostableAccount(cardCode);
   }
 
+  const paymentMeansPayload = buildPaymentMeansPayload({
+    paymentMeans: payload.paymentMeans,
+    fallbackAmount: cashSum,
+    fallbackCashAccount: cashAccount,
+    fallbackDate: header.postingDate,
+    label: "Payment Means",
+  });
+
   const sapPayload = {
     DocType: isCustomerPayment ? "rCustomer" : isAccountPayment ? "rAccount" : "rSupplier",
     CardCode: isAccountPayment ? undefined : cardCode,
@@ -563,8 +684,7 @@ const createOutgoingPayment = async (payload = {}) => {
     ControlAccount: !isAccountPayment ? header.controlAccount || undefined : undefined,
     Remarks: payload.remarks || undefined,
     JournalRemarks: payload.journalRemarks || undefined,
-    CashAccount: cashAccount,
-    CashSum: Number(cashSum.toFixed(2)),
+    ...paymentMeansPayload.fields,
     PaymentInvoices: !isAccountPayment && selectedInvoices.length
       ? selectedInvoices.map((invoice) => ({
           DocEntry: Number(invoice.docEntry),

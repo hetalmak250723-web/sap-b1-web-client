@@ -764,11 +764,6 @@
   text-align: center;
 }
 
-.ip-lookup-window-btn:disabled {
-  color: #7f8790;
-  opacity: 1;
-}
-
 .ip-lookup-close {
   cursor: pointer;
 }
@@ -959,4 +954,13 @@
 
 .sap-account-grid .sap-cell-input {
   width: 112px;
+}
+
+.ip-lookup-modal-layer {
+  z-index: 100500 !important;
+}
+
+.modal.show.d-block.ip-lookup-modal-layer.ip-lookup-modal-layer--front,
+.ip-lookup-modal-layer.ip-lookup-modal-layer--front {
+  z-index: 100900 !important;
 }
