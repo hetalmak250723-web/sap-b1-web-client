@@ -36,19 +36,20 @@ const DUPLICATE_ROW_UDF_KEYS = new Set([
   'U_SELLER_BROK_PER',
   'U_BUYER_BILL_DISC',
   'U_SELLER_BILL_DISC',
-  'U_SELLTCODE',
+  'U_SELBTCODE',
   'U_S_ITEM',
   'U_S_QTY',
-  'U_FREIGHT_PUR',
-  'U_FREIGHT_SALES',
-  'U_FR_TRANS',
-  'U_FR_TRANS_NAME',
-  'U_BDNUM',
-  'U_ORDER_QTY',
-  'U_RATE',
-  'U_AMOUNT',
-  'U_DISC_RATE',
-  'U_DISC_AMOUNT',
+  'Freight Purchase',
+  'Freight Sales',
+  'Freight Provider',
+  'Freight Provider Name',
+  'Document Created',
+  'Brokerage Number',
+  'Order Qty',
+  'Rate',
+  'Amount',
+  'Discounted Rate',
+  'Discounted Amount',
 ]);
 
 const DUPLICATE_ROW_UDF_LABELS = new Set([
@@ -151,36 +152,10 @@ const HEADER_UDF_DEFINITIONS = [
   { key: 'U_Seller_Address', label: 'Seller Address', type: 'textarea', defaultValue: '' },
   { key: 'U_Old_Soda_Nodh_No', label: 'Old Soda Nodh No.', type: 'text', defaultValue: '' },
   { key: 'U_Old_Soda_Nodh_Date', label: 'Old Soda Nodh Date', type: 'date', defaultValue: '' },
-  {
-    key: 'U_Canceled',
-    label: 'Canceled IRN',
-    type: 'select',
-    required: true,
-    defaultValue: 'N',
-    options: [
-      { value: '', label: '' },
-      { value: 'Y', label: 'Yes' },
-      { value: 'N', label: 'No' },
-    ],
-  },
   { key: 'U_TrfId', label: 'Transporter ID', type: 'text', defaultValue: '' },
   { key: 'U_TrfName', label: 'Transporter Name', type: 'text', defaultValue: '' },
   { key: 'U_TrfVehi', label: 'Vehicle No', type: 'text', defaultValue: '' },
   { key: 'U_TrfDist', label: 'Distance', type: 'text', defaultValue: '' },
-  {
-    key: 'U_TrfMode',
-    label: 'Transporter Mode',
-    type: 'select',
-    required: true,
-    defaultValue: '1',
-    options: [
-      { value: '', label: '' },
-      { value: '1', label: 'Road' },
-      { value: '2', label: 'Rail' },
-      { value: '3', label: 'Air' },
-      { value: '4', label: 'Ship' },
-    ],
-  },
   {
     key: 'U_TrfVType',
     label: 'Transporter Vehicle Type',
@@ -290,7 +265,17 @@ const HEADER_UDF_DEFINITIONS = [
   },
   { key: 'U_DelRemarks', label: 'Del Remarks', type: 'textarea', defaultValue: '' },
 ];
-
+const companyDb =
+  sessionStorage.getItem('companyDB') ||
+  localStorage.getItem('companyDB');
+console.log('Company:', sessionStorage.getItem('companyDB'));
+console.log('Company:', localStorage.getItem('companyDB'));
+export const getHeaderUdfDefinitions = () =>
+  HEADER_UDF_DEFINITIONS.filter(
+    field =>
+      !field.companies ||
+      field.companies.includes(companyDb)
+  );
 const ROW_UDF_DEFINITIONS = [
   { key: 'U_Loc', label: 'Loc', type: 'text', defaultValue: '' },
   { key: 'U_Branch', label: 'Branch', type: 'text', defaultValue: '' },
@@ -346,8 +331,8 @@ const BASE_MATRIX_COLUMNS = [
 
 const getOptionValue = (option) => (typeof option === 'string' ? option : option?.value ?? '');
 
-const getUdfIdentity = (field = {}) =>
-    [
+const getUdfIdentity = (field = {}) => {
+    return [
         field.key,
         field.sapField,
         field.aliasId,
@@ -355,6 +340,7 @@ const getUdfIdentity = (field = {}) =>
         field.description,
         field.Descr,
     ].join(' ').toLowerCase().replace(/[^a-z0-9]+/g, '');
+};
 
 const shouldKeepUdfBlankByDefault = (field = {}) => {
     const identity = getUdfIdentity(field);
@@ -376,11 +362,12 @@ const getDefaultUdfValue = (field = {}) => {
     return field.defaultValue ?? '';
 };
 
-const createUdfState = (definitions) =>
-  definitions.reduce((acc, field) => {
+const createUdfState = (definitions) => {
+  return definitions.reduce((acc, field) => {
     acc[field.key] = getDefaultUdfValue(field);
     return acc;
   }, {});
+};
 
 const normalizeUdfState = (definitions, values = {}) => {
     const normalized = definitions.reduce((acc, field) => {
@@ -403,26 +390,28 @@ const normalizeUdfState = (definitions, values = {}) => {
     return normalized;
 };
 
-const buildVisibilitySettings = (definitions) =>
-  definitions.reduce((acc, field) => {
+const buildVisibilitySettings = (definitions) => {
+  return definitions.reduce((acc, field) => {
     acc[field.key] = { visible: field.visible !== undefined ? field.visible : true, active: true };
     return acc;
   }, {});
+};
 
 const createDefaultFormSettings = () => ({
-  headerUdfs: buildVisibilitySettings(HEADER_UDF_DEFINITIONS),
+  headerUdfs: buildVisibilitySettings(getHeaderUdfDefinitions()),
   matrixColumns: buildVisibilitySettings(BASE_MATRIX_COLUMNS),
   rowUdfs: buildVisibilitySettings(ROW_UDF_DEFINITIONS),
 });
 
-const mergeNestedSettings = (defaults, saved = {}) =>
-  Object.keys(defaults).reduce((acc, groupKey) => {
+const mergeNestedSettings = (defaults, saved = {}) => {
+  return Object.keys(defaults).reduce((acc, groupKey) => {
     acc[groupKey] = {
       ...defaults[groupKey],
       ...(saved[groupKey] || {}),
     };
     return acc;
   }, {});
+};
 
 const readSavedFormSettings = (storageKey = FORM_SETTINGS_STORAGE_KEY) => {
   const defaults = createDefaultFormSettings();
@@ -452,5 +441,6 @@ export {
   createUdfState,
   normalizeUdfState,
   readSavedFormSettings,
-  filterSalesOrderRowUdfDefinitions,
+  filterSalesOrderRowUdfDefinitions
+
 };

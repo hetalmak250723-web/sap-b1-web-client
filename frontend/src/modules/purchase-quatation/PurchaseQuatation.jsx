@@ -17,6 +17,7 @@ import HSNCodeModal from './components/HSNCodeModal';
 import CopyFromModal from '../purchase-order/components/CopyFromModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import PurchasePrintLayoutActions from '../../components/print-layout/PurchasePrintLayoutActions';
+import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { useSapWindowTaskbarActions } from '../../components/SapWindowTaskbarContext';
 import { copyToDocument } from '../../services/documentCopyService';
@@ -722,6 +723,13 @@ function PurchaseOrder() {
   };
 
   const totals = calcTotals();
+  useRelationshipMapRegistration({
+    enabled: Boolean(currentDocEntry),
+    objectType: 540000006,
+    docEntry: currentDocEntry,
+    header,
+    total: totals.total,
+  });
 
   useEffect(() => {
     if (!derivedGstType) return;

@@ -20,6 +20,7 @@ import CopyFromModal from '../purchase-order/components/CopyFromModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import PurchasePrintLayoutActions from '../../components/print-layout/PurchasePrintLayoutActions';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
+import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import { summarizeFreightRows } from '../../components/freight/freightUtils';
 import { consumeCopyToState } from '../../utils/copyToState';
 import { duplicateDocumentInPlace, refreshDuplicateSeries } from '../../utils/documentDuplicate';
@@ -794,6 +795,13 @@ function APCreditMemo() {
   };
 
   const totals = calcTotals();
+  useRelationshipMapRegistration({
+    enabled: Boolean(currentDocEntry),
+    objectType: 19,
+    docEntry: currentDocEntry,
+    header,
+    total: totals.total,
+  });
   const derivedGstType = getDerivedGstType(header.vendorState, header.placeOfSupply);
   const inferredGstType = formatDerivedGstType(derivedGstType);
 

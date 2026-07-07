@@ -42,6 +42,7 @@ import useValidationHighlights from '../../utils/useValidationHighlights';
 import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
 import useSalesDocumentLineLookups from '../../hooks/useSalesDocumentLineLookups';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
+import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import { getBP } from '../../api/businessPartnerApi';
 import {
     fetchSalesOrderByDocEntry,
@@ -312,6 +313,18 @@ const getContactDisplayValue = (contact) =>
 const isActiveContact = (contact) => {
     const active = String(contact?.Active || contact?.active || '').trim().toUpperCase();
     return !active || active === 'Y' || active === 'YES' || active === 'TYES' || active === '1';
+};
+
+const normalizeKnownUdfState = (definitions = [], values = {}) => {
+    const allowedKeys = new Set((definitions || []).map((field) => field?.key).filter(Boolean));
+    const normalized = normalizeUdfState(definitions, values);
+
+    return Object.entries(normalized).reduce((acc, [key, value]) => {
+        if (allowedKeys.has(key)) {
+            acc[key] = value;
+        }
+        return acc;
+    }, {});
 };
 
 const selectBusinessPartnerContactId = (bp = {}, contacts = []) => {
@@ -772,7 +785,7 @@ function DCSalesOrder() {
                     };
                     setHeaderUdfDefinitions(nextHeaderUdfs);
                     setRowUdfDefinitions(nextRowUdfs);
-                    setHeaderUdfs((prev) => normalizeUdfState(nextHeaderUdfs, prev));
+                    setHeaderUdfs((prev) => normalizeKnownUdfState(nextHeaderUdfs, prev));
                     setLines((prev) => prev.map((line) => ({
                         ...line,
                         udf: normalizeUdfState(nextRowUdfs, line.udf || {}),
@@ -1003,7 +1016,7 @@ function DCSalesOrder() {
                         })
                         : [createLine(rowUdfDefinitions)]
                 );
-                setHeaderUdfs(normalizeUdfState(headerUdfDefinitions, so.header_udfs || {}));
+                setHeaderUdfs(normalizeKnownUdfState(headerUdfDefinitions, so.header_udfs || {}));
                 setSnapshotPending(true);
                 setIsDirty(false);
 
@@ -1450,6 +1463,13 @@ function DCSalesOrder() {
     };
 
     const totals = calcTotals();
+    useRelationshipMapRegistration({
+        enabled: Boolean(currentDocEntry),
+        objectType: 17,
+        docEntry: currentDocEntry,
+        header,
+        total: totals.total,
+    });
 
     // ── GST determination logic ───────────────────────────────────────────────
     const determineGSTType = (gstState) => {
@@ -2480,7 +2500,7 @@ function DCSalesOrder() {
             warehouse: normHeader.warehouse || firstLineWarehouse || prev.warehouse || '',
         }));
         setLines(copiedLines.length > 0 ? copiedLines : [createLine(rowUdfDefinitions)]);
-        setHeaderUdfs(normalizeUdfState(headerUdfDefinitions, sourceHeaderUdfs));
+        setHeaderUdfs(normalizeKnownUdfState(headerUdfDefinitions, sourceHeaderUdfs));
         setFreightModal({ open: false, freightCharges: Array.isArray(sourceFreightCharges) ? sourceFreightCharges : [], loading: false });
 
         if (normHeader.vendor) loadVendorDetails(normHeader.vendor);
@@ -2881,7 +2901,7 @@ function DCSalesOrder() {
                 header: prep,
                 lines: cleanedLines,
                 freightCharges: freightModal.freightCharges,
-                header_udfs: normalizeUdfState(headerUdfDefinitions, headerUdfs),
+                header_udfs: normalizeKnownUdfState(headerUdfDefinitions, headerUdfs),
             };
 
             // ═══ LOGGING: Payload Before Submit ═══
@@ -2965,7 +2985,12 @@ function DCSalesOrder() {
 
     // ── render ────────────────────────────────────────────────────────────────
     return (
-        <form ref={formRef} className={`so-page sap-document-page${isRightSidebarOpen ? ' so-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
+        <form
+            ref={formRef}
+            className={`so-page sap-document-page${isRightSidebarOpen ? ' so-page--sidebar-open' : ''}`}
+            onSubmit={handleSubmit}
+            onChangeCapture={markDirty}
+        >
 
             {/* toolbar */}
             <div className="so-toolbar sap-document-toolbar">

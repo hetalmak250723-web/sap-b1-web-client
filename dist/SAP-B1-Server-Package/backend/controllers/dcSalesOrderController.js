@@ -122,6 +122,16 @@ const submitSalesOrder = async (req, res) => {
     const result = await salesOrderService.submitSalesOrder(req.body);
     res.json(result);
   } catch (error) {
+    console.error('[DC Sales Order Add] Failed:', {
+      message: error.message,
+      customer: req.body?.header?.vendor,
+      customerName: req.body?.header?.name,
+      series: req.body?.header?.series,
+      lineCount: Array.isArray(req.body?.lines) ? req.body.lines.length : 0,
+    });
+    if (error.stack) {
+      console.error('[DC Sales Order Add] Stack:', error.stack);
+    }
     res.status(500).json(getErrorPayload(error, 'Failed to submit DC sales order.'));
   }
 };

@@ -1,6 +1,16 @@
 const db = require('../db/odbc');
 
-const getBusinessPartnerGroups = async (query = '', options = {}) => {
+const normalizeGroupType = (type = '') => {
+  const normalized = String(type || '').trim().toLowerCase();
+  if (['all', '*'].includes(normalized)) return '';
+  if (['vendor', 'vendors', 'supplier', 'suppliers', 's'].includes(normalized)) return 'S';
+  if (['customer', 'customers', 'lead', 'leads', 'c', 'l'].includes(normalized)) return 'C';
+  return 'C';
+};
+
+const getBusinessPartnerGroups = async (query = '', typeOrOptions = {}, maybeOptions = {}) => {
+  const type = typeof typeOrOptions === 'string' ? normalizeGroupType(typeOrOptions) : '';
+  const options = typeof typeOrOptions === 'string' ? maybeOptions : typeOrOptions;
   const trimmed = String(query || '').trim();
   const result = await db.query(
     `
@@ -8,7 +18,7 @@ const getBusinessPartnerGroups = async (query = '', options = {}) => {
         GroupCode,
         GroupName
       FROM OCRG
-      WHERE GroupType = 'C'
+      WHERE (@type = '' OR GroupType = @type)
         AND (
           @query = ''
           OR CAST(GroupCode AS NVARCHAR(50)) LIKE @like
@@ -19,6 +29,7 @@ const getBusinessPartnerGroups = async (query = '', options = {}) => {
     {
       query: trimmed,
       like: `%${trimmed}%`,
+      type,
     },
     options,
   );
@@ -38,6 +49,24 @@ const getBusinessPartnerGroups = async (query = '', options = {}) => {
   return rows;
 };
 
+const getBusinessPartnerProperties = async (options = {}) => {
+  const result = await db.query(
+    `
+      SELECT GroupCode AS number, ISNULL(GroupName, '') AS name
+      FROM OCQG
+      ORDER BY GroupCode
+    `,
+    {},
+    options,
+  );
+
+  return (result.recordset || []).map((row, index) => ({
+    number: Number(row.number || index + 1),
+    name: String(row.name || `Business Partners Property ${index + 1}`).trim(),
+  }));
+};
+
 module.exports = {
   getBusinessPartnerGroups,
+  getBusinessPartnerProperties,
 };

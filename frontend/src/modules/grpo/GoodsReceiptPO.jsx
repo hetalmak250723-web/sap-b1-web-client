@@ -19,6 +19,7 @@ import BusinessPartnerModal from './components/BusinessPartnerModal';
 import StateSelectionModal from './components/StateSelectionModal';
 import FreightChargesModal from '../../components/freight/FreightChargesModal';
 import PurchasePrintLayoutActions from '../../components/print-layout/PurchasePrintLayoutActions';
+import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
 import { useSapWindowTaskbarActions } from '../../components/SapWindowTaskbarContext';
 import { copyToDocument } from '../../services/documentCopyService';
@@ -717,6 +718,13 @@ function GoodsReceiptPO() {
   };
 
   const totals = calcTotals();
+  useRelationshipMapRegistration({
+    enabled: Boolean(currentDocEntry),
+    objectType: 20,
+    docEntry: currentDocEntry,
+    header,
+    total: totals.total,
+  });
 
   // ── GST Logic ─────────────────────────────────────────────────────────────
   const applyGstLogic = useCallback(() => {

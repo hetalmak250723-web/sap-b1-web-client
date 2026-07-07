@@ -1,12 +1,12 @@
 import {
-  HEADER_UDF_DEFINITIONS,
-  ROW_UDF_DEFINITIONS,
   createUdfState,
   normalizeUdfState,
   filterSalesOrderRowUdfDefinitions,
 } from './salesOrderForm';
 
 export const FORM_SETTINGS_STORAGE_KEY = 'sapb1.ncSalesOrder.formSettings.v2';
+export const HEADER_UDF_DEFINITIONS = [];
+export const ROW_UDF_DEFINITIONS = [];
 
 const REQUESTED_VISIBLE_COLUMNS = new Set([
   'itemNo',
@@ -131,8 +131,6 @@ const readSavedFormSettings = (storageKey = FORM_SETTINGS_STORAGE_KEY) => {
 
 export {
   BASE_MATRIX_COLUMNS,
-  HEADER_UDF_DEFINITIONS,
-  ROW_UDF_DEFINITIONS,
   createDefaultFormSettings,
   createUdfState,
   normalizeUdfState,

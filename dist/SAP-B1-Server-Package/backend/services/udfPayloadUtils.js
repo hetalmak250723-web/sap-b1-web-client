@@ -80,7 +80,7 @@ const resolveUdfOptionValue = (field, key, value) => {
 };
 
 const isLengthCheckedUdfType = (field = {}) => (
-  !['number', 'date', 'time', 'checkbox'].includes(String(field.type || '').trim().toLowerCase())
+  !['number', 'date', 'time', 'checkbox'].includes(String((field || {}).type || '').trim().toLowerCase())
 );
 
 const normalizeUdfValue = (value, field = null, key = '') => {
@@ -109,6 +109,12 @@ const normalizeUdfValue = (value, field = null, key = '') => {
   return normalizedValue;
 };
 
+const summarizeUdfValue = (value) => {
+  if (isBlankUdfValue(value)) return '';
+  const text = String(value);
+  return text.length > 80 ? `${text.slice(0, 80)}...` : text;
+};
+
 const normalizeUdfValues = (values = {}, allowedKeys = null, definitions = null) => {
   const definitionsByKey = toUdfDefinitionMap(definitions);
 
@@ -116,7 +122,24 @@ const normalizeUdfValues = (values = {}, allowedKeys = null, definitions = null)
     if (!isSapUdfKey(key)) return normalized;
     if (allowedKeys && !allowedKeys.has(key)) return normalized;
 
-    const normalizedValue = normalizeUdfValue(value, definitionsByKey?.get(key), key);
+    const definition = definitionsByKey?.get(key);
+    if (definitionsByKey && !definition) return normalized;
+    let normalizedValue;
+
+    try {
+      normalizedValue = normalizeUdfValue(value, definition, key);
+    } catch (error) {
+      console.error('[UDF Payload] Failed to normalize UDF value:', {
+        key,
+        hasDefinition: Boolean(definition),
+        valueLength: isBlankUdfValue(value) ? 0 : String(value).length,
+        valuePreview: summarizeUdfValue(value),
+        error: error.message,
+      });
+
+      throw new Error(`Failed to normalize UDF ${key}: ${error.message}`);
+    }
+
     if (normalizedValue !== undefined) normalized[key] = normalizedValue;
     return normalized;
   }, {});

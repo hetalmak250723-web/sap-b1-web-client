@@ -18,6 +18,8 @@ const WINDOW_FRAME_EXCLUDED_PATHS = new Set([
   "/reports/purchase-analysis",
   "/reports/purchase/analysis",
   "/reports/purchasing/purchase-request-report",
+  "/activity",
+  "/reports/financial/financial/business-assessment-report",
 ]);
 
 const normalizeMenuName = (menuName = "") =>
