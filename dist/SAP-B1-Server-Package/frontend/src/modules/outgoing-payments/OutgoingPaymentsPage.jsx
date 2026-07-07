@@ -11,6 +11,7 @@ import {
   searchOutgoingPaymentControlAccounts,
   submitOutgoingPayment,
 } from "../../api/outgoingPaymentsApi";
+import { useRelationshipMapRegistration } from "../../components/relationship-map/RelationshipMapHost";
 import "./outgoingPayments.css";
 
 const today = new Date().toISOString().slice(0, 10);
@@ -385,6 +386,13 @@ export default function OutgoingPaymentsPage() {
     ? accountRowsTotal
     : selectedTotal + paymentOnAccountDue;
   const openBalance = Math.max(0, paymentOnAccountDue);
+  useRelationshipMapRegistration({
+    enabled: Boolean(currentDocEntry),
+    objectType: 46,
+    docEntry: currentDocEntry,
+    header,
+    total: totalAmountDue,
+  });
 
   const getPayableInvoiceTotal = (rows = invoices) =>
     rows.reduce((sum, invoice) => {
@@ -993,7 +1001,7 @@ export default function OutgoingPaymentsPage() {
   const partnerAddressLabel = isVendor ? "Pay To" : "Bill To";
 
   return (
-    <div className="po-page ip-payments-page">
+    <div className="po-page sap-document-page ip-payments-page">
       <div className="po-toolbar">
         <span className="po-toolbar__title">Outgoing Payments{isFoundDocument ? ` - #${header.documentNumber}` : ""}</span>
         <button type="button" className="po-btn" onClick={openFind}>Find</button>

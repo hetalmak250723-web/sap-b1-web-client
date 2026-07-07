@@ -376,12 +376,30 @@ const lookupBPGroups = async (req, res) => {
       databaseName = String(assignedCompany?.DbName || '').trim();
     }
 
-    const rows = await businessPartnerDbService.getBusinessPartnerGroups(req.query.query || "", {
+    const rows = await businessPartnerDbService.getBusinessPartnerGroups(req.query.query || "", req.query.type || "", {
       databaseName: databaseName || undefined,
     });
     res.json(rows);
   } catch (err) {
     res.status(500).json({ message: "Could not load BP groups: " + err.message });
+  }
+};
+
+const lookupBPProperties = async (req, res) => {
+  try {
+    let databaseName = '';
+
+    if (req.auth?.userId && req.auth?.companyId) {
+      const assignedCompany = await authDbService.getAssignedCompanyForUser(req.auth.userId, req.auth.companyId);
+      databaseName = String(assignedCompany?.DbName || '').trim();
+    }
+
+    const rows = await businessPartnerDbService.getBusinessPartnerProperties({
+      databaseName: databaseName || undefined,
+    });
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ message: "Could not load BP properties: " + err.message });
   }
 };
 
@@ -577,6 +595,7 @@ module.exports = {
   updateBP,
   searchBP,
   lookupBPGroups,
+  lookupBPProperties,
   lookupPaymentTerms,
   lookupSalesPersons,
   lookupPriceLists,

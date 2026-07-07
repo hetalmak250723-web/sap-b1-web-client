@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import "../../modules/item-master/styles/itemMaster.css";
 import "./productionOrder.css";
 import ProductionOrderLines from "./components/ProductionOrderLines";
@@ -131,6 +132,7 @@ const TYPE_LABELS = {
 const formatSummaryNumber = (value) => Number(value || 0).toFixed(2);
 
 export default function ProductionOrderModule() {
+  const location = useLocation();
   const [mode,    setMode]    = useState(MODES.ADD);
   const [tab,     setTab]     = useState(0);
   const [header,  setHeader]  = useState(EMPTY_HEADER);
@@ -161,6 +163,7 @@ export default function ProductionOrderModule() {
   const [linkedOrderModal, setLinkedOrderModal] = useState(false);
 
   const alertTimer = useRef(null);
+  const deepLinkDocEntryRef = useRef("");
 
   useEffect(() => {
     // Load reference data
@@ -625,6 +628,17 @@ export default function ProductionOrderModule() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const stateDocEntry = location.state?.productionOrderDocEntry || location.state?.docEntry;
+    const queryDocEntry = new URLSearchParams(location.search).get("docEntry");
+    const docEntryToLoad = String(stateDocEntry || queryDocEntry || "").trim();
+
+    if (!docEntryToLoad || deepLinkDocEntryRef.current === docEntryToLoad) return;
+    deepLinkDocEntryRef.current = docEntryToLoad;
+    handleSelectFromList(docEntryToLoad);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, location.state]);
 
   const isReadOnly = header.status === "boposClosed" || header.status === "boposCancelled";
   const statusKey  = STATUS_LABELS[header.status] || header.status;

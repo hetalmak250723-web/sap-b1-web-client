@@ -42,6 +42,7 @@ import useValidationHighlights from '../../utils/useValidationHighlights';
 import useSalesEmployeeSetup from '../../hooks/useSalesEmployeeSetup';
 import useSalesDocumentLineLookups from '../../hooks/useSalesDocumentLineLookups';
 import SalesEmployeeSetupModal from '../../components/sales-employee/SalesEmployeeSetupModal';
+import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import { getBP } from '../../api/businessPartnerApi';
 import {
     fetchSalesOrderByDocEntry,
@@ -374,6 +375,29 @@ const applyChangedUdfPatch = (current, patch) => {
 };
 
 // ─── static fallbacks ────────────────────────────────────────────────────────
+const normalizeDynamicUdfDefinitions = (definitions = []) => (
+    (Array.isArray(definitions) ? definitions : [])
+        .filter((field) => field && field.key)
+        .map((field) => ({
+            ...field,
+            type: field.type || 'text',
+            options: Array.isArray(field.options) ? field.options : [],
+        }))
+);
+
+const buildUdfVisibilitySettings = (definitions = [], currentSettings = {}) => (
+    definitions.reduce((acc, field) => {
+        const current = currentSettings?.[field.key] || {};
+        acc[field.key] = {
+            visible: current.visible !== undefined
+                ? current.visible
+                : (field.visible !== undefined ? field.visible : true),
+            active: current.active !== undefined ? current.active : true,
+        };
+        return acc;
+    }, {})
+);
+
 const FALLBACK_PAYMENT_TERMS = [
     { value: '0', label: 'Immediate' },
     { value: '1', label: 'Net 30' },
@@ -635,6 +659,10 @@ function NCSalesOrder() {
         let ignore = false;
         const load = async () => {
             setPageState(p => ({ ...p, loading: true, error: '', success: '' }));
+            setHeaderUdfDefinitions([]);
+            setRowUdfDefinitions([]);
+            setHeaderUdfs({});
+            setLines((prev) => prev.map((line) => ({ ...line, udf: {} })));
             setRefData(prev => ({
                 ...prev,
                 vendors: [],
@@ -706,10 +734,13 @@ function NCSalesOrder() {
                 console.log('═══════════════════════════════════════════════════');
 
                 if (!ignore) {
-                    const nextHeaderUdfs = refDataRes.data.udf_metadata?.header || [];
-                    const nextRowUdfs = filterSalesOrderRowUdfDefinitions(refDataRes.data.udf_metadata?.rows || []);
+                    const nextHeaderUdfs = normalizeDynamicUdfDefinitions(refDataRes.data.udf_metadata?.header || []);
+                    const nextRowUdfs = filterSalesOrderRowUdfDefinitions(
+                        normalizeDynamicUdfDefinitions(refDataRes.data.udf_metadata?.rows || [])
+                    );
                     const nextUdfMetadata = {
                         ...(refDataRes.data.udf_metadata || {}),
+                        header: nextHeaderUdfs,
                         rows: nextRowUdfs,
                     };
                     setHeaderUdfDefinitions(nextHeaderUdfs);
@@ -721,14 +752,8 @@ function NCSalesOrder() {
                     })));
                     setFormSettings((prev) => ({
                         ...prev,
-                        headerUdfs: {
-                            ...nextHeaderUdfs.reduce((acc, field) => ({ ...acc, [field.key]: { visible: true, active: true } }), {}),
-                            ...(prev.headerUdfs || {}),
-                        },
-                        rowUdfs: {
-                            ...nextRowUdfs.reduce((acc, field) => ({ ...acc, [field.key]: { visible: true, active: true } }), {}),
-                            ...(prev.rowUdfs || {}),
-                        },
+                        headerUdfs: buildUdfVisibilitySettings(nextHeaderUdfs, prev.headerUdfs),
+                        rowUdfs: buildUdfVisibilitySettings(nextRowUdfs, prev.rowUdfs),
                     }));
                     setRefData(prev => ({
                         ...prev,
@@ -1406,6 +1431,13 @@ function NCSalesOrder() {
     };
 
     const totals = calcTotals();
+    useRelationshipMapRegistration({
+        enabled: Boolean(currentDocEntry),
+        objectType: 17,
+        docEntry: currentDocEntry,
+        header,
+        total: totals.total,
+    });
 
     // ── GST determination logic ───────────────────────────────────────────────
     const determineGSTType = (gstState) => {
