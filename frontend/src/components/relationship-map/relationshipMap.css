@@ -157,6 +157,19 @@
   z-index: 2;
 }
 
+.rm-node--clickable {
+  cursor: pointer;
+}
+
+.rm-node--clickable:focus {
+  outline: 2px solid #2d74b8;
+  outline-offset: 2px;
+}
+
+.rm-node--clickable:hover {
+  box-shadow: 0 0 0 1px rgba(45, 116, 184, 0.24), 10px 12px 20px rgba(196, 174, 71, 0.28);
+}
+
 .rm-node--bp {
   width: 176px;
   min-width: 176px;
@@ -262,6 +275,20 @@
   font-weight: 700;
   text-align: center;
   line-height: 20px;
+}
+
+.rm-node__doc-entry {
+  position: absolute;
+  top: 51px;
+  right: 40px;
+  max-width: 118px;
+  color: #003366;
+  font-size: 11px;
+  line-height: 14px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rm-node__bottom {
