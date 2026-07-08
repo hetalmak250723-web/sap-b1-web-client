@@ -88,6 +88,7 @@ const APP_MENU_DEFINITIONS = [
   },
 
   { key: 'reports', menuName: 'Reports', icon: 'reports', sortOrder: 8 },
+  { key: 'report-layout-manager', parentKey: 'reports', menuName: 'Report Layout Manager', menuPath: '/reportlayoutmanager', icon: 'report', sortOrder: 0, enforceSortOrder: true, enforceMenuName: true },
   { key: 'sales-analysis', parentKey: 'reports', menuName: 'Sales Analysis', menuPath: '/reports/sales/analysis', icon: 'report', sortOrder: 1 },
   { key: 'item-list-report', parentKey: 'reports', menuName: 'Item List', menuPath: '/reports/item-list', icon: 'report', sortOrder: 2 },
   { key: 'inventory-in-warehouse-report', parentKey: 'reports', menuName: 'Inventory in Warehouse Report', menuPath: '/reports/inventory/in-warehouse', icon: 'report', sortOrder: 3 },
@@ -308,7 +309,7 @@ const cloneRoleRightsForDuplicateMenu = async (db, sourceMenuId, targetMenuId) =
   return result.rowsAffected?.[0] || 0;
 };
 
-const deleteDeprecatedReportLayoutManagerMenu = async (db) => {
+const deleteDeprecatedReportLayoutManagerMenu = async (db, canonicalMenuId = null) => {
   const reportsRoot = await db.queryOne(`
     SELECT TOP (1) MenuId
     FROM dbo.Menus
@@ -330,7 +331,10 @@ const deleteDeprecatedReportLayoutManagerMenu = async (db) => {
         AND LOWER(LTRIM(RTRIM(COALESCE(MenuPath, '')))) NOT LIKE '/reportlayoutmanager/menu/%'
       )
     )
-  `);
+      AND (@canonicalMenuId IS NULL OR MenuId <> @canonicalMenuId)
+  `, {
+    canonicalMenuId: Number.isInteger(Number(canonicalMenuId)) ? Number(canonicalMenuId) : null,
+  });
 
   if (!rows.length) return 0;
 
@@ -438,6 +442,11 @@ const syncApplicationSidebarMenus = async (db) => {
   );
   syncCount += await cloneRoleRightsForDuplicateMenu(
     db,
+    menuByKey.get('reports')?.MenuId,
+    menuByKey.get('report-layout-manager')?.MenuId,
+  );
+  syncCount += await cloneRoleRightsForDuplicateMenu(
+    db,
     menuByKey.get('item-list-report')?.MenuId,
     menuByKey.get('inventory-posting-list-report')?.MenuId,
   );
@@ -527,7 +536,10 @@ const syncApplicationSidebarMenus = async (db) => {
       menuByKey.get(reportKey)?.MenuId,
     );
   }
-  syncCount += await deleteDeprecatedReportLayoutManagerMenu(db);
+  syncCount += await deleteDeprecatedReportLayoutManagerMenu(
+    db,
+    menuByKey.get('report-layout-manager')?.MenuId,
+  );
 
   return syncCount;
 };

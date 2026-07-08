@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchRelationshipMap } from '../../api/relationshipMapApi';
+import { createActiveCompanyScopedRouteState } from '../../utils/companyStorageScope';
+import { createDocumentWindowId } from '../../utils/copyToState';
 import './relationshipMap.css';
 
 const RELATIONSHIP_CONTEXT_KEY = '__sapRelationshipMapContext';
@@ -57,7 +60,75 @@ const normalizeContext = (context = {}) => ({
   enabled: Boolean(context.enabled && context.objectType && context.docEntry),
   objectType: context.objectType ? Number(context.objectType) : null,
   docEntry: context.docEntry ? Number(context.docEntry) : null,
+  sourcePath: context.sourcePath || (typeof window !== 'undefined' ? window.location.pathname : ''),
 });
+
+const getSalesOrderVariant = (sourcePath = '') => {
+  const path = String(sourcePath || '').toLowerCase();
+  if (path.startsWith('/soda-sales-order') || path.startsWith('/soda-delivery')) return 'soda';
+  if (path.startsWith('/dc-sales-order') || path.startsWith('/dc-delivery')) return 'dc';
+  if (path.startsWith('/nc-sales-order') || path.startsWith('/nc-delivery')) return 'nc';
+  return 'standard';
+};
+
+const getSalesOrderTarget = (variant) => {
+  if (variant === 'soda') return { path: '/soda-sales-order', stateKey: 'sodaSalesOrderDocEntry', docType: 'soda-sales-order', title: 'SODA Sales Order' };
+  if (variant === 'dc') return { path: '/dc-sales-order', stateKey: 'dcSalesOrderDocEntry', docType: 'dc-sales-order', title: 'DC Sales Order' };
+  if (variant === 'nc') return { path: '/nc-sales-order', stateKey: 'ncSalesOrderDocEntry', docType: 'nc-sales-order', title: 'NC Sales Order' };
+  return { path: '/sales-order', stateKey: 'salesOrderDocEntry', docType: 'sales-order', title: 'Sales Order' };
+};
+
+const getDeliveryTarget = (variant) => {
+  if (variant === 'soda') return { path: '/soda-delivery', stateKey: 'sodaDeliveryDocEntry', docType: 'soda-delivery', title: 'SODA Delivery' };
+  if (variant === 'dc') return { path: '/dc-delivery', stateKey: 'dcDeliveryDocEntry', docType: 'dc-delivery', title: 'DC Delivery' };
+  if (variant === 'nc') return { path: '/nc-delivery', stateKey: 'ncDeliveryDocEntry', docType: 'nc-delivery', title: 'NC Delivery' };
+  return { path: '/delivery', stateKey: 'deliveryDocEntry', docType: 'delivery', title: 'Delivery' };
+};
+
+const getDocumentNavigationTarget = (node, context) => {
+  const objectType = Number(node?.objectType);
+  const variant = getSalesOrderVariant(context?.sourcePath);
+  const targets = {
+    23: { path: '/sales-quotation', stateKey: 'salesQuotationDocEntry', docType: 'sales-quotation', title: 'Sales Quotation' },
+    17: getSalesOrderTarget(variant),
+    15: getDeliveryTarget(variant),
+    13: { path: '/ar-invoice', stateKey: 'arInvoiceDocEntry', docType: 'ar-invoice', title: 'A/R Invoice' },
+    14: { path: '/ar-credit-memo', stateKey: 'arCreditMemoDocEntry', docType: 'ar-credit-memo', title: 'A/R Credit Memo' },
+    1470000113: { path: '/purchase-request', stateKey: 'purchaseRequestDocEntry', docType: 'purchase-request', title: 'Purchase Request' },
+    540000006: { path: '/purchase-quotation', stateKey: 'purchaseQuotationDocEntry', docType: 'purchase-quotation', title: 'Purchase Quotation' },
+    22: { path: '/purchase-order', stateKey: 'purchaseOrderDocEntry', docType: 'purchase-order', title: 'Purchase Order' },
+    20: { path: '/grpo', stateKey: 'grpoDocEntry', docType: 'grpo', title: 'Goods Receipt PO' },
+    18: { path: '/ap-invoice', stateKey: 'APInvoiceDocEntry', docType: 'ap-invoice', title: 'A/P Invoice' },
+    19: { path: '/ap-credit-memo', stateKey: 'APCreditMemoDocEntry', docType: 'ap-credit-memo', title: 'A/P Credit Memo' },
+    24: { path: '/incoming-payments', stateKey: 'incomingPaymentDocEntry', docType: 'incoming-payments', title: 'Incoming Payment' },
+    46: { path: '/outgoing-payments', stateKey: 'outgoingPaymentDocEntry', docType: 'outgoing-payments', title: 'Outgoing Payment' },
+    30: { path: '/journal-entry', stateKey: 'journalEntryTransId', docType: 'journal-entry', title: 'Journal Entry' },
+  };
+
+  return targets[objectType] || null;
+};
+
+const buildDocumentRouteState = (node, target) => {
+  const docEntry = Number(node?.docEntry);
+  const docNum = node?.docNum || docEntry;
+  const title = `${target.title}${docNum ? ` #${docNum}` : ''}`;
+
+  return createActiveCompanyScopedRouteState({
+    [target.stateKey]: docEntry,
+    docEntry,
+    document: {
+      docEntry,
+      DocEntry: docEntry,
+      docNum: node?.docNum,
+      DocNum: node?.docNum,
+    },
+    sapWindow: {
+      id: createDocumentWindowId(target.docType, docEntry),
+      path: target.path,
+      title,
+    },
+  });
+};
 
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 224;
@@ -162,18 +233,34 @@ const buildRelationshipTreeLayout = (nodes = [], edges = []) => {
   return { positions, width, height };
 };
 
-function RelationshipNode({ node, position, onDragStart }) {
+function RelationshipNode({ node, position, onDragStart, onOpen }) {
   const objectType = Number(node.objectType);
+  const canOpen = node.type !== 'businessPartner' && node.docEntry && typeof onOpen === 'function';
 
   return (
     <div
-      className={`rm-node ${getRelationshipNodeClass(node)}`}
+      className={`rm-node ${getRelationshipNodeClass(node)}${canOpen ? ' rm-node--clickable' : ''}`}
       style={{ left: position.x, top: position.y }}
       onMouseDown={(event) => onDragStart(event, node.id)}
-      title="Drag"
+      onClick={() => {
+        if (canOpen) onOpen(node);
+      }}
+      onKeyDown={(event) => {
+        if (!canOpen || (event.key !== 'Enter' && event.key !== ' ')) return;
+        event.preventDefault();
+        onOpen(node);
+      }}
+      role={canOpen ? 'button' : undefined}
+      tabIndex={canOpen ? 0 : undefined}
+      title={canOpen ? `Open ${node.label} DocEntry ${node.docEntry}` : 'Drag'}
     >
       <div className="rm-node__title">{node.label}</div>
-      {node.type !== 'businessPartner' && <div className="rm-node__lock" aria-hidden="true" />}
+      {node.type !== 'businessPartner' && (
+        <>
+          <div className="rm-node__doc-entry">DocEntry {node.docEntry || '-'}</div>
+          <div className="rm-node__lock" aria-hidden="true" />
+        </>
+      )}
       <div className="rm-node__body">
         {node.type === 'businessPartner' ? (
           <>
@@ -194,8 +281,9 @@ function RelationshipNode({ node, position, onDragStart }) {
   );
 }
 
-function RelationshipMapTree({ nodes, edges }) {
+function RelationshipMapTree({ nodes, edges, onNodeOpen }) {
   const canvasRef = useRef(null);
+  const dragMovedRef = useRef(false);
   const [manualPositions, setManualPositions] = useState({});
   const [drag, setDrag] = useState(null);
   const layout = useMemo(() => buildRelationshipTreeLayout(nodes, edges), [nodes, edges]);
@@ -218,9 +306,12 @@ function RelationshipMapTree({ nodes, edges }) {
     const rect = canvas.getBoundingClientRect();
     setDrag({
       nodeId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
       offsetX: event.clientX - rect.left + canvas.scrollLeft - position.x,
       offsetY: event.clientY - rect.top + canvas.scrollTop - position.y,
     });
+    dragMovedRef.current = false;
     event.preventDefault();
   }, [positions]);
 
@@ -233,13 +324,24 @@ function RelationshipMapTree({ nodes, edges }) {
       const rect = canvas.getBoundingClientRect();
       const x = Math.max(0, event.clientX - rect.left + canvas.scrollLeft - drag.offsetX);
       const y = Math.max(0, event.clientY - rect.top + canvas.scrollTop - drag.offsetY);
+      if (
+        Math.abs(event.clientX - drag.startClientX) > 4 ||
+        Math.abs(event.clientY - drag.startClientY) > 4
+      ) {
+        dragMovedRef.current = true;
+      }
       setManualPositions((current) => ({
         ...current,
         [drag.nodeId]: { x, y },
       }));
     };
 
-    const stopDrag = () => setDrag(null);
+    const stopDrag = () => {
+      setDrag(null);
+      window.setTimeout(() => {
+        dragMovedRef.current = false;
+      }, 0);
+    };
     document.addEventListener('mousemove', handleMove);
     document.addEventListener('mouseup', stopDrag);
 
@@ -248,6 +350,11 @@ function RelationshipMapTree({ nodes, edges }) {
       document.removeEventListener('mouseup', stopDrag);
     };
   }, [drag]);
+
+  const openNode = useCallback((node) => {
+    if (dragMovedRef.current) return;
+    onNodeOpen?.(node);
+  }, [onNodeOpen]);
 
   const visibleEdges = edges.filter((edge) => positions[edge.from] && positions[edge.to]);
 
@@ -292,6 +399,7 @@ function RelationshipMapTree({ nodes, edges }) {
             node={node}
             position={positions[node.id] || { x: TREE_LEFT, y: TREE_TOP }}
             onDragStart={startDrag}
+            onOpen={openNode}
           />
         ))}
       </div>
@@ -332,7 +440,7 @@ export const useRelationshipMapRegistration = (context) => {
   }, [normalized]);
 };
 
-function RelationshipMapModal({ isOpen, loading, error, data, fallbackContext, onClose }) {
+function RelationshipMapModal({ isOpen, loading, error, data, fallbackContext, onClose, onNodeOpen }) {
   if (!isOpen) return null;
 
   const fallbackHeader = fallbackContext?.header || {};
@@ -389,7 +497,7 @@ function RelationshipMapModal({ isOpen, loading, error, data, fallbackContext, o
             <div className="rm-state rm-state--error">{error}</div>
           </div>
         ) : (
-          <RelationshipMapTree nodes={visibleNodes} edges={mapEdges} />
+          <RelationshipMapTree nodes={visibleNodes} edges={mapEdges} onNodeOpen={onNodeOpen} />
         )}
         <div className="rm-footer">
           <div className="rm-selector">Marketing Document: Document Tree</div>
@@ -407,6 +515,7 @@ function RelationshipMapModal({ isOpen, loading, error, data, fallbackContext, o
 }
 
 export default function RelationshipMapHost() {
+  const navigate = useNavigate();
   const [menu, setMenu] = useState({ open: false, x: 0, y: 0, context: null });
   const [modal, setModal] = useState({ open: false, loading: false, error: '', data: null, context: null });
 
@@ -447,6 +556,17 @@ export default function RelationshipMapHost() {
       });
     }
   }, [menu.context]);
+
+  const openDocumentNode = useCallback((node) => {
+    const target = getDocumentNavigationTarget(node, modal.context);
+    const docEntry = Number(node?.docEntry);
+    if (!target || !Number.isFinite(docEntry) || docEntry <= 0) return;
+
+    closeModal();
+    navigate(target.path, {
+      state: buildDocumentRouteState({ ...node, docEntry }, target),
+    });
+  }, [closeModal, modal.context, navigate]);
 
   useEffect(() => {
     const handleContextMenu = (event) => {
@@ -512,6 +632,7 @@ export default function RelationshipMapHost() {
         data={modal.data}
         fallbackContext={modal.context}
         onClose={closeModal}
+        onNodeOpen={openDocumentNode}
       />
     </>
   );

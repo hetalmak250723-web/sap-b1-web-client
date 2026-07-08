@@ -125,6 +125,18 @@ const isAdminRoleName = (roleName) =>
   ['admin', 'superadmin'].includes(String(roleName || '').trim().toLowerCase());
 
 const REPORT_MENU_PATH_PATTERN = /^\/reportlayoutmanager\/menu\/(\d+)\/?$/i;
+const REPORT_LAYOUT_MANAGER_PATH = '/reportlayoutmanager';
+const REPORTS_PATH_PREFIX = '/reports';
+
+const normalizeAuthMenuPath = (menuPath = '') =>
+  String(menuPath || '').trim().toLowerCase().replace(/\/+$/g, '') || '';
+
+const isReportWorkspacePath = (menuPath = '') => {
+  const normalizedPath = normalizeAuthMenuPath(menuPath);
+  return normalizedPath === REPORTS_PATH_PREFIX ||
+    normalizedPath.startsWith(`${REPORTS_PATH_PREFIX}/`) ||
+    REPORT_MENU_PATH_PATTERN.test(normalizedPath);
+};
 
 const extractReportMenuIdFromPath = (menuPath = '') => {
   const match = String(menuPath || '').trim().match(REPORT_MENU_PATH_PATTERN);
@@ -202,6 +214,15 @@ const buildAuthorizedMenus = async (roleId, roleName = '', companyId = null) => 
   const visibleRights = roleRights.filter((right) => Boolean(right.CanView));
   const visibleIds = new Set(visibleRights.map((right) => right.MenuId));
   const menuLookup = new Map(filteredMenus.map((menu) => [menu.MenuId, menu]));
+  const addMenuAndAncestors = (menu) => {
+    let current = menu;
+    while (current) {
+      visibleIds.add(current.MenuId);
+      current = current.ParentId && menuLookup.has(current.ParentId)
+        ? menuLookup.get(current.ParentId)
+        : null;
+    }
+  };
 
   for (const right of visibleRights) {
     let current = menuLookup.get(right.MenuId);
@@ -209,6 +230,17 @@ const buildAuthorizedMenus = async (roleId, roleName = '', companyId = null) => 
       visibleIds.add(current.ParentId);
       current = menuLookup.get(current.ParentId);
     }
+  }
+
+  const hasVisibleReportAccess = filteredMenus.some((menu) =>
+    visibleIds.has(menu.MenuId) && isReportWorkspacePath(menu.MenuPath),
+  );
+  const reportLayoutManagerMenu = filteredMenus.find((menu) =>
+    normalizeAuthMenuPath(menu.MenuPath) === REPORT_LAYOUT_MANAGER_PATH,
+  );
+
+  if (hasVisibleReportAccess && reportLayoutManagerMenu) {
+    addMenuAndAncestors(reportLayoutManagerMenu);
   }
 
   const rightsByMenuId = new Map(
