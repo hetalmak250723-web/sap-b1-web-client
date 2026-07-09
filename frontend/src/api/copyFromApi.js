@@ -20,6 +20,7 @@ const ROUTES = {
   salesOrder:     { list: 'open-sales-orders',     copy: 'sales-order' },
   delivery:       { list: 'open-deliveries',        copy: 'delivery' },
   invoice:        { list: 'open-invoices',          copy: 'invoice' },
+  apInvoice:      { list: 'open-invoices',          copy: 'invoice' },
   blanket:        { list: 'open-blanket-agreements',copy: 'blanket' },
 };
 
@@ -81,6 +82,7 @@ export const BASE_TYPE = {
   purchaseOrder:  22,
   grpo:           20,
   invoice:        13,
+  apInvoice:      18,
   returns:        14,
   return:         16,
   blanket:        1470000113,

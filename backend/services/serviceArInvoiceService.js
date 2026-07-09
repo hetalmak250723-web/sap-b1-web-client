@@ -187,11 +187,14 @@ const validatePayload = (payload) => {
   return { header, lines: populatedLines };
 };
 
-const buildSapPayload = async (payload, includeSeries = true) => {
+const buildSapPayload = async (payload, includeSeries = true, {
+  headerTable = 'OINV',
+  lineTable = 'INV1',
+} = {}) => {
   const { header, lines } = validatePayload(payload);
   const [headerUdfDefinitionsByKey, lineUdfDefinitionsByKey] = await Promise.all([
-    getUdfDefinitionsByKey('OINV'),
-    getUdfDefinitionsByKey('INV1'),
+    getUdfDefinitionsByKey(headerTable),
+    getUdfDefinitionsByKey(lineTable),
   ]);
 
   const customerCode = String(header.vendor || header.customerCode || '').trim();
@@ -298,20 +301,60 @@ const updateServiceARInvoice = async (docEntry, payload) => {
   };
 };
 
+const submitServiceARCreditMemo = async (payload) => {
+  const sapPayload = await buildSapPayload(payload, true, { headerTable: 'ORIN', lineTable: 'RIN1' });
+  const response = await sapService.request({
+    method: 'post',
+    url: '/CreditNotes',
+    data: sapPayload,
+  });
+
+  return {
+    message: 'Service A/R Credit Memo created successfully',
+    doc_num: response.data?.DocNum,
+    doc_entry: response.data?.DocEntry,
+    DocNum: response.data?.DocNum,
+    DocEntry: response.data?.DocEntry,
+  };
+};
+
+const updateServiceARCreditMemo = async (docEntry, payload) => {
+  const sapPayload = await buildSapPayload(payload, false, { headerTable: 'ORIN', lineTable: 'RIN1' });
+  await sapService.request({
+    method: 'patch',
+    url: `/CreditNotes(${docEntry})`,
+    data: sapPayload,
+  });
+
+  return {
+    message: 'Service A/R Credit Memo updated successfully',
+    doc_entry: docEntry,
+  };
+};
+
 module.exports = {
   getReferenceData: serviceArInvoiceDb.getReferenceData,
+  getServiceARCreditMemoReferenceData: serviceArInvoiceDb.getServiceARCreditMemoReferenceData,
   getCustomerDetails: serviceArInvoiceDb.getCustomerDetails,
   getCustomerFilterOptions: arInvoiceService.getCustomerFilterOptions,
   getDocumentSeries: serviceArInvoiceDb.getDocumentSeries,
   getNextNumber: serviceArInvoiceDb.getNextNumber,
+  getServiceARCreditMemoSeries: serviceArInvoiceDb.getServiceARCreditMemoSeries,
+  getServiceARCreditMemoNextNumber: serviceArInvoiceDb.getServiceARCreditMemoNextNumber,
   getServiceARInvoiceList: serviceArInvoiceDb.getServiceARInvoiceList,
   getServiceARInvoice: serviceArInvoiceDb.getServiceARInvoice,
+  getServiceARCreditMemoList: serviceArInvoiceDb.getServiceARCreditMemoList,
+  getServiceARCreditMemo: serviceArInvoiceDb.getServiceARCreditMemo,
   submitServiceARInvoice,
   updateServiceARInvoice,
+  submitServiceARCreditMemo,
+  updateServiceARCreditMemo,
   getOpenServiceSalesQuotations: async (customerCode) => ({ documents: await serviceArInvoiceDb.getOpenServiceSalesQuotations(customerCode) }),
   getOpenServiceSalesOrders: async (customerCode) => ({ documents: await serviceArInvoiceDb.getOpenServiceSalesOrders(customerCode) }),
   getOpenServiceDeliveries: async (customerCode) => ({ documents: await serviceArInvoiceDb.getOpenServiceDeliveries(customerCode) }),
   getServiceSalesQuotationForCopy: serviceArInvoiceDb.getServiceSalesQuotationForCopy,
   getServiceSalesOrderForCopy: serviceArInvoiceDb.getServiceSalesOrderForCopy,
   getServiceDeliveryForCopy: serviceArInvoiceDb.getServiceDeliveryForCopy,
+  getOpenServiceARInvoices: async (customerCode) => ({ documents: await serviceArInvoiceDb.getOpenServiceARInvoices(customerCode) }),
+  getServiceARInvoiceForCreditMemoCopy: serviceArInvoiceDb.getServiceARInvoiceForCreditMemoCopy,
 };
