@@ -7,6 +7,7 @@ const TITLES = {
   delivery: 'List of Deliveries',
   invoice: 'List of A/R Invoices',
   arInvoice: 'List of A/R Invoices',
+  apInvoice: 'List of A/P Invoices',
   purchaseQuotation: 'List of Purchase Quotations',
   purchaseRequest: 'List of Purchase Requests',
   purchaseOrder: 'List of Purchase Orders',
@@ -20,6 +21,7 @@ const BUSINESS_LABELS = {
   purchaseRequest: 'Vendor',
   purchaseOrder: 'Vendor',
   grpo: 'Vendor',
+  apInvoice: 'Vendor',
 };
 
 const getErrorMessage = (error, fallback) => {

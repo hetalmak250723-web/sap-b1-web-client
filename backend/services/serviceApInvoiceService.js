@@ -177,7 +177,9 @@ const resolveLocationCode = (line) => {
   return undefined;
 };
 
-const validatePayload = async (payload, docEntry = null) => {
+const validatePayload = async (payload, docEntry = null, {
+  isDuplicateVendorReference = serviceApInvoiceDb.isDuplicateVendorInvoiceNumber,
+} = {}) => {
   const { header = {}, lines = [] } = payload || {};
   const vendorCode = String(header.vendor || header.customerCode || '').trim();
   if (!vendorCode) throw new Error('Vendor is required');
@@ -210,7 +212,7 @@ const validatePayload = async (payload, docEntry = null) => {
     throw new Error('Branch is required');
   }
 
-  if (header.salesContractNo && await serviceApInvoiceDb.isDuplicateVendorInvoiceNumber(vendorCode, String(header.salesContractNo).trim(), docEntry)) {
+  if (header.salesContractNo && await isDuplicateVendorReference(vendorCode, String(header.salesContractNo).trim(), docEntry)) {
     throw new Error('Duplicate vendor invoice number');
   }
 
@@ -230,11 +232,15 @@ const validatePayload = async (payload, docEntry = null) => {
   return { header, lines: populatedLines };
 };
 
-const buildSapPayload = async (payload, includeSeries = true, docEntry = null) => {
-  const { header, lines } = await validatePayload(payload, docEntry);
+const buildSapPayload = async (payload, includeSeries = true, docEntry = null, {
+  headerTable = 'OPCH',
+  lineTable = 'PCH1',
+  isDuplicateVendorReference = serviceApInvoiceDb.isDuplicateVendorInvoiceNumber,
+} = {}) => {
+  const { header, lines } = await validatePayload(payload, docEntry, { isDuplicateVendorReference });
   const [headerUdfDefinitionsByKey, lineUdfDefinitionsByKey] = await Promise.all([
-    getUdfDefinitionsByKey('OPCH'),
-    getUdfDefinitionsByKey('PCH1'),
+    getUdfDefinitionsByKey(headerTable),
+    getUdfDefinitionsByKey(lineTable),
   ]);
 
   const vendorCode = String(header.vendor || header.customerCode || '').trim();
@@ -341,20 +347,68 @@ const updateServiceAPInvoice = async (docEntry, payload) => {
   };
 };
 
+const submitServiceAPCreditMemo = async (payload) => {
+  const sapPayload = await buildSapPayload(payload, true, null, {
+    headerTable: 'ORPC',
+    lineTable: 'RPC1',
+    isDuplicateVendorReference: serviceApInvoiceDb.isDuplicateVendorCreditMemoNumber,
+  });
+  const response = await sapService.request({
+    method: 'post',
+    url: '/PurchaseCreditNotes',
+    data: sapPayload,
+  });
+
+  return {
+    message: 'Service A/P Credit Memo created successfully',
+    doc_num: response.data?.DocNum,
+    doc_entry: response.data?.DocEntry,
+    DocNum: response.data?.DocNum,
+    DocEntry: response.data?.DocEntry,
+  };
+};
+
+const updateServiceAPCreditMemo = async (docEntry, payload) => {
+  const sapPayload = await buildSapPayload(payload, false, docEntry, {
+    headerTable: 'ORPC',
+    lineTable: 'RPC1',
+    isDuplicateVendorReference: serviceApInvoiceDb.isDuplicateVendorCreditMemoNumber,
+  });
+  await sapService.request({
+    method: 'patch',
+    url: `/PurchaseCreditNotes(${docEntry})`,
+    data: sapPayload,
+  });
+
+  return {
+    message: 'Service A/P Credit Memo updated successfully',
+    doc_entry: docEntry,
+  };
+};
+
 module.exports = {
   getReferenceData: serviceApInvoiceDb.getReferenceData,
+  getServiceAPCreditMemoReferenceData: serviceApInvoiceDb.getServiceAPCreditMemoReferenceData,
   getVendorDetails: serviceApInvoiceDb.getVendorDetails,
   getVendorFilterOptions: apInvoiceService.getVendorFilterOptions,
   getDocumentSeries: serviceApInvoiceDb.getDocumentSeries,
   getNextNumber: serviceApInvoiceDb.getNextNumber,
+  getServiceAPCreditMemoSeries: serviceApInvoiceDb.getServiceAPCreditMemoSeries,
+  getServiceAPCreditMemoNextNumber: serviceApInvoiceDb.getServiceAPCreditMemoNextNumber,
   getServiceAPInvoiceList: serviceApInvoiceDb.getServiceAPInvoiceList,
   getServiceAPInvoice: serviceApInvoiceDb.getServiceAPInvoice,
+  getServiceAPCreditMemoList: serviceApInvoiceDb.getServiceAPCreditMemoList,
+  getServiceAPCreditMemo: serviceApInvoiceDb.getServiceAPCreditMemo,
   submitServiceAPInvoice,
   updateServiceAPInvoice,
+  submitServiceAPCreditMemo,
+  updateServiceAPCreditMemo,
   getOpenServicePurchaseQuotations: async (vendorCode) => ({ documents: await serviceApInvoiceDb.getOpenServicePurchaseQuotations(vendorCode) }),
   getOpenServicePurchaseOrders: async (vendorCode) => ({ documents: await serviceApInvoiceDb.getOpenServicePurchaseOrders(vendorCode) }),
   getOpenServiceGRPO: async (vendorCode) => ({ documents: await serviceApInvoiceDb.getOpenServiceGRPO(vendorCode) }),
+  getOpenServiceAPInvoices: async (vendorCode) => ({ documents: await serviceApInvoiceDb.getOpenServiceAPInvoices(vendorCode) }),
   getServicePurchaseQuotationForCopy: serviceApInvoiceDb.getServicePurchaseQuotationForCopy,
   getServicePurchaseOrderForCopy: serviceApInvoiceDb.getServicePurchaseOrderForCopy,
   getServiceGRPOForCopy: serviceApInvoiceDb.getServiceGRPOForCopy,
+  getServiceAPInvoiceForCreditMemoCopy: serviceApInvoiceDb.getServiceAPInvoiceForCreditMemoCopy,
 };

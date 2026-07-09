@@ -85,21 +85,33 @@ const getDeliveryTarget = (variant) => {
   return { path: '/delivery', stateKey: 'deliveryDocEntry', docType: 'delivery', title: 'Delivery' };
 };
 
+const isServiceSourcePath = (sourcePath = '') =>
+  String(sourcePath || '').toLowerCase().startsWith('/services/');
+
 const getDocumentNavigationTarget = (node, context) => {
   const objectType = Number(node?.objectType);
   const variant = getSalesOrderVariant(context?.sourcePath);
+  const isServiceDocument = isServiceSourcePath(context?.sourcePath);
   const targets = {
     23: { path: '/sales-quotation', stateKey: 'salesQuotationDocEntry', docType: 'sales-quotation', title: 'Sales Quotation' },
     17: getSalesOrderTarget(variant),
     15: getDeliveryTarget(variant),
-    13: { path: '/ar-invoice', stateKey: 'arInvoiceDocEntry', docType: 'ar-invoice', title: 'A/R Invoice' },
-    14: { path: '/ar-credit-memo', stateKey: 'arCreditMemoDocEntry', docType: 'ar-credit-memo', title: 'A/R Credit Memo' },
+    13: isServiceDocument
+      ? { path: '/services/ar-invoice', stateKey: 'serviceARInvoiceDocEntry', docType: 'service-ar-invoice', title: 'Service A/R Invoice' }
+      : { path: '/ar-invoice', stateKey: 'arInvoiceDocEntry', docType: 'ar-invoice', title: 'A/R Invoice' },
+    14: isServiceDocument
+      ? { path: '/services/ar-credit-memo', stateKey: 'serviceARCreditMemoDocEntry', docType: 'service-ar-credit-memo', title: 'Service A/R Credit Memo' }
+      : { path: '/ar-credit-memo', stateKey: 'arCreditMemoDocEntry', docType: 'ar-credit-memo', title: 'A/R Credit Memo' },
     1470000113: { path: '/purchase-request', stateKey: 'purchaseRequestDocEntry', docType: 'purchase-request', title: 'Purchase Request' },
     540000006: { path: '/purchase-quotation', stateKey: 'purchaseQuotationDocEntry', docType: 'purchase-quotation', title: 'Purchase Quotation' },
     22: { path: '/purchase-order', stateKey: 'purchaseOrderDocEntry', docType: 'purchase-order', title: 'Purchase Order' },
     20: { path: '/grpo', stateKey: 'grpoDocEntry', docType: 'grpo', title: 'Goods Receipt PO' },
-    18: { path: '/ap-invoice', stateKey: 'APInvoiceDocEntry', docType: 'ap-invoice', title: 'A/P Invoice' },
-    19: { path: '/ap-credit-memo', stateKey: 'APCreditMemoDocEntry', docType: 'ap-credit-memo', title: 'A/P Credit Memo' },
+    18: isServiceDocument
+      ? { path: '/services/ap-invoice', stateKey: 'serviceApInvoiceDocEntry', docType: 'service-ap-invoice', title: 'Service A/P Invoice' }
+      : { path: '/ap-invoice', stateKey: 'APInvoiceDocEntry', docType: 'ap-invoice', title: 'A/P Invoice' },
+    19: isServiceDocument
+      ? { path: '/services/ap-credit-memo', stateKey: 'serviceAPCreditMemoDocEntry', docType: 'service-ap-credit-memo', title: 'Service A/P Credit Memo' }
+      : { path: '/ap-credit-memo', stateKey: 'APCreditMemoDocEntry', docType: 'ap-credit-memo', title: 'A/P Credit Memo' },
     24: { path: '/incoming-payments', stateKey: 'incomingPaymentDocEntry', docType: 'incoming-payments', title: 'Incoming Payment' },
     46: { path: '/outgoing-payments', stateKey: 'outgoingPaymentDocEntry', docType: 'outgoing-payments', title: 'Outgoing Payment' },
     30: { path: '/journal-entry', stateKey: 'journalEntryTransId', docType: 'journal-entry', title: 'Journal Entry' },

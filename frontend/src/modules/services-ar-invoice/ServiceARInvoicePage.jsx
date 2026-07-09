@@ -9,6 +9,7 @@ import PrintLayoutToolbar from '../../components/print-layout/PrintLayoutToolbar
 import { useRelationshipMapRegistration } from '../../components/relationship-map/RelationshipMapHost';
 import LineValueLookupModal from '../../components/sales-document/LineValueLookupModal';
 import { copyToDocument } from '../../services/documentCopyService';
+import { consumeCopyToState } from '../../utils/copyToState';
 import { duplicateDocumentInPlace } from '../../utils/documentDuplicate';
 import { useSapWindowTaskbarActions } from '../../components/SapWindowTaskbarContext';
 import { createActiveCompanyScopedRouteState } from '../../utils/companyStorageScope';
@@ -372,11 +373,80 @@ const normalizeCopyLine = (line, idx, docEntry, baseType, accounts) => {
   };
 };
 
-function ServiceARInvoicePage() {
+const DEFAULT_COPY_FROM_OPTIONS = [
+  { key: 'salesQuotation', label: 'Sales Quotations' },
+  { key: 'salesOrder', label: 'Sales Orders' },
+  { key: 'delivery', label: 'Deliveries' },
+];
+
+const DEFAULT_DOCUMENT_CONFIG = {
+  label: 'Service A/R Invoice',
+  pluralLabel: 'Service A/R Invoices',
+  objectType: 13,
+  documentType: 'serviceArInvoice',
+  routePath: '/services/ar-invoice',
+  findPath: '/services/ar-invoice/find',
+  stateKey: 'serviceARInvoiceDocEntry',
+  responseKey: 'service_ar_invoice',
+  customerDatalistId: 'service-ar-invoice-customers',
+  accountDatalistId: 'service-ar-invoice-accounts',
+  copyFromOptions: DEFAULT_COPY_FROM_OPTIONS,
+  copyTo: {
+    enabled: true,
+    sourceDocType: 'serviceArInvoice',
+    targetType: 'arCreditMemo',
+  },
+  api: {
+    fetchReferenceData: fetchServiceARInvoiceReferenceData,
+    fetchSeries: fetchServiceARInvoiceSeries,
+    fetchNextNumber: fetchServiceARInvoiceNextNumber,
+    fetchByDocEntry: fetchServiceARInvoiceByDocEntry,
+    fetchCustomerDetails: fetchServiceARInvoiceCustomerDetails,
+    submit: submitServiceARInvoice,
+    update: updateServiceARInvoice,
+    generateJournalEntry: generateServiceARInvoiceJournalEntry,
+    copyFromFetchers: {
+      salesQuotation: fetchOpenServiceSalesQuotationsForARInvoice,
+      salesOrder: fetchOpenServiceSalesOrdersForARInvoice,
+      delivery: fetchOpenServiceDeliveriesForARInvoice,
+    },
+    copyFromDetailFetchers: {
+      salesQuotation: fetchServiceSalesQuotationForARInvoiceCopy,
+      salesOrder: fetchServiceSalesOrderForARInvoiceCopy,
+      delivery: fetchServiceDeliveryForARInvoiceCopy,
+    },
+  },
+};
+
+const mergeDocumentConfig = (documentConfig = {}) => ({
+  ...DEFAULT_DOCUMENT_CONFIG,
+  ...documentConfig,
+  copyFromOptions: documentConfig.copyFromOptions || DEFAULT_DOCUMENT_CONFIG.copyFromOptions,
+  copyTo: {
+    ...DEFAULT_DOCUMENT_CONFIG.copyTo,
+    ...(documentConfig.copyTo || {}),
+  },
+  api: {
+    ...DEFAULT_DOCUMENT_CONFIG.api,
+    ...(documentConfig.api || {}),
+    copyFromFetchers: {
+      ...DEFAULT_DOCUMENT_CONFIG.api.copyFromFetchers,
+      ...(documentConfig.api?.copyFromFetchers || {}),
+    },
+    copyFromDetailFetchers: {
+      ...DEFAULT_DOCUMENT_CONFIG.api.copyFromDetailFetchers,
+      ...(documentConfig.api?.copyFromDetailFetchers || {}),
+    },
+  },
+});
+
+function ServiceARInvoicePage({ documentConfig = null } = {}) {
   const location = useLocation();
   const navigate = useNavigate();
   const { removeTask, upsertTask } = useSapWindowTaskbarActions();
-  const requestedDocEntry = location.state?.serviceARInvoiceDocEntry;
+  const config = useMemo(() => mergeDocumentConfig(documentConfig || {}), [documentConfig]);
+  const api = config.api;
+  const requestedDocEntry = location.state?.[config.stateKey];
   const handledCopyFromRef = useRef('');
 
   const [currentDocEntry, setCurrentDocEntry] = useState(null);
@@ -481,7 +551,7 @@ function ServiceARInvoicePage() {
   const isDocumentEditable = !currentDocEntry || String(header.status || '').toLowerCase() === 'open';
   useRelationshipMapRegistration({
     enabled: Boolean(currentDocEntry),
-    objectType: 13,
+    objectType: config.objectType,
     docEntry: currentDocEntry,
     header,
     total: header.totalPaymentDue || header.total || '',
@@ -720,8 +790,8 @@ function ServiceARInvoicePage() {
       setPageState((prev) => ({ ...prev, loading: true, error: '' }));
       try {
         const [refRes, seriesRes] = await Promise.all([
-          fetchServiceARInvoiceReferenceData(),
-          fetchServiceARInvoiceSeries(header.postingDate),
+          api.fetchReferenceData(),
+          api.fetchSeries(header.postingDate),
         ]);
         if (ignore) return;
 
@@ -734,7 +804,7 @@ function ServiceARInvoicePage() {
         const defaultTransactionType = liveTransactionTypes[0]?.value || '';
         if (defaultTransactionType) {
           try {
-            const typedSeriesRes = await fetchServiceARInvoiceSeries(header.postingDate, defaultTransactionType);
+            const typedSeriesRes = await api.fetchSeries(header.postingDate, defaultTransactionType);
             if (ignore) return;
             nextRefData = {
               ...nextRefData,
@@ -784,7 +854,7 @@ function ServiceARInvoicePage() {
         setPageState((prev) => ({ ...prev, loading: false }));
       } catch (error) {
         if (!ignore) {
-          setPageState((prev) => ({ ...prev, loading: false, error: error.response?.data?.message || error.message || 'Failed to load Service A/R Invoice.' }));
+          setPageState((prev) => ({ ...prev, loading: false, error: error.response?.data?.message || error.message || `Failed to load ${config.label}.` }));
         }
       }
     };
@@ -802,10 +872,10 @@ function ServiceARInvoicePage() {
     const loadDocument = async () => {
       setPageState((prev) => ({ ...prev, loading: true, error: '', success: '' }));
       try {
-        const res = await fetchServiceARInvoiceByDocEntry(requestedDocEntry);
+        const res = await api.fetchByDocEntry(requestedDocEntry);
         if (ignore) return;
-        const doc = res.data?.service_ar_invoice;
-        if (!doc) throw new Error('Service A/R Invoice was not returned.');
+        const doc = res.data?.[config.responseKey];
+        if (!doc) throw new Error(`${config.label} was not returned.`);
         setCurrentDocEntry(doc.doc_entry);
         setHeader((prev) => ({ ...prev, ...doc.header }));
         setHeaderUdfs(
@@ -821,9 +891,9 @@ function ServiceARInvoicePage() {
           }))
           : [createLine(rowUdfDefinitions)]);
         setIsDirty(false);
-        setPageState((prev) => ({ ...prev, loading: false, success: `Service A/R Invoice ${doc.doc_num || requestedDocEntry} loaded.` }));
+        setPageState((prev) => ({ ...prev, loading: false, success: `${config.label} ${doc.doc_num || requestedDocEntry} loaded.` }));
       } catch (error) {
-        if (!ignore) setPageState((prev) => ({ ...prev, loading: false, error: error.response?.data?.message || error.message || 'Failed to load Service A/R Invoice.' }));
+        if (!ignore) setPageState((prev) => ({ ...prev, loading: false, error: error.response?.data?.message || error.message || `Failed to load ${config.label}.` }));
       }
     };
 
@@ -848,7 +918,7 @@ function ServiceARInvoicePage() {
   const loadCustomerDetails = async (customerCode) => {
     if (!customerCode) return;
     try {
-      const res = await fetchServiceARInvoiceCustomerDetails(customerCode);
+      const res = await api.fetchCustomerDetails(customerCode);
       setRefData((prev) => ({
         ...prev,
         contacts: res.data?.contacts || [],
@@ -981,7 +1051,7 @@ function ServiceARInvoicePage() {
       }));
       setPageState((prev) => ({ ...prev, seriesLoading: true }));
       try {
-        const res = await fetchServiceARInvoiceSeries(header.postingDate, value);
+        const res = await api.fetchSeries(header.postingDate, value);
         const nextSeries = res.data?.series || [];
         const firstSeries = pickFirstSeries(nextSeries, value);
         setRefData((prev) => ({ ...prev, series: nextSeries }));
@@ -1011,7 +1081,7 @@ function ServiceARInvoicePage() {
       setHeader((prev) => ({ ...prev, postingDate: value }));
       setPageState((prev) => ({ ...prev, seriesLoading: true }));
       try {
-        const res = await fetchServiceARInvoiceSeries(value, header.transactionType);
+        const res = await api.fetchSeries(value, header.transactionType);
         const nextSeries = res.data?.series || [];
         setRefData((prev) => ({ ...prev, series: nextSeries }));
         setHeader((prev) => {
@@ -1052,7 +1122,7 @@ function ServiceARInvoicePage() {
       }));
       setPageState((prev) => ({ ...prev, seriesLoading: true }));
       try {
-        const res = await fetchServiceARInvoiceNextNumber(value);
+        const res = await api.fetchNextNumber(value);
         setHeader((prev) => ({ ...prev, nextNumber: String(res.data?.nextNumber || '') }));
       } catch (_error) {
         setHeader((prev) => ({ ...prev, nextNumber: '' }));
@@ -1292,6 +1362,11 @@ function ServiceARInvoicePage() {
   };
 
   const previewJournalEntry = async ({ persist = false, docEntry = currentDocEntry } = {}) => {
+    if (!api.generateJournalEntry) {
+      setPageState((prev) => ({ ...prev, success: '', error: `Journal Entry Preview is not configured for ${config.label}.` }));
+      return null;
+    }
+
     const errors = validate({ requireDescription: false });
     if (errors.form || Object.keys(errors.header).length || Object.keys(errors.lines).length) {
       setValErrors(errors);
@@ -1301,7 +1376,7 @@ function ServiceARInvoicePage() {
 
     setJournalPreview((prev) => ({ ...prev, open: true, loading: true }));
     try {
-      const res = await generateServiceARInvoiceJournalEntry({
+      const res = await api.generateJournalEntry({
         docEntry,
         payload: docEntry ? null : buildPayload(),
         persist,
@@ -1320,7 +1395,7 @@ function ServiceARInvoicePage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!isDocumentEditable) {
-      setPageState((prev) => ({ ...prev, success: '', error: 'Closed Service A/R Invoices cannot be edited.' }));
+      setPageState((prev) => ({ ...prev, success: '', error: `Closed ${config.pluralLabel} cannot be edited.` }));
       return;
     }
     if (currentDocEntry && !hasUnsavedChanges) return;
@@ -1335,19 +1410,19 @@ function ServiceARInvoicePage() {
     setPageState((prev) => ({ ...prev, posting: true, error: '', success: '' }));
     try {
       const res = currentDocEntry
-        ? await updateServiceARInvoice(currentDocEntry, buildPayload())
-        : await submitServiceARInvoice(buildPayload());
+        ? await api.update(currentDocEntry, buildPayload())
+        : await api.submit(buildPayload());
       const docEntry = res.data?.doc_entry || res.data?.DocEntry || currentDocEntry;
       const docNum = res.data?.doc_num || res.data?.DocNum || header.docNo;
       setCurrentDocEntry(docEntry);
       setHeader((prev) => ({ ...prev, docNo: docNum ? String(docNum) : prev.docNo, status: 'Open' }));
       setIsDirty(false);
-      setPageState((prev) => ({ ...prev, posting: false, success: `${res.data?.message || 'Service A/R Invoice saved.'}${docNum ? ` Doc No: ${docNum}` : ''}` }));
-      if (docEntry) {
+      setPageState((prev) => ({ ...prev, posting: false, success: `${res.data?.message || `${config.label} saved.`}${docNum ? ` Doc No: ${docNum}` : ''}` }));
+      if (docEntry && api.generateJournalEntry) {
         await previewJournalEntry({ persist: true, docEntry });
       }
     } catch (error) {
-      const message = error.response?.data?.detail?.error?.message?.value || error.response?.data?.message || error.message || 'Service A/R Invoice submission failed.';
+      const message = error.response?.data?.detail?.error?.message?.value || error.response?.data?.message || error.message || `${config.label} submission failed.`;
       setPageState((prev) => ({ ...prev, posting: false, error: message }));
     }
   };
@@ -1384,35 +1459,17 @@ function ServiceARInvoicePage() {
 
   const fetchCopyFromDocuments = async (docType) => {
     const customerCode = String(header.vendor || '').trim();
-    if (docType === 'salesQuotation') {
-      const res = await fetchOpenServiceSalesQuotationsForARInvoice(customerCode);
-      return res.data?.documents || [];
-    }
-    if (docType === 'salesOrder') {
-      const res = await fetchOpenServiceSalesOrdersForARInvoice(customerCode);
-      return res.data?.documents || [];
-    }
-    if (docType === 'delivery') {
-      const res = await fetchOpenServiceDeliveriesForARInvoice(customerCode);
-      return res.data?.documents || [];
-    }
-    return [];
+    const fetcher = api.copyFromFetchers?.[docType];
+    if (!fetcher) return [];
+    const res = await fetcher(customerCode);
+    return res.data?.documents || [];
   };
 
   const fetchCopyFromDocumentDetails = async (docType, docEntry) => {
-    if (docType === 'salesQuotation') {
-      const res = await fetchServiceSalesQuotationForARInvoiceCopy(docEntry);
-      return res.data;
-    }
-    if (docType === 'salesOrder') {
-      const res = await fetchServiceSalesOrderForARInvoiceCopy(docEntry);
-      return res.data;
-    }
-    if (docType === 'delivery') {
-      const res = await fetchServiceDeliveryForARInvoiceCopy(docEntry);
-      return res.data;
-    }
-    return null;
+    const fetcher = api.copyFromDetailFetchers?.[docType];
+    if (!fetcher) return null;
+    const res = await fetcher(docEntry);
+    return res.data;
   };
 
   const handleCopyFrom = (data, sourceType) => {
@@ -1438,10 +1495,70 @@ function ServiceARInvoicePage() {
     setPageState((prev) => ({ ...prev, success: 'Copied service document lines.', error: '' }));
   };
 
+  useEffect(() => {
+    const routedCopyFrom = location.state?.copyFrom;
+    const persistedCopyState = routedCopyFrom ? null : consumeCopyToState(location.pathname, [config.routePath]);
+    const copyFrom = routedCopyFrom || persistedCopyState?.copyFrom;
+    if (!copyFrom || currentDocEntry) return;
+
+    const sourceLines = Array.isArray(copyFrom.lines) ? copyFrom.lines : [];
+    const copyKey = JSON.stringify({
+      route: config.routePath,
+      type: copyFrom.type,
+      docEntry: copyFrom.docEntry,
+      lineCount: sourceLines.length,
+    });
+    if (handledCopyFromRef.current === copyKey) return;
+    handledCopyFromRef.current = copyKey;
+
+    const normalizedHeader = normaliseDocumentHeader(copyFrom.header || {});
+    const firstSourceLine = sourceLines[0] || {};
+    const baseType = copyFrom.baseDocument?.baseType || BASE_TYPE[copyFrom.type] || firstSourceLine.baseType || 13;
+    const baseEntry = copyFrom.baseDocument?.baseEntry || copyFrom.docEntry;
+    const copiedHeaderUdfs = copyFrom.headerUdfs || copyFrom.header_udfs || copyFrom.header?.headerUdfs || copyFrom.header?.header_udfs;
+
+    setCurrentDocEntry(null);
+    setHeader((prev) => ({
+      ...prev,
+      ...normalizedHeader,
+      transactionType: normalizedHeader.transactionType || prev.transactionType || transactionTypeOptions[0]?.value || '',
+      docNo: '',
+      nextNumber: prev.nextNumber,
+      status: 'Open',
+    }));
+    if (copiedHeaderUdfs) {
+      setHeaderUdfs(headerUdfDefinitions.length
+        ? normalizeUdfState(headerUdfDefinitions, copiedHeaderUdfs)
+        : copiedHeaderUdfs);
+    }
+    setLines(sourceLines.length
+      ? sourceLines.map((line, index) => ({
+        ...normalizeCopyLine(line, index, baseEntry, baseType, accounts),
+        baseEntry,
+        baseType,
+        baseLine: line.baseLine ?? line.BaseLine ?? line.lineNum ?? line.LineNum ?? index,
+        udf: rowUdfDefinitions.length ? normalizeUdfState(rowUdfDefinitions, line.udf || {}) : (line.udf || {}),
+      }))
+      : [createLine(rowUdfDefinitions)]);
+    setActiveTab('Contents');
+    setIsDirty(false);
+    setValErrors({ header: {}, lines: {}, form: '' });
+    setPageState((prev) => ({
+      ...prev,
+      success: `Copied ${copyFrom.sourceLabel || 'source document'} lines.`,
+      error: '',
+    }));
+  }, [location.pathname, location.state?.copyFrom, config.routePath, currentDocEntry, accounts, headerUdfDefinitions, rowUdfDefinitions, transactionTypeOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleCopyTo = async () => {
+    if (!config.copyTo?.enabled) {
+      setPageState((prev) => ({ ...prev, success: '', error: `Copy To is not configured for ${config.label}.` }));
+      return;
+    }
+
     await copyToDocument({
-      sourceDocType: 'serviceArInvoice',
-      targetType: 'arCreditMemo',
+      sourceDocType: config.copyTo.sourceDocType,
+      targetType: config.copyTo.targetType,
       sourceDocEntry: currentDocEntry,
       sourceDocNo: header.docNo,
       sourcePath: location.pathname,
@@ -1450,12 +1567,12 @@ function ServiceARInvoicePage() {
         lines: lines.map((line) => ({ ...line, udf: normalizeUdfState(rowUdfDefinitions, line.udf || {}) })),
         headerUdfs: normalizeUdfState(headerUdfDefinitions, headerUdfs),
       },
-      restoreState: { serviceARInvoiceDocEntry: currentDocEntry },
+      restoreState: { [config.stateKey]: currentDocEntry },
       navigate,
       upsertTask,
       removeTask,
       setError: (message) => setPageState((prev) => ({ ...prev, success: '', error: message })),
-      errorMessage: 'Please save the Service A/R Invoice first before copying.',
+      errorMessage: `Please save the ${config.label} first before copying.`,
     });
   };
 
@@ -1475,7 +1592,7 @@ function ServiceARInvoicePage() {
       setPageState,
       navigate,
       location,
-      successMessage: 'Service A/R invoice duplicated. Review and add it as a new entry.',
+      successMessage: `${config.label} duplicated. Review and add it as a new entry.`,
     });
 
     if (duplicated) {
@@ -1691,7 +1808,7 @@ function ServiceARInvoicePage() {
   return (
     <form className={`ar-invoice-page del-page sap-document-page service-ar-invoice-page${isRightSidebarOpen ? ' del-page--sidebar-open' : ''}`} onSubmit={handleSubmit} onChangeCapture={markDirty}>
       <div className="del-toolbar sap-document-toolbar">
-        <span className="del-toolbar__title sap-document-toolbar__title">Service A/R Invoice{currentDocEntry ? ` - #${header.docNo || currentDocEntry}` : ''}</span>
+        <span className="del-toolbar__title sap-document-toolbar__title">{config.label}{currentDocEntry ? ` - #${header.docNo || currentDocEntry}` : ''}</span>
         <button type="submit" className="del-btn del-btn--primary sap-document-toolbar__primary" disabled={pageState.posting || !isDocumentEditable} title={primaryActionLabel}>
           {primaryActionLabel}
         </button>
@@ -1701,8 +1818,8 @@ function ServiceARInvoicePage() {
         </button>
         <button type="button" className="del-btn sap-document-toolbar__settings" onClick={toggleFormSettings}>Form Settings</button>
         <PrintLayoutToolbar
-          documentType="serviceArInvoice"
-          documentLabel="Service A/R Invoice"
+          documentType={config.documentType}
+          documentLabel={config.label}
           docEntry={currentDocEntry}
           docNumber={header.docNo}
           disabled={pageState.posting}
@@ -1714,11 +1831,11 @@ function ServiceARInvoicePage() {
           type="button"
           className="del-btn sap-document-toolbar__journal-preview"
           onClick={() => previewJournalEntry({ persist: Boolean(currentDocEntry) })}
-          disabled={pageState.posting || journalPreview.loading}
+          disabled={pageState.posting || journalPreview.loading || !api.generateJournalEntry}
         >
           Preview Journal Entry
         </button>
-        <button type="button" className="del-btn sap-document-toolbar__find" onClick={() => navigate('/services/ar-invoice/find')}>Find</button>
+        <button type="button" className="del-btn sap-document-toolbar__find" onClick={() => navigate(config.findPath)}>Find</button>
         <button type="button" className="del-btn sap-document-toolbar__new" onClick={resetForm}>New</button>
         <div className="del-dropdown" style={{ position: 'relative', display: 'inline-block' }}>
           <button type="button" className="del-btn" disabled={!isDocumentEditable || !!currentDocEntry} onClick={(event) => {
@@ -1732,11 +1849,7 @@ function ServiceARInvoicePage() {
             Copy From
           </button>
           <div className="del-dropdown-menu">
-            {[
-              { key: 'salesQuotation', label: 'Sales Quotations' },
-              { key: 'salesOrder', label: 'Sales Orders' },
-              { key: 'delivery', label: 'Deliveries' },
-            ].map((option) => (
+            {config.copyFromOptions.map((option) => (
               <button
                 key={option.key}
                 type="button"
@@ -1752,7 +1865,7 @@ function ServiceARInvoicePage() {
             ))}
           </div>
         </div>
-        <button type="button" className="del-btn sap-document-toolbar__copy" onClick={handleCopyTo} disabled={!currentDocEntry}>Copy To</button>
+        <button type="button" className="del-btn sap-document-toolbar__copy" onClick={handleCopyTo} disabled={!currentDocEntry || !config.copyTo?.enabled}>Copy To</button>
         {currentDocEntry && (
           <button type="button" className="del-btn sap-document-toolbar__duplicate" onClick={handleDuplicate}>
             Duplicate
@@ -1773,7 +1886,7 @@ function ServiceARInvoicePage() {
               <div className="del-field">
                 <label className="del-field__label">Customer</label>
                 <div className="service-ar-header-lookup">
-                  <input className={`del-field__input${valErrors.header.vendor ? ' del-field__input--error' : ''}`} name="vendor" value={header.vendor} list="service-ar-invoice-customers" onChange={handleHeaderChange} disabled={!isDocumentEditable} />
+                  <input className={`del-field__input${valErrors.header.vendor ? ' del-field__input--error' : ''}`} name="vendor" value={header.vendor} list={config.customerDatalistId} onChange={handleHeaderChange} disabled={!isDocumentEditable} />
                   <button type="button" className="del-btn service-ar-lookup-btn" onClick={() => setBpModalOpen(true)} disabled={!isDocumentEditable} title="List of Business Partners">...</button>
                 </div>
               </div>
@@ -2029,14 +2142,14 @@ function ServiceARInvoicePage() {
         </div>
       </fieldset>
 
-      <datalist id="service-ar-invoice-customers">
+      <datalist id={config.customerDatalistId}>
         {customerOptions.map((customer) => (
           <option key={customer.CardCode || customer.code} value={customer.CardCode || customer.code}>
             {customer.CardName || customer.name}
           </option>
         ))}
       </datalist>
-      <datalist id="service-ar-invoice-accounts">
+      <datalist id={config.accountDatalistId}>
         {accounts.map((account) => (
           <option key={account.code} value={account.code}>{account.name}</option>
         ))}
@@ -2108,7 +2221,7 @@ function ServiceARInvoicePage() {
         onOpenSource={() => {
           setJournalPreview((prev) => ({ ...prev, open: false }));
           if (currentDocEntry) {
-            navigate('/services/ar-invoice', { state: { serviceARInvoiceDocEntry: currentDocEntry } });
+            navigate(config.routePath, { state: { [config.stateKey]: currentDocEntry } });
           }
         }}
       />

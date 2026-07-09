@@ -1,5 +1,6 @@
 const db = require('./dbService');
 const arInvoiceDb = require('./arInvoiceDbService');
+const arCreditMemoDb = require('./arCreditMemoDbService');
 const masterDataDbService = require('./masterDataDbService');
 const hsnCodeDbService = require('./hsnCodeDbService');
 const { getHeaderUdfValues, getLineUdfValues, getMarketingDocumentUdfs } = require('./udfMetadataService');
@@ -466,6 +467,240 @@ const getServiceARInvoice = async (docEntry) => {
   };
 };
 
+const getServiceARCreditMemoList = async ({
+  query = '',
+  docNum = '',
+  customerCode = '',
+  customerName = '',
+  status = '',
+  postingDateFrom = '',
+  postingDateTo = '',
+  page = 1,
+  pageSize = 25,
+} = {}) => {
+  const limit = Math.max(1, Math.min(toInt(pageSize, 25), 100));
+  const currentPage = Math.max(1, toInt(page, 1));
+  const offset = (currentPage - 1) * limit;
+  const filters = [];
+  const params = {
+    query: String(query || '').trim(),
+    like: `%${String(query || '').trim()}%`,
+    docNum: String(docNum || '').trim(),
+    customerCode: String(customerCode || '').trim(),
+    customerName: String(customerName || '').trim(),
+    customerNameLike: `%${String(customerName || '').trim()}%`,
+    status: String(status || '').trim(),
+    postingDateFrom: String(postingDateFrom || '').trim(),
+    postingDateTo: String(postingDateTo || '').trim(),
+    offset,
+    limit,
+  };
+
+  filters.push("T0.DocType = 'S'");
+  filters.push("ISNULL(T0.CANCELED, 'N') <> 'Y'");
+  if (params.query) {
+    filters.push(`(
+      CAST(T0.DocNum AS nvarchar(50)) LIKE @like
+      OR T0.CardCode LIKE @like
+      OR T0.CardName LIKE @like
+      OR ISNULL(T0.Comments, '') LIKE @like
+    )`);
+  }
+  if (params.docNum) filters.push('CAST(T0.DocNum AS nvarchar(50)) LIKE @docNum');
+  if (params.customerCode) filters.push('T0.CardCode LIKE @customerCode');
+  if (params.customerName) filters.push('T0.CardName LIKE @customerNameLike');
+  if (params.status === 'Open') filters.push("T0.DocStatus = 'O'");
+  if (params.status === 'Closed') filters.push("T0.DocStatus = 'C'");
+  if (params.postingDateFrom) filters.push('CAST(T0.DocDate AS date) >= CAST(@postingDateFrom AS date)');
+  if (params.postingDateTo) filters.push('CAST(T0.DocDate AS date) <= CAST(@postingDateTo AS date)');
+
+  const where = filters.length ? `WHERE ${filters.join('\n AND ')}` : '';
+  const countRows = await safe(db.query(`
+    SELECT COUNT(1) AS TotalCount
+    FROM ORIN T0
+    ${where}
+  `, params));
+
+  const rows = await safe(db.query(`
+    SELECT
+      T0.DocEntry,
+      T0.DocNum,
+      T0.CardCode,
+      T0.CardName,
+      T0.DocDate,
+      T0.DocDueDate,
+      T0.DocTotal,
+      CASE T0.DocStatus WHEN 'O' THEN 'Open' WHEN 'C' THEN 'Closed' ELSE T0.DocStatus END AS Status,
+      COUNT(T1.LineNum) AS LineCount
+    FROM ORIN T0
+    LEFT JOIN RIN1 T1 ON T1.DocEntry = T0.DocEntry
+    ${where}
+    GROUP BY T0.DocEntry, T0.DocNum, T0.CardCode, T0.CardName, T0.DocDate, T0.DocDueDate, T0.DocTotal, T0.DocStatus
+    ORDER BY T0.DocDate DESC, T0.DocNum DESC
+    OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+  `, params));
+
+  const totalCount = Number(countRows[0]?.TotalCount || 0);
+  return {
+    service_ar_credit_memos: rows.map((row) => ({
+      doc_entry: row.DocEntry,
+      doc_num: row.DocNum,
+      customer_code: row.CardCode || '',
+      customer_name: row.CardName || '',
+      posting_date: formatDate(row.DocDate),
+      delivery_date: formatDate(row.DocDueDate),
+      status: row.Status || '',
+      line_count: row.LineCount || 0,
+      total_amount: row.DocTotal || 0,
+    })),
+    pagination: {
+      page: currentPage,
+      pageSize: limit,
+      totalCount,
+      totalPages: Math.max(1, Math.ceil(totalCount / limit)),
+    },
+  };
+};
+
+const getServiceARCreditMemoReferenceData = async () => {
+  const [base, creditMemoBase] = await Promise.all([
+    getReferenceData(),
+    arCreditMemoDb.getReferenceData(),
+  ]);
+
+  return {
+    ...base,
+    udf_metadata: creditMemoBase.udf_metadata || base.udf_metadata,
+  };
+};
+
+const getServiceARCreditMemo = async (docEntry) => {
+  const headerRows = await safe(db.query(`
+    SELECT
+      T0.DocEntry,
+      T0.DocNum,
+      T0.Series,
+      NNM.SeriesName,
+      NNM.Indicator AS SeriesIndicator,
+      T0.CardCode,
+      T0.CardName,
+      T0.CntctCode,
+      T0.NumAtCard,
+      T0.DocDate,
+      T0.DocDueDate,
+      T0.TaxDate,
+      T0.BPLId,
+      T0.DocCur,
+      T0.GroupNum,
+      T0.Comments,
+      T0.JrnlMemo,
+      T0.DiscPrcnt,
+      T0.TotalExpns,
+      T0.VatSum,
+      T0.DocTotal,
+      T0.SlpCode,
+      SLP.SlpName,
+      CASE T0.DocStatus WHEN 'O' THEN 'Open' WHEN 'C' THEN 'Closed' ELSE T0.DocStatus END AS Status
+    FROM ORIN T0
+    LEFT JOIN OSLP SLP ON SLP.SlpCode = T0.SlpCode
+    LEFT JOIN NNM1 NNM ON NNM.ObjectCode = '14' AND NNM.Series = T0.Series
+    WHERE T0.DocEntry = @docEntry AND T0.DocType = 'S'
+  `, { docEntry }));
+
+  if (!headerRows.length) throw new Error('Service A/R Credit Memo not found');
+  const header = headerRows[0];
+
+  const lineRows = await safe(db.query(`
+    SELECT
+      T0.LineNum,
+      T0.AcctCode,
+      ACT.AcctName,
+      T0.Dscription,
+      T0.OcrCode,
+      T0.TaxCode,
+      T0.LineTotal,
+      T0.VatSum,
+      T0.Price,
+      T0.Quantity,
+      T0.BaseEntry,
+      T0.BaseType,
+      T0.BaseLine,
+      T0.SACEntry,
+      CHP.ChapterID AS SAC
+    FROM RIN1 T0
+    LEFT JOIN OACT ACT ON ACT.AcctCode = T0.AcctCode
+    LEFT JOIN OCHP CHP ON CHP.AbsEntry = T0.SACEntry
+    WHERE T0.DocEntry = @docEntry
+    ORDER BY T0.LineNum
+  `, { docEntry }));
+
+  const [headerUdfs, lineUdfsByLineNum] = await Promise.all([
+    getHeaderUdfValues({ tableId: 'ORIN', keyValue: docEntry }),
+    getLineUdfValues({ tableId: 'RIN1', keyValue: docEntry }),
+  ]);
+  const sacLookup = await hsnCodeDbService.getSACCodes('', 5000, 0);
+  const sacByEntry = new Map(sacLookup.map((sac) => [String(sac.absEntry ?? ''), sac.serviceCode || sac.code || '']));
+
+  return {
+    service_ar_credit_memo: {
+      doc_entry: header.DocEntry,
+      doc_num: header.DocNum,
+      header: {
+        vendor: header.CardCode || '',
+        customerCode: header.CardCode || '',
+        name: header.CardName || '',
+        contactPerson: header.CntctCode ? String(header.CntctCode) : '',
+        salesContractNo: header.NumAtCard || '',
+        currency: header.DocCur || 'INR',
+        transactionType: getKnownHeaderUdfValue(headerUdfs, ['TransactionType', 'TransType', 'DocumentType', 'DocType']),
+        indicator: getKnownHeaderUdfValue(headerUdfs, ['Indicator']),
+        docNo: header.DocNum ? String(header.DocNum) : '',
+        status: header.Status || 'Open',
+        series: header.Series ? String(header.Series) : '',
+        seriesName: header.SeriesName || '',
+        nextNumber: header.DocNum ? String(header.DocNum) : '',
+        postingDate: formatDate(header.DocDate),
+        deliveryDate: formatDate(header.DocDueDate),
+        documentDate: formatDate(header.TaxDate),
+        branch: header.BPLId ? String(header.BPLId) : '',
+        paymentTerms: header.GroupNum ? String(header.GroupNum) : '',
+        remarks: header.Comments || '',
+        otherInstruction: header.Comments || '',
+        journalRemark: header.JrnlMemo || '',
+        discount: header.DiscPrcnt != null ? String(header.DiscPrcnt) : '',
+        freight: header.TotalExpns != null ? String(header.TotalExpns) : '',
+        tax: header.VatSum != null ? String(header.VatSum) : '',
+        totalPaymentDue: header.DocTotal != null ? String(header.DocTotal) : '',
+        salesEmployee: header.SlpCode != null ? String(header.SlpCode) : '',
+        purchaser: header.SlpName || '',
+      },
+      lines: lineRows.map((line) => {
+        const udf = lineUdfsByLineNum[line.LineNum] || {};
+        return {
+          baseEntry: line.BaseEntry ?? null,
+          baseType: line.BaseType ?? null,
+          baseLine: line.BaseLine ?? null,
+          sac: line.SAC || sacByEntry.get(String(line.SACEntry ?? '')) || (line.SACEntry != null ? String(line.SACEntry) : ''),
+          description: line.Dscription || '',
+          glAccount: line.AcctCode || '',
+          glAccountName: line.AcctName || '',
+          distRule: line.OcrCode || '',
+          taxCode: line.TaxCode || '',
+          wtaxLiable: '',
+          totalLC: line.LineTotal != null ? String(line.LineTotal) : '',
+          taxAmountLC: line.VatSum != null ? String(line.VatSum) : '',
+          loc: '',
+          unitPrice: line.Price != null ? String(line.Price) : '',
+          sQty: line.Quantity != null ? String(line.Quantity) : '',
+          udf,
+          ...mapUdfToAliases(udf),
+        };
+      }),
+      header_udfs: headerUdfs,
+    },
+  };
+};
+
 const getOpenServiceDocuments = async ({ table, customerCode = '' }) => {
   const params = {};
   const cardFilter = String(customerCode || '').trim() ? 'AND T0.CardCode = @customerCode' : '';
@@ -533,12 +768,17 @@ const getServiceDocumentForCopy = async ({ headerTable, lineTable, docEntry, bas
 
 module.exports = {
   getReferenceData,
+  getServiceARCreditMemoReferenceData,
   getCustomerDetails: arInvoiceDb.getCustomerDetails,
   getCustomerFilterOptions: null,
   getDocumentSeries: arInvoiceDb.getDocumentSeries,
   getNextNumber: arInvoiceDb.getNextNumber,
+  getServiceARCreditMemoSeries: arCreditMemoDb.getDocumentSeries,
+  getServiceARCreditMemoNextNumber: arCreditMemoDb.getNextNumber,
   getServiceARInvoiceList,
   getServiceARInvoice,
+  getServiceARCreditMemoList,
+  getServiceARCreditMemo,
   getMarketingDocumentUdfs,
   getOpenServiceSalesQuotations: (customerCode) => getOpenServiceDocuments({ table: 'OQUT', customerCode }),
   getOpenServiceSalesOrders: (customerCode) => getOpenServiceDocuments({ table: 'ORDR', customerCode }),
@@ -546,4 +786,6 @@ module.exports = {
   getServiceSalesQuotationForCopy: (docEntry) => getServiceDocumentForCopy({ headerTable: 'OQUT', lineTable: 'QUT1', docEntry, baseType: 23 }),
   getServiceSalesOrderForCopy: (docEntry) => getServiceDocumentForCopy({ headerTable: 'ORDR', lineTable: 'RDR1', docEntry, baseType: 17 }),
   getServiceDeliveryForCopy: (docEntry) => getServiceDocumentForCopy({ headerTable: 'ODLN', lineTable: 'DLN1', docEntry, baseType: 15 }),
+  getOpenServiceARInvoices: (customerCode) => getOpenServiceDocuments({ table: 'OINV', customerCode }),
+  getServiceARInvoiceForCreditMemoCopy: (docEntry) => getServiceDocumentForCopy({ headerTable: 'OINV', lineTable: 'INV1', docEntry, baseType: 13 }),
 };
